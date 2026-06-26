@@ -74,6 +74,8 @@ struct AnalyticsView: View {
         let completedMinutes = buckets.reduce(0) { $0 + $1.completedMinutes }
         let rate = planned == 0 ? 0 : Int((Double(completed) / Double(planned) * 100).rounded())
         let avg = sessions == 0 ? 0 : completedMinutes / sessions
+        // "focus" = all real focused minutes (incl. partial skips); "avg/session" is over
+        // completed sessions only — they intentionally don't reconcile arithmetically.
         return HStack(spacing: 16) {
             stat("\(rate)%", "completion")
             stat(formatMinutes(focus), "focus")

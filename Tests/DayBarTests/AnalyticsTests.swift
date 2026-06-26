@@ -62,4 +62,17 @@ final class AnalyticsTests: XCTestCase {
         XCTAssertEqual(last.completedMinutes, 25)
         XCTAssertEqual(last.averageSessionMinutes, 25)
     }
+
+    func testAverageSessionMinutesOverMultipleCompleted() {
+        let s = [
+            FocusSession(endedAt: now, minutes: 25, completed: true),
+            FocusSession(endedAt: now, minutes: 20, completed: true),
+            FocusSession(endedAt: now, minutes: 4, completed: false), // skipped, excluded from avg
+        ]
+        let last = Analytics.buckets(todos: [], sessions: s, endingAt: now, count: 1, granularity: .day, calendar: cal).last!
+        XCTAssertEqual(last.sessions, 2)
+        XCTAssertEqual(last.completedMinutes, 45)
+        XCTAssertEqual(last.focusMinutes, 49)           // includes the 4-min skip
+        XCTAssertEqual(last.averageSessionMinutes, 22)  // 45 / 2 (integer)
+    }
 }

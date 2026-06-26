@@ -31,6 +31,19 @@ final class PomodoroEngineTests: XCTestCase {
         XCTAssertEqual(captured?.2, false)
     }
 
+    func testSkipWhilePausedExcludesPausedTime() {
+        let engine = PomodoroEngine(config: PomodoroConfig(workDuration: 60))
+        var captured: (PomodoroPhase, TimeInterval, Bool)?
+        engine.onPhaseEnd = { phase, elapsed, natural in captured = (phase, elapsed, natural) }
+
+        engine.start(.work, now: t0)
+        engine.pause(now: t0.addingTimeInterval(20))   // 20s focused, 40s remaining, endDate=nil
+        engine.skip(now: t0.addingTimeInterval(50))    // 30s of pause passes; still only 20s focused
+
+        XCTAssertEqual(captured?.1 ?? -1, 20, accuracy: 1.0)
+        XCTAssertEqual(captured?.2, false)
+    }
+
     func testWorkAdvancesToBreakOnCompletion() {
         let engine = PomodoroEngine(config: PomodoroConfig(workDuration: 60, autoStartNext: false))
         engine.start(.work, now: t0)

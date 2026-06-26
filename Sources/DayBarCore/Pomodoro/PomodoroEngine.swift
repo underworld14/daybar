@@ -53,7 +53,6 @@ public final class PomodoroEngine {
     public private(set) var completedWorkCount: Int = 0
     public var config: PomodoroConfig
 
-    /// Fired when a phase reaches zero, with the phase that just finished.
     /// Fired when a phase ends: `(finishedPhase, elapsedSeconds, completedNaturally)`.
     public var onPhaseEnd: ((PomodoroPhase, TimeInterval, Bool) -> Void)?
 
