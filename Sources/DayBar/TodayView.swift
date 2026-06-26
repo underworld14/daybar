@@ -9,6 +9,7 @@ struct TodayView: View {
     @State private var newTitle = ""
     @FocusState private var addFocused: Bool
     @State private var showSettings = false
+    @State private var showStats = false
 
     private let wordmarkFont = Font.system(size: 15, weight: .bold, design: .rounded)
 
@@ -38,6 +39,15 @@ struct TodayView: View {
         .sheet(isPresented: $showSettings) {
             SettingsView(appState: appState)
         }
+        .sheet(isPresented: $showStats) {
+            AnalyticsView(appState: appState)
+        }
+        .sheet(isPresented: Binding(
+            get: { appState.presentEndOfDayReview },
+            set: { appState.presentEndOfDayReview = $0 }
+        )) {
+            EndOfDayReviewView(appState: appState)
+        }
     }
 
     // MARK: - Header
@@ -51,6 +61,8 @@ struct TodayView: View {
                 .foregroundStyle(.secondary)
             Menu {
                 Button { showSettings = true } label: { Label("Settings…", systemImage: "gearshape") }
+                Button { showStats = true } label: { Label("Statistics…", systemImage: "chart.bar") }
+                Button { appState.presentEndOfDayReview = true } label: { Label("Review day…", systemImage: "checkmark.circle") }
                 Divider()
                 Button("Quit DayBar") { NSApplication.shared.terminate(nil) }
             } label: {

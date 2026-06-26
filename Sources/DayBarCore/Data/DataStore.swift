@@ -11,7 +11,7 @@ public final class DataStore {
     public var context: ModelContext { container.mainContext }
 
     public init(inMemory: Bool = false) {
-        let schema = Schema([DailyTodo.self, AppMeta.self])
+        let schema = Schema([DailyTodo.self, AppMeta.self, FocusSession.self, DayLog.self])
         let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: inMemory)
         do {
             container = try ModelContainer(for: schema, configurations: [config])
@@ -87,6 +87,57 @@ public final class DataStore {
         let meta = AppMeta()
         context.insert(meta)
         return meta
+    }
+
+    // MARK: - Focus sessions & day logs (analytics + review)
+
+    @discardableResult
+    public func insert(_ session: FocusSession) -> FocusSession {
+        context.insert(session)
+        return session
+    }
+
+    public func focusSessions(in range: Range<Date>) throws -> [FocusSession] {
+        let start = range.lowerBound, end = range.upperBound
+        let predicate = #Predicate<FocusSession> { $0.endedAt >= start && $0.endedAt < end }
+        return try context.fetch(FetchDescriptor(predicate: predicate, sortBy: [SortDescriptor(\.endedAt)]))
+    }
+
+    /// Non-dropped todos whose ORIGINAL planned date falls in the range (for analytics binning).
+    public func todos(plannedIn range: Range<Date>) throws -> [DailyTodo] {
+        let start = range.lowerBound, end = range.upperBound
+        let dropped = TodoStatus.dropped.rawValue
+        let predicate = #Predicate<DailyTodo> {
+            $0.originalPlannedDate >= start && $0.originalPlannedDate < end && $0.statusRaw != dropped
+        }
+        return try context.fetch(FetchDescriptor(predicate: predicate))
+    }
+
+    public func dayLog(for day: Date, calendar: Calendar = .current) throws -> DayLog? {
+        let start = calendar.startOfDay(for: day)
+        let end = calendar.date(byAdding: .day, value: 1, to: start) ?? start
+        let predicate = #Predicate<DayLog> { $0.day >= start && $0.day < end }
+        return try context.fetch(FetchDescriptor(predicate: predicate)).first
+    }
+
+    public func hasDayLog(on day: Date, calendar: Calendar = .current) -> Bool {
+        ((try? dayLog(for: day, calendar: calendar)) ?? nil) != nil
+    }
+
+    @discardableResult
+    public func upsertDayLog(day: Date, reflection: String, plannedCount: Int, completedCount: Int, calendar: Calendar = .current) -> DayLog {
+        let start = calendar.startOfDay(for: day)
+        if let existing = (try? dayLog(for: start, calendar: calendar)) ?? nil {
+            existing.reflection = reflection
+            existing.plannedCount = plannedCount
+            existing.completedCount = completedCount
+            save()
+            return existing
+        }
+        let log = DayLog(day: start, reflection: reflection, plannedCount: plannedCount, completedCount: completedCount)
+        context.insert(log)
+        save()
+        return log
     }
 
     // MARK: - JSON export / import

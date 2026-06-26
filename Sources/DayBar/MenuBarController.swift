@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import Observation
+import UserNotifications
 import DayBarCore
 
 /// A floating panel that can take key focus, so the quick-add `TextField` works.
@@ -20,7 +21,7 @@ final class PassthroughHostingView<Content: View>: NSHostingView<Content> {
 /// panel is a real key window, so `TextField` focus, `onSubmit`, and SwiftUI re-rendering all
 /// behave normally.
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     private var appState: AppState!
     private var statusItem: NSStatusItem!
     private var panel: FloatingPanel!
@@ -29,6 +30,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         appState = AppState(store: DataStore())
+        UNUserNotificationCenter.current().delegate = self
+        appState.notifications.requestAuthorization()
         setupStatusItem()
         setupPanel()
     }
@@ -168,5 +171,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             x = min(max(x, minX), maxX)
         }
         panel.setFrameOrigin(NSPoint(x: x, y: y))
+    }
+
+    // MARK: - UNUserNotificationCenterDelegate
+
+    nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        completionHandler([.banner, .sound, .list])
+    }
+
+    nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        let id = response.notification.request.identifier
+        Task { @MainActor in
+            self.showPanel()
+            if id == "evening.review" { self.appState.presentEndOfDayReview = true }
+            completionHandler()
+        }
     }
 }

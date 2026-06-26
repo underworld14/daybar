@@ -13,6 +13,7 @@ import AppKit
 public final class AppState {
     public let store: DataStore
     public let pomodoro: PomodoroEngine
+    public let notifications = NotificationScheduler()
 
     @ObservationIgnored private let rollover: RolloverEngine
     @ObservationIgnored private let calendar: Calendar
@@ -21,6 +22,7 @@ public final class AppState {
     public private(set) var todayTodos: [DailyTodo] = []
     public private(set) var carriedTodos: [DailyTodo] = []
     public var isPanelPresented: Bool = false
+    public var presentEndOfDayReview: Bool = false
 
     public var thresholds: EscalationThresholds = .gentle
 
@@ -57,6 +59,8 @@ public final class AppState {
         rollover.performRolloverIfNeeded(now: now)
         todayTodos = (try? store.todos(on: now, calendar: calendar)) ?? []
         carriedTodos = (try? store.overdueIncompleteTodos(before: now, calendar: calendar)) ?? []
+        notifications.updateBacklogNudge(agingCount: overdueCount, now: now, calendar: calendar)
+        maybePromptEndOfDayReview(now: now)
     }
 
     // MARK: - Intents
@@ -128,6 +132,39 @@ public final class AppState {
         pomodoro.config = Preferences.pomodoroConfig
     }
 
+    // MARK: - Analytics
+
+    public func statBuckets(granularity: Granularity, count: Int, now: Date = .now) -> [StatBucket] {
+        let range = Analytics.range(endingAt: now, count: count, granularity: granularity, calendar: calendar)
+        let todos = (try? store.todos(plannedIn: range)) ?? []
+        let sessions = (try? store.focusSessions(in: range)) ?? []
+        return Analytics.buckets(todos: todos, sessions: sessions, endingAt: now, count: count, granularity: granularity, calendar: calendar)
+    }
+
+    // MARK: - End-of-day review
+
+    public func hasReviewedToday(now: Date = .now) -> Bool {
+        store.hasDayLog(on: now, calendar: calendar)
+    }
+
+    public func saveDayLog(reflection: String, now: Date = .now) {
+        store.upsertDayLog(
+            day: now,
+            reflection: reflection,
+            plannedCount: totalTodayCount,
+            completedCount: completedTodayCount,
+            calendar: calendar
+        )
+        presentEndOfDayReview = false
+    }
+
+    private func maybePromptEndOfDayReview(now: Date = .now) {
+        guard !presentEndOfDayReview, !hasReviewedToday(now: now), totalTodayCount > 0 else { return }
+        if now >= Preferences.eveningTime(on: now, calendar: calendar) {
+            presentEndOfDayReview = true
+        }
+    }
+
     // MARK: - System wiring
 
     private func observeSystem() {
@@ -154,8 +191,13 @@ public final class AppState {
     }
 
     private func handlePhaseEnd(_ phase: PomodoroPhase) {
+        if phase == .work {
+            store.insert(FocusSession(endedAt: .now, minutes: Int(pomodoro.config.workDuration / 60)))
+            store.save()
+        }
         #if canImport(AppKit)
         if Preferences.soundEnabled { AppKitBridge.playPhaseEndSound(named: Preferences.soundName) }
         #endif
+        notifications.postPhaseEndBanner(finished: phase)
     }
 }

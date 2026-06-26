@@ -1,4 +1,5 @@
 import XCTest
+import SwiftData
 @testable import DayBarCore
 
 @MainActor
@@ -113,5 +114,27 @@ final class PersistenceTests: XCTestCase {
         store.performLegacyImport(snapshot: nil, legacyFileExists: false)
         XCTAssertTrue(try store.appMeta().didImportLegacyJSON)
         XCTAssertEqual(try store.allTodos().count, 0)
+    }
+
+    func testFocusSessionQuery() throws {
+        let store = DataStore(inMemory: true)
+        store.insert(FocusSession(endedAt: now, minutes: 25))
+        store.save()
+        let range = now.addingTimeInterval(-3600)..<now.addingTimeInterval(3600)
+        XCTAssertEqual(try store.focusSessions(in: range).count, 1)
+        XCTAssertEqual(try store.focusSessions(in: range).first?.minutes, 25)
+    }
+
+    func testDayLogUpsertKeepsSingleRow() throws {
+        let store = DataStore(inMemory: true)
+        let day = Calendar.current.startOfDay(for: now)
+        XCTAssertFalse(store.hasDayLog(on: day))
+        store.upsertDayLog(day: day, reflection: "good", plannedCount: 3, completedCount: 2)
+        XCTAssertTrue(store.hasDayLog(on: day))
+        store.upsertDayLog(day: day, reflection: "better", plannedCount: 3, completedCount: 3)
+        let log = try store.dayLog(for: day)
+        XCTAssertEqual(log?.reflection, "better")
+        XCTAssertEqual(log?.completedCount, 3)
+        XCTAssertEqual(try store.context.fetch(FetchDescriptor<DayLog>()).count, 1)
     }
 }

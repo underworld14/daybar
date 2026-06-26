@@ -16,10 +16,34 @@ struct SettingsView: View {
     @AppStorage(PreferenceKeys.soundEnabled) private var soundEnabled = true
     @AppStorage(PreferenceKeys.soundName) private var soundName = "Glass"
 
+    @AppStorage(PreferenceKeys.morningEnabled) private var morningEnabled = true
+    @AppStorage(PreferenceKeys.morningHour) private var morningHour = 9
+    @AppStorage(PreferenceKeys.morningMinute) private var morningMinute = 0
+    @AppStorage(PreferenceKeys.eveningEnabled) private var eveningEnabled = true
+    @AppStorage(PreferenceKeys.eveningHour) private var eveningHour = 18
+    @AppStorage(PreferenceKeys.eveningMinute) private var eveningMinute = 0
+    @AppStorage(PreferenceKeys.phaseEndNotify) private var phaseEndNotify = true
+    @AppStorage(PreferenceKeys.backlogNotify) private var backlogNotify = true
+
     @State private var launchAtLogin = LaunchAtLogin.isEnabled
 
     private var pomodoroSnapshot: String {
         "\(workMinutes)-\(shortBreakMinutes)-\(longBreakMinutes)-\(cycles)-\(autoStart)"
+    }
+
+    private var notifSnapshot: String {
+        "\(morningEnabled):\(morningHour):\(morningMinute)-\(eveningEnabled):\(eveningHour):\(eveningMinute)"
+    }
+
+    private func timeBinding(_ hour: Binding<Int>, _ minute: Binding<Int>) -> Binding<Date> {
+        Binding(
+            get: { Calendar.current.date(bySettingHour: hour.wrappedValue, minute: minute.wrappedValue, second: 0, of: Date()) ?? Date() },
+            set: { newDate in
+                let c = Calendar.current.dateComponents([.hour, .minute], from: newDate)
+                hour.wrappedValue = c.hour ?? hour.wrappedValue
+                minute.wrappedValue = c.minute ?? minute.wrappedValue
+            }
+        )
     }
 
     var body: some View {
@@ -51,6 +75,17 @@ struct SettingsView: View {
                         .disabled(!soundEnabled)
                 }
 
+                Section("Notifications") {
+                    Toggle("Morning planning reminder", isOn: $morningEnabled)
+                    DatePicker("Morning time", selection: timeBinding($morningHour, $morningMinute), displayedComponents: .hourAndMinute)
+                        .disabled(!morningEnabled)
+                    Toggle("Evening review reminder", isOn: $eveningEnabled)
+                    DatePicker("Evening time", selection: timeBinding($eveningHour, $eveningMinute), displayedComponents: .hourAndMinute)
+                        .disabled(!eveningEnabled)
+                    Toggle("Notify when a Pomodoro phase ends", isOn: $phaseEndNotify)
+                    Toggle("Remind me about piled-up tasks", isOn: $backlogNotify)
+                }
+
                 Section("Startup") {
                     Toggle("Launch DayBar at login", isOn: $launchAtLogin)
                     if LaunchAtLogin.requiresApproval {
@@ -60,8 +95,9 @@ struct SettingsView: View {
             }
             .formStyle(.grouped)
         }
-        .frame(width: 380, height: 500)
+        .frame(width: 380, height: 560)
         .onChange(of: pomodoroSnapshot) { _, _ in appState.applyPreferences() }
+        .onChange(of: notifSnapshot) { _, _ in appState.notifications.rescheduleRepeating() }
         .onChange(of: launchAtLogin) { _, newValue in
             try? LaunchAtLogin.setEnabled(newValue)
             launchAtLogin = LaunchAtLogin.isEnabled
