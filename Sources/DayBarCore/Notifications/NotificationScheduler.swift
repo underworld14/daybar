@@ -17,6 +17,7 @@ public final class NotificationScheduler {
         static let evening = "evening.review"
         static let phaseEnd = "pomodoro.phaseEnd"
         static let backlog = "backlog.nudge"
+        static let habitPrefix = "habit.anchor."
     }
 
     // MARK: - Authorization
@@ -71,6 +72,41 @@ public final class NotificationScheduler {
         }
         content.sound = nil
         center.add(UNNotificationRequest(identifier: ID.phaseEnd, content: content, trigger: nil))
+    }
+
+    // MARK: - Habit anchor reminders (per-template, skipped when already completed today)
+
+    public func rescheduleHabitAnchors(templates: [HabitTemplate], todayLogs: [HabitLog]) {
+        center.getPendingNotificationRequests { [weak self] requests in
+            let habitIDs = requests.map(\.identifier).filter { $0.hasPrefix(ID.habitPrefix) }
+            Task { @MainActor in
+                self?.center.removePendingNotificationRequests(withIdentifiers: habitIDs)
+                self?.scheduleHabitAnchors(templates: templates, todayLogs: todayLogs)
+            }
+        }
+    }
+
+    private func scheduleHabitAnchors(templates: [HabitTemplate], todayLogs: [HabitLog]) {
+        guard authorized, Preferences.habitNotifyEnabled else { return }
+        let completed = Set(todayLogs.filter(\.isCompleted).map(\.templateId))
+        for template in templates where template.notifyEnabled && template.isActive {
+            guard !completed.contains(template.id),
+                  let hour = template.anchorHour,
+                  let minute = template.anchorMinute else { continue }
+            let body: String
+            if template.cueText.isEmpty {
+                body = "Time for: \(template.title)"
+            } else {
+                body = "\(template.cueText) — \(template.title)"
+            }
+            addCalendar(
+                id: ID.habitPrefix + template.id.uuidString,
+                hour: hour,
+                minute: minute,
+                title: "Habit reminder",
+                body: body
+            )
+        }
     }
 
     // MARK: - Backlog nudge (once/day, state-gated, idempotent)

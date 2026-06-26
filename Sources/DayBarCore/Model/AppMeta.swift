@@ -7,10 +7,17 @@ import SwiftData
 @Model
 public final class AppMeta {
     public var lastProcessedDay: Date?
+    /// Last calendar day for which `HabitEngine` materialized logs (idempotency key).
+    public var lastHabitMaterializedDay: Date?
     public var didImportLegacyJSON: Bool = false
 
-    public init(lastProcessedDay: Date? = nil, didImportLegacyJSON: Bool = false) {
+    public init(
+        lastProcessedDay: Date? = nil,
+        lastHabitMaterializedDay: Date? = nil,
+        didImportLegacyJSON: Bool = false
+    ) {
         self.lastProcessedDay = lastProcessedDay
+        self.lastHabitMaterializedDay = lastHabitMaterializedDay
         self.didImportLegacyJSON = didImportLegacyJSON
     }
 }

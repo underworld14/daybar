@@ -13,13 +13,15 @@ nudge instead of silently disappearing.
 
 ## Features
 
+- **Daily habits** — recurring rituals (e.g. after Dhuha) auto-appear each morning; one-tap
+  check-off, streak tracking with a gentle grace day, optional anchor reminders.
 - **Daily todos** — capture today's plan; check off, delay, reschedule, or drop.
 - **Gentle carry-over** — unfinished tasks roll to the next day and age (grey → amber pill +
   a quiet menu-bar count). Calm by default, never a wall of red.
 - **Pomodoro** — customizable focus/break durations, cycles, auto-start; a **live mm:ss
   countdown right in the menu bar**; accurate across sleep/wake (wall-clock based).
-- **Analytics (Swift Charts)** — daily / weekly / monthly planned-vs-completed, completion-rate
-  trend, focus minutes, and **Pomodoro sessions** (count + average).
+- **Analytics (Swift Charts)** — tasks and habits tabs; daily / weekly / monthly trends,
+  habit consistency heatmap (28 days), streak leaderboard, focus minutes, and Pomodoro sessions.
 - **Notifications** — morning planning + evening review reminders, a phase-end alert (shows
   even when the panel is closed), and a once-daily nudge when tasks pile up.
 - **End-of-day review** — "Did you finish what you planned?" — triage what's left and jot a

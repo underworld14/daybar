@@ -32,12 +32,30 @@ final class PersistenceTests: XCTestCase {
 
     func testJSONRoundTrip() throws {
         let model = DailyTodo(title: "x", plannedForDate: now, originalPlannedDate: now, status: .carriedOver)
-        let snapshot = StoreSnapshotDTO(todos: [TodoDTO(model)], meta: MetaDTO(lastProcessedDay: now))
+        let template = HabitTemplate(title: "Read")
+        let habitLog = HabitLog(templateId: template.id, day: now, status: .completed)
+        let snapshot = StoreSnapshotDTO(
+            todos: [TodoDTO(model)],
+            meta: MetaDTO(lastProcessedDay: now, lastHabitMaterializedDay: now),
+            habitTemplates: [HabitTemplateDTO(template)],
+            habitLogs: [HabitLogDTO(habitLog)]
+        )
         let data = try JSONStore.encode(snapshot)
         let decoded = try JSONStore.decode(data)
         XCTAssertEqual(decoded.todos.count, 1)
         XCTAssertEqual(decoded.todos.first?.statusRaw, TodoStatus.carriedOver.rawValue)
         XCTAssertEqual(decoded.meta?.lastProcessedDay, now)
+        XCTAssertEqual(decoded.habitTemplates.count, 1)
+        XCTAssertEqual(decoded.habitLogs.count, 1)
+    }
+
+    func testLegacyJSONWithoutHabitsDecodes() throws {
+        let model = DailyTodo(title: "x", plannedForDate: now, originalPlannedDate: now)
+        let snapshot = StoreSnapshotDTO(todos: [TodoDTO(model)], meta: MetaDTO(lastProcessedDay: now))
+        let data = try JSONStore.encode(snapshot)
+        let decoded = try JSONStore.decode(data)
+        XCTAssertTrue(decoded.habitTemplates.isEmpty)
+        XCTAssertTrue(decoded.habitLogs.isEmpty)
     }
 
     func testImportSnapshotReplacesAll() throws {

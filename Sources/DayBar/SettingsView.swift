@@ -25,6 +25,7 @@ struct SettingsView: View {
     @AppStorage(PreferenceKeys.eveningMinute) private var eveningMinute = 0
     @AppStorage(PreferenceKeys.phaseEndNotify) private var phaseEndNotify = true
     @AppStorage(PreferenceKeys.backlogNotify) private var backlogNotify = true
+    @AppStorage(PreferenceKeys.habitNotifyEnabled) private var habitNotifyEnabled = true
 
     @State private var launchAtLogin = LaunchAtLogin.isEnabled
 
@@ -33,7 +34,7 @@ struct SettingsView: View {
     }
 
     private var notifSnapshot: String {
-        "\(morningEnabled):\(morningHour):\(morningMinute)-\(eveningEnabled):\(eveningHour):\(eveningMinute)"
+        "\(morningEnabled):\(morningHour):\(morningMinute)-\(eveningEnabled):\(eveningHour):\(eveningMinute)-\(habitNotifyEnabled)"
     }
 
     private func timeBinding(_ hour: Binding<Int>, _ minute: Binding<Int>) -> Binding<Date> {
@@ -85,7 +86,10 @@ struct SettingsView: View {
                         .disabled(!eveningEnabled)
                     Toggle("Notify when a Pomodoro phase ends", isOn: $phaseEndNotify)
                     Toggle("Remind me about piled-up tasks", isOn: $backlogNotify)
+                    Toggle("Habit anchor reminders", isOn: $habitNotifyEnabled)
                 }
+
+                HabitsSettingsSection(appState: appState)
 
                 Section("Startup") {
                     Toggle("Launch DayBar at login", isOn: $launchAtLogin)
@@ -100,9 +104,12 @@ struct SettingsView: View {
             }
             .formStyle(.grouped)
         }
-        .frame(width: 380, height: 560)
+        .frame(width: 380, height: 640)
         .onChange(of: pomodoroSnapshot) { _, _ in appState.applyPreferences() }
-        .onChange(of: notifSnapshot) { _, _ in appState.notifications.rescheduleRepeating() }
+        .onChange(of: notifSnapshot) { _, _ in
+            appState.notifications.rescheduleRepeating()
+            appState.refresh()
+        }
         .onChange(of: launchAtLogin) { _, newValue in
             try? LaunchAtLogin.setEnabled(newValue)
             launchAtLogin = LaunchAtLogin.isEnabled

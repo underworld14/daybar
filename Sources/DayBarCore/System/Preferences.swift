@@ -19,6 +19,7 @@ public enum PreferenceKeys {
     public static let eveningMinute = "notify.eveningMinute"
     public static let phaseEndNotify = "notify.phaseEndEnabled"
     public static let backlogNotify = "notify.backlogEnabled"
+    public static let habitNotifyEnabled = "notify.habitAnchorsEnabled"
 }
 
 /// Typed reads of the app preferences. Getters bake in the same defaults SettingsView
@@ -64,6 +65,7 @@ public enum Preferences {
     public static var eveningMinute: Int { intOrSet(PreferenceKeys.eveningMinute, 0) }
     public static var phaseEndNotify: Bool { boolOrTrue(PreferenceKeys.phaseEndNotify) }
     public static var backlogNotify: Bool { boolOrTrue(PreferenceKeys.backlogNotify) }
+    public static var habitNotifyEnabled: Bool { boolOrTrue(PreferenceKeys.habitNotifyEnabled) }
 
     /// The evening-review time on `day`, used to gate the end-of-day auto-prompt.
     public static func eveningTime(on day: Date, calendar: Calendar = .current) -> Date {
