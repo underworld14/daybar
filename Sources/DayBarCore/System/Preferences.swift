@@ -26,6 +26,9 @@ public enum PreferenceKeys {
     public static let remindersIncludeUndated = "reminders.includeUndated"
     public static let remindersPushNewTodos = "reminders.pushNewTodos"
     public static let defaultReminderCalendarID = "reminders.defaultCalendarID"
+    public static let remindersHabitsSyncEnabled = "reminders.habitsSyncEnabled"
+    public static let selectedHabitReminderCalendarIDs = "reminders.selectedHabitCalendarIDs"
+    public static let defaultHabitReminderCalendarID = "reminders.defaultHabitCalendarID"
 }
 
 /// Typed reads of the app preferences. Getters bake in the same defaults SettingsView
@@ -93,6 +96,24 @@ public enum Preferences {
 
     public static var defaultReminderCalendarID: String? {
         defaults.string(forKey: PreferenceKeys.defaultReminderCalendarID)
+    }
+
+    public static var remindersHabitsSyncEnabled: Bool {
+        defaults.bool(forKey: PreferenceKeys.remindersHabitsSyncEnabled)
+    }
+
+    public static var selectedHabitReminderCalendarIDs: [String] {
+        defaults.stringArray(forKey: PreferenceKeys.selectedHabitReminderCalendarIDs) ?? []
+    }
+
+    public static var defaultHabitReminderCalendarID: String? {
+        defaults.string(forKey: PreferenceKeys.defaultHabitReminderCalendarID)
+    }
+
+    /// Habit list selection, falling back to todo-selected lists when unset.
+    public static var effectiveHabitReminderCalendarIDs: [String] {
+        let habit = selectedHabitReminderCalendarIDs
+        return habit.isEmpty ? selectedReminderCalendarIDs : habit
     }
 
     /// The evening-review time on `day`, used to gate the end-of-day auto-prompt.

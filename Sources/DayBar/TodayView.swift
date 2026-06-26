@@ -225,6 +225,13 @@ struct HabitRow: View {
 
             Spacer(minLength: 4)
 
+            if habit.template.remindersSyncEnabled, habit.template.externalReminderIdentifier != nil {
+                Image(systemName: "list.bullet")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .help("Synced with Reminders")
+            }
+
             if habit.currentStreak > 0 {
                 Text("\(habit.currentStreak)d")
                     .font(.caption2.weight(.medium))

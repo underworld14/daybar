@@ -186,6 +186,21 @@ public final class DataStore {
         try allHabitTemplates().filter(\.isActive)
     }
 
+    public func habitTemplate(id: UUID) throws -> HabitTemplate? {
+        let predicate = #Predicate<HabitTemplate> { $0.id == id }
+        return try context.fetch(FetchDescriptor(predicate: predicate)).first
+    }
+
+    public func habitTemplate(externalReminderIdentifier: String) throws -> HabitTemplate? {
+        let ext = externalReminderIdentifier
+        let predicate = #Predicate<HabitTemplate> { $0.externalReminderIdentifier == ext }
+        return try context.fetch(FetchDescriptor(predicate: predicate)).first
+    }
+
+    public func syncedHabitTemplates() throws -> [HabitTemplate] {
+        try allHabitTemplates().filter { $0.externalReminderIdentifier != nil }
+    }
+
     public func habitLogs(on day: Date, calendar: Calendar = .current) throws -> [HabitLog] {
         let start = calendar.startOfDay(for: day)
         let end = calendar.date(byAdding: .day, value: 1, to: start) ?? start

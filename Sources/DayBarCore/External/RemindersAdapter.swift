@@ -122,6 +122,76 @@ public final class RemindersAdapter: ExternalSourceProvider {
         return mapReminder(reminder)
     }
 
+    // MARK: - Habit reminders
+
+    public func fetchHabitReminders(calendarIdentifiers: [String]) async throws -> [HabitReminderDTO] {
+        guard !calendarIdentifiers.isEmpty else { return [] }
+        let calendars = eventStore.calendars(for: .reminder)
+            .filter { calendarIdentifiers.contains($0.calendarIdentifier) }
+        guard !calendars.isEmpty else { return [] }
+
+        let predicate = eventStore.predicateForReminders(in: calendars)
+        let reminders = try await fetchReminders(matching: predicate)
+        return reminders.compactMap { reminder in
+            guard let notes = reminder.notes,
+                  notes.contains(HabitReminderMapping.notesPrefix),
+                  HabitReminderMapping.parseTemplateId(from: notes) != nil else { return nil }
+            return mapHabitReminder(reminder)
+        }
+    }
+
+    public func createHabitReminder(
+        _ dto: HabitReminderDTO,
+        calendarIdentifier: String
+    ) async throws -> HabitReminderDTO {
+        let reminder = EKReminder(eventStore: eventStore)
+        reminder.title = dto.title
+        reminder.notes = dto.notes.isEmpty ? nil : dto.notes
+        if let cal = eventStore.calendar(withIdentifier: calendarIdentifier)
+            ?? eventStore.defaultCalendarForNewReminders() {
+            reminder.calendar = cal
+        }
+        if let due = dto.dueDate {
+            reminder.dueDateComponents = calendar.dateComponents(
+                [.year, .month, .day, .hour, .minute],
+                from: due
+            )
+        }
+        reminder.recurrenceRules = [
+            HabitReminderMapping.recurrenceRule(preset: dto.schedulePreset, weekdayMask: dto.weekdayMask)
+        ]
+        try eventStore.save(reminder, commit: true)
+        return mapHabitReminder(reminder)
+    }
+
+    public func fetchHabitReminder(externalIdentifier: String) async throws -> HabitReminderDTO? {
+        guard let reminder = eventStore.calendarItem(withIdentifier: externalIdentifier) as? EKReminder else {
+            return nil
+        }
+        return mapHabitReminder(reminder)
+    }
+
+    public func applyHabitReminder(_ dto: HabitReminderDTO) async throws -> HabitReminderDTO {
+        guard let reminder = eventStore.calendarItem(withIdentifier: dto.externalIdentifier) as? EKReminder else {
+            throw RemindersProviderError.reminderNotFound(dto.externalIdentifier)
+        }
+        reminder.title = dto.title
+        reminder.notes = dto.notes.isEmpty ? nil : dto.notes
+        if let due = dto.dueDate {
+            reminder.dueDateComponents = calendar.dateComponents(
+                [.year, .month, .day, .hour, .minute],
+                from: due
+            )
+        }
+        reminder.recurrenceRules = [
+            HabitReminderMapping.recurrenceRule(preset: dto.schedulePreset, weekdayMask: dto.weekdayMask)
+        ]
+        reminder.isCompleted = dto.isCompleted
+        reminder.completionDate = dto.isCompleted ? (dto.completionDate ?? Date()) : nil
+        try eventStore.save(reminder, commit: true)
+        return mapHabitReminder(reminder)
+    }
+
     // MARK: - Private
 
     private func fetchReminders(matching predicate: NSPredicate) async throws -> [EKReminder] {
@@ -151,5 +221,49 @@ public final class RemindersAdapter: ExternalSourceProvider {
             calendarTitle: reminder.calendar.title,
             modifiedAt: reminder.lastModifiedDate
         )
+    }
+
+    private func mapHabitReminder(_ reminder: EKReminder) -> HabitReminderDTO {
+        let notes = reminder.notes ?? ""
+        let templateId = HabitReminderMapping.parseTemplateId(from: notes) ?? UUID()
+        let due: Date?
+        if let comps = reminder.dueDateComponents {
+            due = calendar.date(from: comps)
+        } else {
+            due = nil
+        }
+        let (preset, mask) = inferSchedule(from: reminder.recurrenceRules ?? [])
+        return HabitReminderDTO(
+            externalIdentifier: reminder.calendarItemIdentifier,
+            templateId: templateId,
+            title: reminder.title ?? "",
+            notes: notes,
+            dueDate: due,
+            isCompleted: reminder.isCompleted,
+            completionDate: reminder.completionDate,
+            calendarIdentifier: reminder.calendar.calendarIdentifier,
+            calendarTitle: reminder.calendar.title,
+            modifiedAt: reminder.lastModifiedDate,
+            schedulePreset: preset,
+            weekdayMask: mask
+        )
+    }
+
+    private func inferSchedule(from rules: [EKRecurrenceRule]) -> (HabitSchedulePreset, Int) {
+        guard let rule = rules.first else { return (.everyDay, HabitSchedule.allDaysMask) }
+        if rule.frequency == .daily { return (.everyDay, HabitSchedule.allDaysMask) }
+        if rule.frequency == .weekly, let days = rule.daysOfTheWeek {
+            var mask = 0
+            for day in days {
+                let weekday = day.dayOfTheWeek.rawValue
+                if weekday >= 1 && weekday <= 7 {
+                    mask |= 1 << (weekday - 1)
+                }
+            }
+            if mask == HabitSchedule.maskForPreset(.weekdays) { return (.weekdays, mask) }
+            if mask == HabitSchedule.maskForPreset(.weekends) { return (.weekends, mask) }
+            return (.custom, mask)
+        }
+        return (.everyDay, HabitSchedule.allDaysMask)
     }
 }

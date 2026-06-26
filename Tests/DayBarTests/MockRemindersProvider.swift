@@ -13,6 +13,9 @@ final class MockRemindersProvider: ExternalSourceProvider {
     var fetchReminderThrowIdentifiers: Set<String> = []
     var fetchIncompleteDelayNanoseconds: UInt64 = 0
     var fetchIncompleteCallCount = 0
+    var habitReminders: [HabitReminderDTO] = []
+    var appliedHabits: [HabitReminderDTO] = []
+    var createdHabits: [HabitReminderDTO] = []
 
     func requestAccess() async throws -> Bool {
         accessStatus = .authorized
@@ -78,5 +81,39 @@ final class MockRemindersProvider: ExternalSourceProvider {
             throw NSError(domain: "test", code: 2)
         }
         return reminders.first { $0.externalIdentifier == externalIdentifier }
+    }
+
+    func fetchHabitReminders(calendarIdentifiers: [String]) async throws -> [HabitReminderDTO] {
+        if shouldThrow { throw NSError(domain: "test", code: 1) }
+        return habitReminders.filter { calendarIdentifiers.contains($0.calendarIdentifier) }
+    }
+
+    func createHabitReminder(
+        _ dto: HabitReminderDTO,
+        calendarIdentifier: String
+    ) async throws -> HabitReminderDTO {
+        var created = dto
+        created.externalIdentifier = "habit-\(createdHabits.count + 1)"
+        created.calendarIdentifier = calendarIdentifier
+        created.modifiedAt = Date()
+        createdHabits.append(created)
+        habitReminders.append(created)
+        return created
+    }
+
+    func applyHabitReminder(_ dto: HabitReminderDTO) async throws -> HabitReminderDTO {
+        guard let idx = habitReminders.firstIndex(where: { $0.externalIdentifier == dto.externalIdentifier }) else {
+            throw RemindersProviderError.reminderNotFound(dto.externalIdentifier)
+        }
+        appliedHabits.append(dto)
+        var updated = dto
+        updated.modifiedAt = dto.completionDate ?? dto.modifiedAt ?? Date()
+        habitReminders[idx] = updated
+        return updated
+    }
+
+    func fetchHabitReminder(externalIdentifier: String) async throws -> HabitReminderDTO? {
+        if shouldThrow { throw NSError(domain: "test", code: 1) }
+        return habitReminders.first { $0.externalIdentifier == externalIdentifier }
     }
 }

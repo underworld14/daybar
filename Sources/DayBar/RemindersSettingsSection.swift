@@ -9,9 +9,12 @@ struct RemindersSettingsSection: View {
     @AppStorage(PreferenceKeys.remindersIncludeUndated) private var includeUndated = true
     @AppStorage(PreferenceKeys.remindersPushNewTodos) private var pushNewTodos = false
     @AppStorage(PreferenceKeys.defaultReminderCalendarID) private var defaultListID = ""
+    @AppStorage(PreferenceKeys.remindersHabitsSyncEnabled) private var habitsSyncEnabled = false
+    @AppStorage(PreferenceKeys.defaultHabitReminderCalendarID) private var defaultHabitListID = ""
 
     @State private var lists: [ReminderListDTO] = []
     @State private var selectedIDs: Set<String> = []
+    @State private var selectedHabitIDs: Set<String> = []
     @State private var isLoadingLists = false
 
     var body: some View {
@@ -76,6 +79,8 @@ struct RemindersSettingsSection: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
+                    habitSyncSection
+
                     HStack {
                         Button("Sync now") {
                             appState.invalidateRemindersSync()
@@ -93,7 +98,35 @@ struct RemindersSettingsSection: View {
         }
         .onAppear {
             selectedIDs = Set(Preferences.selectedReminderCalendarIDs)
+            selectedHabitIDs = Set(Preferences.selectedHabitReminderCalendarIDs)
             if syncEnabled { Task { await loadLists() } }
+        }
+    }
+
+    @ViewBuilder
+    private var habitSyncSection: some View {
+        Toggle("Sync habits to Reminders", isOn: $habitsSyncEnabled)
+            .onChange(of: habitsSyncEnabled) { _, _ in
+                appState.invalidateRemindersSync()
+                appState.refresh()
+            }
+
+        if habitsSyncEnabled, !lists.isEmpty {
+            Text("Habit lists (empty uses task lists above)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            ForEach(lists) { list in
+                Toggle(list.title, isOn: habitBinding(for: list.calendarIdentifier))
+            }
+            Picker("Default habit list", selection: $defaultHabitListID) {
+                Text("First selected list").tag("")
+                ForEach(lists) { list in
+                    Text(list.title).tag(list.calendarIdentifier)
+                }
+            }
+            Text("Each synced habit becomes a recurring reminder. Skipping a habit in DayBar won't update Reminders.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 
@@ -125,8 +158,24 @@ struct RemindersSettingsSection: View {
         )
     }
 
+    private func habitBinding(for id: String) -> Binding<Bool> {
+        Binding(
+            get: { selectedHabitIDs.contains(id) },
+            set: { on in
+                if on { selectedHabitIDs.insert(id) } else { selectedHabitIDs.remove(id) }
+                persistHabitSelection()
+                appState.invalidateRemindersSync()
+                appState.refresh()
+            }
+        )
+    }
+
     private func persistSelection() {
         UserDefaults.standard.set(Array(selectedIDs), forKey: PreferenceKeys.selectedReminderCalendarIDs)
+    }
+
+    private func persistHabitSelection() {
+        UserDefaults.standard.set(Array(selectedHabitIDs), forKey: PreferenceKeys.selectedHabitReminderCalendarIDs)
     }
 
     private func enableSync() async {

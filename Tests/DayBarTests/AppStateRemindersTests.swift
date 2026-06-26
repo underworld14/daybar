@@ -9,10 +9,12 @@ final class AppStateRemindersTests: XCTestCase {
     override func setUp() {
         super.setUp()
         UserDefaults.standard.set(false, forKey: PreferenceKeys.remindersSyncEnabled)
+        UserDefaults.standard.set(false, forKey: PreferenceKeys.remindersHabitsSyncEnabled)
     }
 
     override func tearDown() {
         UserDefaults.standard.removeObject(forKey: PreferenceKeys.remindersSyncEnabled)
+        UserDefaults.standard.removeObject(forKey: PreferenceKeys.remindersHabitsSyncEnabled)
         UserDefaults.standard.removeObject(forKey: PreferenceKeys.selectedReminderCalendarIDs)
         super.tearDown()
     }

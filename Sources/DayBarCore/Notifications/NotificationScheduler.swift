@@ -97,8 +97,10 @@ public final class NotificationScheduler {
     private func scheduleHabitAnchors(templates: [HabitTemplate], todayLogs: [HabitLog]) {
         guard authorized, Preferences.habitNotifyEnabled else { return }
         let completed = Set(todayLogs.filter(\.isCompleted).map(\.templateId))
+        let today = Calendar.current.startOfDay(for: Date())
         for template in templates where template.notifyEnabled && template.isActive {
-            guard !completed.contains(template.id),
+            guard template.isScheduled(on: today),
+                  !completed.contains(template.id),
                   let hour = template.anchorHour,
                   let minute = template.anchorMinute else { continue }
             let body: String

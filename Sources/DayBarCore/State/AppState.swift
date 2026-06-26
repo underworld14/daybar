@@ -16,6 +16,7 @@ public final class AppState {
     public let pomodoro: PomodoroEngine
     public let notifications = NotificationScheduler()
     public let remindersSync: RemindersSyncEngine
+    public let habitRemindersSync: HabitRemindersSyncEngine
 
     @ObservationIgnored private let rollover: RolloverEngine
     @ObservationIgnored private let habitEngine: HabitEngine
@@ -25,6 +26,8 @@ public final class AppState {
     @ObservationIgnored private var forceRemindersSync = false
     @ObservationIgnored private var pendingRemindersSync = false
     @ObservationIgnored private var remindersSyncTask: Task<Void, Never>?
+    @ObservationIgnored private let schedulesRemindersSync: Bool
+    @ObservationIgnored private let observeSystemEvents: Bool
 
     public private(set) var remindersLastSyncedAt: Date?
     public private(set) var remindersLastSyncError: String?
@@ -46,14 +49,19 @@ public final class AppState {
     public init(
         store: DataStore,
         calendar: Calendar = .current,
-        remindersProvider: ExternalSourceProvider? = nil
+        remindersProvider: ExternalSourceProvider? = nil,
+        schedulesRemindersSync: Bool = true,
+        observeSystemEvents: Bool = true
     ) {
         self.store = store
         self.calendar = calendar
+        self.schedulesRemindersSync = schedulesRemindersSync
+        self.observeSystemEvents = observeSystemEvents
         self.rollover = RolloverEngine(store: store, calendar: calendar)
         self.habitEngine = HabitEngine(store: store, calendar: calendar)
         let provider = remindersProvider ?? RemindersAdapter(calendar: calendar)
         self.remindersSync = RemindersSyncEngine(store: store, provider: provider, calendar: calendar)
+        self.habitRemindersSync = HabitRemindersSyncEngine(store: store, provider: provider, calendar: calendar)
         self.remindersLastSyncedAt = remindersSync.lastSyncedAt
         self.pomodoro = PomodoroEngine()
         self.pomodoro.onPhaseEnd = { [weak self] phase, elapsed, natural in
@@ -61,7 +69,7 @@ public final class AppState {
         }
         applyPreferences()
         refresh()
-        observeSystem()
+        if observeSystemEvents { observeSystem() }
     }
 
     // MARK: - Derived
@@ -113,7 +121,8 @@ public final class AppState {
     }
 
     private func scheduleRemindersSync(now: Date) {
-        guard Preferences.remindersSyncEnabled else { return }
+        guard schedulesRemindersSync else { return }
+        guard Preferences.remindersSyncEnabled || Preferences.remindersHabitsSyncEnabled else { return }
         if remindersSyncTask != nil {
             pendingRemindersSync = true
             return
@@ -137,9 +146,17 @@ public final class AppState {
                     self.runRemindersSync(now: .now)
                 }
             }
-            let changed = await self.remindersSync.reconcileIfNeeded(now: now, force: force)
+            var changed = false
+            if Preferences.remindersSyncEnabled {
+                changed = await self.remindersSync.reconcileIfNeeded(now: now, force: force) || changed
+            }
+            if Preferences.remindersHabitsSyncEnabled {
+                changed = await self.habitRemindersSync.reconcileIfNeeded(now: now, force: force) || changed
+            }
             self.remindersLastSyncedAt = self.remindersSync.lastSyncedAt
-            self.remindersLastSyncError = self.remindersSync.lastSyncError
+            let errors = [self.remindersSync.lastSyncError, self.habitRemindersSync.lastSyncError]
+                .compactMap { $0 }
+            self.remindersLastSyncError = errors.isEmpty ? nil : errors.joined(separator: "; ")
             if changed {
                 self.reloadLists(now: now)
                 let rawHabits = (try? self.store.todayHabits(on: now, calendar: self.calendar)) ?? []
@@ -268,6 +285,9 @@ public final class AppState {
         anchorHour: Int? = nil,
         anchorMinute: Int? = nil,
         notifyEnabled: Bool = false,
+        schedulePreset: HabitSchedulePreset = .everyDay,
+        scheduleWeekdayMask: Int = HabitSchedule.allDaysMask,
+        remindersSyncEnabled: Bool = false,
         now: Date = .now
     ) -> HabitTemplate? {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -280,16 +300,27 @@ public final class AppState {
             sortOrder: order,
             anchorHour: anchorHour,
             anchorMinute: anchorMinute,
-            notifyEnabled: notifyEnabled
+            notifyEnabled: notifyEnabled,
+            schedulePresetRaw: schedulePreset.rawValue,
+            scheduleWeekdayMask: scheduleWeekdayMask,
+            remindersSyncEnabled: remindersSyncEnabled
         )
         store.insert(template)
         store.save()
+        if remindersSyncEnabled {
+            markHabitLocallyModified(template, now: now)
+            habitRemindersSync.enqueuePush(for: template)
+        }
         invalidateHabitNotifications()
         refresh(now: now)
         return template
     }
 
     public func updateHabitTemplate(_ template: HabitTemplate, now: Date = .now) {
+        if template.remindersSyncEnabled {
+            markHabitLocallyModified(template, now: now)
+            habitRemindersSync.enqueuePush(for: template)
+        }
         store.save()
         invalidateHabitNotifications()
         refresh(now: now)
@@ -297,6 +328,10 @@ public final class AppState {
 
     public func archiveHabitTemplate(_ template: HabitTemplate, now: Date = .now) {
         template.isActive = false
+        if template.remindersSyncEnabled || template.externalReminderIdentifier != nil {
+            markHabitLocallyModified(template, now: now)
+            habitRemindersSync.enqueuePush(for: template)
+        }
         store.save()
         invalidateHabitNotifications()
         refresh(now: now)
@@ -321,6 +356,11 @@ public final class AppState {
             }
         }
         store.save()
+        if let template = try? store.habitTemplate(id: log.templateId), template.remindersSyncEnabled {
+            markHabitLocallyModified(template, now: now)
+            habitRemindersSync.enqueuePush(for: template)
+            invalidateRemindersSync()
+        }
         reloadLists(now: now)
         let rawHabits = (try? store.todayHabits(on: now, calendar: calendar)) ?? []
         rebuildHabitCaches(rawHabits: rawHabits, now: now)
@@ -365,10 +405,10 @@ public final class AppState {
         let templates = analyticsTemplates(withHistoryIn: logs)
         habitStreakEntries = templates.map { template in
             let streak = HabitAnalytics.streakInfo(
-                logs: logs, templateId: template.id, asOf: now, calendar: calendar
+                logs: logs, template: template, asOf: now, calendar: calendar
             )
             let heatmap = HabitAnalytics.heatmap(
-                logs: logs, templateId: template.id, days: 28, endingAt: now, calendar: calendar
+                logs: logs, template: template, days: 28, endingAt: now, calendar: calendar
             )
             return HabitStreakEntry(template: template, streak: streak, heatmap: heatmap)
         }
@@ -392,8 +432,13 @@ public final class AppState {
             .sorted { $0.sortOrder < $1.sortOrder }
     }
 
+    private func markHabitLocallyModified(_ template: HabitTemplate, now: Date) {
+        template.externalModifiedAt = now
+    }
+
     private func rescheduleHabitNotificationsIfNeeded(now: Date = .now) {
-        let templates = (try? store.activeHabitTemplates()) ?? []
+        let templates = ((try? store.activeHabitTemplates()) ?? [])
+            .filter { $0.isScheduled(on: now, calendar: calendar) }
         let logs = (try? store.habitLogs(on: now, calendar: calendar)) ?? []
         let signature = HabitNotifySignature.make(
             templates: templates,

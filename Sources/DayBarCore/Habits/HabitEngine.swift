@@ -28,7 +28,9 @@ public final class HabitEngine {
                 var day = DayMath.nextDay(last, calendar: calendar)
                 while day <= today {
                     changed = materializeDay(day, templates: templates) || changed
-                    day = DayMath.nextDay(day, calendar: calendar)
+                    let next = DayMath.nextDay(day, calendar: calendar)
+                    if next <= day { break }  // defensive: never spin if a day can't advance
+                    day = next
                 }
             }
         }
@@ -53,7 +55,9 @@ public final class HabitEngine {
             var day = createdDay
             while day <= today {
                 changed = materializeDay(day, templates: [template]) || changed
-                day = DayMath.nextDay(day, calendar: calendar)
+                let next = DayMath.nextDay(day, calendar: calendar)
+                if next <= day { break }  // defensive: never spin if a day can't advance
+                day = next
             }
         }
         return changed
@@ -68,6 +72,7 @@ public final class HabitEngine {
         for template in templates where template.isActive {
             let createdDay = calendar.startOfDay(for: template.createdDate)
             guard normalizedDay >= createdDay else { continue }
+            guard HabitSchedule.isScheduled(template, on: normalizedDay, calendar: calendar) else { continue }
             guard !existingTemplateIds.contains(template.id) else { continue }
             store.insert(HabitLog(templateId: template.id, day: normalizedDay))
             changed = true

@@ -25,13 +25,21 @@ struct HabitsSettingsSection: View {
                                 .frame(width: 18)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(template.title)
-                                if !template.cueText.isEmpty {
-                                    Text(template.cueText)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
+                                HStack(spacing: 4) {
+                                    if !template.cueText.isEmpty {
+                                        Text(template.cueText)
+                                    }
+                                    Text(HabitSchedule.displayLabel(for: template))
                                 }
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                             }
                             Spacer()
+                            if template.remindersSyncEnabled, template.externalReminderIdentifier != nil {
+                                Image(systemName: "list.bullet")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
                             if template.notifyEnabled {
                                 Image(systemName: "bell.fill")
                                     .font(.caption)
@@ -76,11 +84,16 @@ private struct HabitEditorSheet: View {
     @State private var anchorEnabled = false
     @State private var anchorHour = 9
     @State private var anchorMinute = 0
+    @State private var schedulePreset: HabitSchedulePreset = .everyDay
+    @State private var weekdayMask = HabitSchedule.allDaysMask
+    @State private var remindersSyncEnabled = false
 
     private static let symbols = [
         "circle", "book.fill", "drop.fill", "figure.walk", "moon.stars.fill",
         "sun.max.fill", "heart.fill", "leaf.fill", "hands.sparkles.fill", "text.book.closed.fill",
     ]
+
+    private static let weekdayLabels = ["S", "M", "T", "W", "T", "F", "S"]
 
     var body: some View {
         VStack(spacing: 0) {
@@ -100,6 +113,32 @@ private struct HabitEditorSheet: View {
                     ForEach(Self.symbols, id: \.self) { name in
                         Label(name, systemImage: name).tag(name)
                     }
+                }
+                Picker("Schedule", selection: $schedulePreset) {
+                    Text("Every day").tag(HabitSchedulePreset.everyDay)
+                    Text("Weekdays").tag(HabitSchedulePreset.weekdays)
+                    Text("Weekends").tag(HabitSchedulePreset.weekends)
+                    Text("Custom").tag(HabitSchedulePreset.custom)
+                }
+                if schedulePreset == .custom {
+                    HStack(spacing: 6) {
+                        ForEach(0..<7, id: \.self) { index in
+                            let selected = (weekdayMask & (1 << index)) != 0
+                            Button(Self.weekdayLabels[index]) {
+                                if selected {
+                                    weekdayMask &= ~(1 << index)
+                                } else {
+                                    weekdayMask |= (1 << index)
+                                }
+                            }
+                            .buttonStyle(.bordered)
+                            .tint(selected ? .accentColor : .secondary)
+                        }
+                    }
+                }
+                if Preferences.remindersHabitsSyncEnabled,
+                   appState.remindersSync.accessStatus == .authorized {
+                    Toggle("Sync to Reminders", isOn: $remindersSyncEnabled)
                 }
                 Toggle("Anchor reminder", isOn: $notifyEnabled)
                 if notifyEnabled {
@@ -135,7 +174,7 @@ private struct HabitEditorSheet: View {
             }
             .padding()
         }
-        .frame(width: 360, height: 420)
+        .frame(width: 400, height: 520)
         .onAppear { load() }
     }
 
@@ -160,6 +199,9 @@ private struct HabitEditorSheet: View {
         cueText = template.cueText
         symbolName = template.symbolName
         notifyEnabled = template.notifyEnabled
+        schedulePreset = template.schedulePreset
+        weekdayMask = template.scheduleWeekdayMask
+        remindersSyncEnabled = template.remindersSyncEnabled
         if let hour = template.anchorHour, let minute = template.anchorMinute {
             anchorEnabled = true
             anchorHour = hour
@@ -170,6 +212,7 @@ private struct HabitEditorSheet: View {
     private func save() {
         let hour = (notifyEnabled && anchorEnabled) ? anchorHour : nil
         let minute = (notifyEnabled && anchorEnabled) ? anchorMinute : nil
+        let mask = schedulePreset == .custom ? weekdayMask : HabitSchedule.maskForPreset(schedulePreset)
         if isNew {
             _ = appState.addHabitTemplate(
                 title: title,
@@ -177,7 +220,10 @@ private struct HabitEditorSheet: View {
                 symbolName: symbolName,
                 anchorHour: hour,
                 anchorMinute: minute,
-                notifyEnabled: notifyEnabled
+                notifyEnabled: notifyEnabled,
+                schedulePreset: schedulePreset,
+                scheduleWeekdayMask: mask,
+                remindersSyncEnabled: remindersSyncEnabled
             )
         } else if let template {
             template.title = title.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -186,6 +232,9 @@ private struct HabitEditorSheet: View {
             template.notifyEnabled = notifyEnabled
             template.anchorHour = hour
             template.anchorMinute = minute
+            template.schedulePresetRaw = schedulePreset.rawValue
+            template.scheduleWeekdayMask = mask
+            template.remindersSyncEnabled = remindersSyncEnabled
             appState.updateHabitTemplate(template)
             appState.invalidateHabitNotifications()
         }

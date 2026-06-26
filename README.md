@@ -13,8 +13,9 @@ nudge instead of silently disappearing.
 
 ## Features
 
-- **Daily habits** — recurring rituals (e.g. after morning coffee) auto-appear each morning; one-tap
-  check-off, streak tracking with a gentle grace day, optional anchor reminders.
+- **Daily habits** — recurring rituals (e.g. after morning coffee) on a schedule (every day, weekdays,
+  weekends, or custom days); one-tap check-off, streak tracking with a gentle grace day, optional anchor
+  reminders, and optional sync to Apple Reminders as recurring reminders.
 - **Daily todos** — capture today's plan; check off, delay, reschedule, or drop.
 - **Gentle carry-over** — unfinished tasks roll to the next day and age (grey → amber pill +
   a quiet menu-bar count). Calm by default, never a wall of red.
@@ -28,7 +29,7 @@ nudge instead of silently disappearing.
   one-line reflection.
 - **Quick-add hotkey** — a global shortcut (default ⌥⌘D) opens the panel focused on the field.
 - **Apple Reminders sync** — optional two-way sync with selected Reminder lists (complete,
-  delay, and reschedule flow back to Reminders).
+  delay, and reschedule flow back to Reminders). Habits can sync as recurring reminders on their schedule.
 - **Local & private** — stored on-device with SwiftData; no account, no cloud.
 
 ## Requirements

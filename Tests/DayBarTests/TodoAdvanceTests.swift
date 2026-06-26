@@ -9,10 +9,12 @@ final class TodoAdvanceTests: XCTestCase {
     override func setUp() {
         super.setUp()
         UserDefaults.standard.set(false, forKey: PreferenceKeys.remindersSyncEnabled)
+        UserDefaults.standard.set(false, forKey: PreferenceKeys.remindersHabitsSyncEnabled)
     }
 
     override func tearDown() {
         UserDefaults.standard.removeObject(forKey: PreferenceKeys.remindersSyncEnabled)
+        UserDefaults.standard.removeObject(forKey: PreferenceKeys.remindersHabitsSyncEnabled)
         super.tearDown()
     }
 

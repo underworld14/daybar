@@ -95,13 +95,13 @@ public enum HabitAnalytics {
 
     public static func heatmap(
         logs: [HabitLog],
-        templateId: UUID,
+        template: HabitTemplate,
         days: Int,
         endingAt now: Date = .now,
         calendar: Calendar = .current
     ) -> [HabitHeatmapCell] {
         let today = calendar.startOfDay(for: now)
-        let templateLogs = logs.filter { $0.templateId == templateId }
+        let templateLogs = logs.filter { $0.templateId == template.id }
         var byDay: [Date: HabitLog] = [:]
         for log in templateLogs {
             byDay[calendar.startOfDay(for: log.day)] = log
@@ -111,13 +111,22 @@ public enum HabitAnalytics {
             return []
         }
         let graceDays = graceDaysChronological(
-            logs: templateLogs, from: windowStart, through: today, today: today, calendar: calendar
+            logs: templateLogs,
+            template: template,
+            from: windowStart,
+            through: today,
+            today: today,
+            calendar: calendar
         )
 
         var cells: [HabitHeatmapCell] = []
         for offset in stride(from: days - 1, through: 0, by: -1) {
             guard let day = calendar.date(byAdding: .day, value: -offset, to: today) else { continue }
             let normalized = calendar.startOfDay(for: day)
+            guard HabitSchedule.isScheduled(template, on: normalized, calendar: calendar) else {
+                cells.append(HabitHeatmapCell(date: normalized, status: nil, usedGrace: false))
+                continue
+            }
             let log = byDay[normalized]
             let status = log?.status
             let usedGrace = graceDays.contains(normalized)
@@ -128,15 +137,16 @@ public enum HabitAnalytics {
 
     public static func streakInfo(
         logs: [HabitLog],
-        templateId: UUID,
+        template: HabitTemplate,
         asOf now: Date = .now,
         calendar: Calendar = .current
     ) -> StreakInfo {
-        let templateLogs = logs.filter { $0.templateId == templateId }
-        let current = currentStreak(logs: templateLogs, asOf: now, calendar: calendar)
-        let best = bestStreak(logs: templateLogs, calendar: calendar)
+        let templateLogs = logs.filter { $0.templateId == template.id }
+        let current = currentStreak(logs: templateLogs, template: template, asOf: now, calendar: calendar)
+        let best = bestStreak(logs: templateLogs, template: template, calendar: calendar)
         let graceUsed = graceDaysChronological(
             logs: templateLogs,
+            template: template,
             from: calendar.date(byAdding: .day, value: -6, to: calendar.startOfDay(for: now)) ?? now,
             through: calendar.startOfDay(for: now),
             today: calendar.startOfDay(for: now),
@@ -165,9 +175,10 @@ public enum HabitAnalytics {
         }
     }
 
-    /// Walk a date range oldest-first and return days that consumed a grace slot.
+    /// Walk a date range oldest-first and return scheduled days that consumed a grace slot.
     private static func graceDaysChronological(
         logs: [HabitLog],
+        template: HabitTemplate,
         from windowStart: Date,
         through windowEnd: Date,
         today: Date,
@@ -185,7 +196,8 @@ public enum HabitAnalytics {
         var used = Set<Date>()
         var day = start
         while day <= end {
-            if let log = byDay[day],
+            if HabitSchedule.isScheduled(template, on: day, calendar: calendar),
+               let log = byDay[day],
                consumesGraceSlot(log.status, day: day, today: today),
                canUseGrace(on: day, graceDates: &graceDates, calendar: calendar) {
                 used.insert(day)
@@ -200,10 +212,12 @@ public enum HabitAnalytics {
 
     private static func currentStreak(
         logs: [HabitLog],
+        template: HabitTemplate,
         asOf now: Date,
         calendar: Calendar
     ) -> Int {
         let today = calendar.startOfDay(for: now)
+        let createdDay = calendar.startOfDay(for: template.createdDate)
         var byDay: [Date: HabitLog] = [:]
         for log in logs { byDay[calendar.startOfDay(for: log.day)] = log }
 
@@ -217,6 +231,14 @@ public enum HabitAnalytics {
         var graceDates: [Date] = []
 
         while true {
+            // Stop once we walk before the habit existed; otherwise every earlier day is
+            // "unscheduled" and the loop would decrement through the calendar without bound.
+            if checkDay < createdDay { break }
+            if !HabitSchedule.isScheduled(template, on: checkDay, calendar: calendar) {
+                guard let prev = calendar.date(byAdding: .day, value: -1, to: checkDay) else { break }
+                checkDay = calendar.startOfDay(for: prev)
+                continue
+            }
             guard let log = byDay[checkDay] else { break }
             switch log.status {
             case .completed:
@@ -236,9 +258,16 @@ public enum HabitAnalytics {
         return streak
     }
 
-    private static func bestStreak(logs: [HabitLog], calendar: Calendar) -> Int {
+    private static func bestStreak(
+        logs: [HabitLog],
+        template: HabitTemplate,
+        calendar: Calendar
+    ) -> Int {
         let sorted = logs.sorted { $0.day < $1.day }
         guard !sorted.isEmpty else { return 0 }
+
+        var byDay: [Date: HabitLog] = [:]
+        for log in logs { byDay[calendar.startOfDay(for: log.day)] = log }
 
         var best = 0
         var current = 0
@@ -248,11 +277,13 @@ public enum HabitAnalytics {
         for log in sorted {
             let day = calendar.startOfDay(for: log.day)
             if let prev = previousDay,
-               calendar.dateComponents([.day], from: prev, to: day).day ?? 0 > 1 {
+               !gapPreservesStreak(from: prev, to: day, template: template, byDay: byDay, calendar: calendar) {
                 current = 0
                 graceDates = []
             }
             previousDay = day
+
+            guard HabitSchedule.isScheduled(template, on: day, calendar: calendar) else { continue }
 
             switch log.status {
             case .completed:
@@ -271,6 +302,29 @@ public enum HabitAnalytics {
             best = max(best, current)
         }
         return best
+    }
+
+    /// True when every scheduled day strictly between `from` and `to` has a completed log.
+    private static func gapPreservesStreak(
+        from: Date,
+        to: Date,
+        template: HabitTemplate,
+        byDay: [Date: HabitLog],
+        calendar: Calendar
+    ) -> Bool {
+        var day = calendar.startOfDay(for: from)
+        let end = calendar.startOfDay(for: to)
+        guard day < end else { return true }
+        guard let next = calendar.date(byAdding: .day, value: 1, to: day) else { return true }
+        day = calendar.startOfDay(for: next)
+        while day < end {
+            if HabitSchedule.isScheduled(template, on: day, calendar: calendar) {
+                guard let log = byDay[day], log.status == .completed else { return false }
+            }
+            guard let advanced = calendar.date(byAdding: .day, value: 1, to: day) else { break }
+            day = calendar.startOfDay(for: advanced)
+        }
+        return true
     }
 
     private static func canUseGrace(

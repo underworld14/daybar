@@ -38,6 +38,12 @@ public struct HabitTemplateDTO: Codable, Sendable {
     public var anchorHour: Int?
     public var anchorMinute: Int?
     public var notifyEnabled: Bool
+    public var schedulePresetRaw: String?
+    public var scheduleWeekdayMask: Int?
+    public var remindersSyncEnabled: Bool?
+    public var externalReminderIdentifier: String?
+    public var externalModifiedAt: Date?
+    public var remindersCalendarIdentifier: String?
 }
 
 public struct HabitLogDTO: Codable, Sendable {
@@ -107,7 +113,13 @@ public extension HabitTemplateDTO {
         self.init(
             id: m.id, title: m.title, cueText: m.cueText, symbolName: m.symbolName,
             sortOrder: m.sortOrder, isActive: m.isActive, createdDate: m.createdDate,
-            anchorHour: m.anchorHour, anchorMinute: m.anchorMinute, notifyEnabled: m.notifyEnabled
+            anchorHour: m.anchorHour, anchorMinute: m.anchorMinute, notifyEnabled: m.notifyEnabled,
+            schedulePresetRaw: m.schedulePresetRaw,
+            scheduleWeekdayMask: m.scheduleWeekdayMask,
+            remindersSyncEnabled: m.remindersSyncEnabled,
+            externalReminderIdentifier: m.externalReminderIdentifier,
+            externalModifiedAt: m.externalModifiedAt,
+            remindersCalendarIdentifier: m.remindersCalendarIdentifier
         )
     }
 
@@ -115,7 +127,13 @@ public extension HabitTemplateDTO {
         HabitTemplate(
             id: id, title: title, cueText: cueText, symbolName: symbolName,
             sortOrder: sortOrder, isActive: isActive, createdDate: createdDate,
-            anchorHour: anchorHour, anchorMinute: anchorMinute, notifyEnabled: notifyEnabled
+            anchorHour: anchorHour, anchorMinute: anchorMinute, notifyEnabled: notifyEnabled,
+            schedulePresetRaw: schedulePresetRaw ?? HabitSchedulePreset.everyDay.rawValue,
+            scheduleWeekdayMask: scheduleWeekdayMask ?? HabitSchedule.allDaysMask,
+            remindersSyncEnabled: remindersSyncEnabled ?? false,
+            externalReminderIdentifier: externalReminderIdentifier,
+            externalModifiedAt: externalModifiedAt,
+            remindersCalendarIdentifier: remindersCalendarIdentifier
         )
     }
 }

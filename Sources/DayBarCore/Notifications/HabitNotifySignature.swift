@@ -10,7 +10,7 @@ public enum HabitNotifySignature {
         let templatePart = templates
             .sorted { $0.id.uuidString < $1.id.uuidString }
             .map { t in
-                "\(t.id)|\(t.notifyEnabled)|\(t.anchorHour ?? -1)|\(t.anchorMinute ?? -1)|\(t.isActive)"
+                "\(t.id)|\(t.notifyEnabled)|\(t.anchorHour ?? -1)|\(t.anchorMinute ?? -1)|\(t.isActive)|\(t.schedulePresetRaw)|\(t.scheduleWeekdayMask)"
             }
             .joined(separator: ";")
         let logPart = todayLogs

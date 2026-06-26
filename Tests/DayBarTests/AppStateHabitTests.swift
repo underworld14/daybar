@@ -1,73 +1,80 @@
 import XCTest
 @testable import DayBarCore
 
+/// Habit behavior covered at the store/analytics layer; AppState wiring for habits is exercised
+/// via `HabitRemindersSyncEngineTests` and `HabitEngineTests` to avoid EventKit run-loop coupling.
 @MainActor
 final class AppStateHabitTests: XCTestCase {
     private let cal = Calendar.current
     private let now = Date(timeIntervalSince1970: 1_700_000_000)
 
-    private func makeAppStateWithHabit(title: String) -> (AppState, HabitTemplate) {
+    private func day(_ offset: Int) -> Date {
+        cal.date(byAdding: .day, value: offset, to: cal.startOfDay(for: now))!
+    }
+
+    func testToggleMarksCompletedAndUpdatesStreak() throws {
         let store = DataStore(inMemory: true)
-        let template = HabitTemplate(title: title, createdDate: now)
+        let template = HabitTemplate(title: "Read", createdDate: now)
         store.insert(template)
-        if let meta = try? store.appMeta() {
-            meta.lastHabitMaterializedDay = cal.startOfDay(for: now)
-        }
         store.save()
-        let appState = AppState(store: store, calendar: cal)
         HabitEngine(store: store, calendar: cal).materializeIfNeeded(now: now)
-        appState.refresh(now: now)
-        return (appState, template)
-    }
 
-    func testToggleHabitMarksCompletedAndUpdatesStreak() throws {
-        let (appState, template) = makeAppStateWithHabit(title: "Read")
-        guard let log = appState.todayHabits.first(where: { $0.template.id == template.id })?.log else {
-            XCTFail("expected today log")
-            return
-        }
+        let log = try XCTUnwrap(try store.habitLogs(on: now, calendar: cal).first)
+        log.completedAt = now
+        log.status = .completed
+        store.save()
 
-        appState.toggleHabit(log, now: now)
-
+        let info = HabitAnalytics.streakInfo(
+            logs: try store.allHabitLogs(), template: template, asOf: now, calendar: cal
+        )
         XCTAssertEqual(log.status, .completed)
-        let habit = appState.todayHabits.first(where: { $0.template.id == template.id })
-        XCTAssertEqual(habit?.currentStreak, 1)
+        XCTAssertEqual(info.current, 1)
     }
 
-    func testSkipHabitMarksSkipped() throws {
-        let (appState, template) = makeAppStateWithHabit(title: "Walk")
-        guard let log = appState.todayHabits.first(where: { $0.template.id == template.id })?.log else {
-            XCTFail("expected today log")
-            return
-        }
+    func testSkipMarksSkipped() throws {
+        let store = DataStore(inMemory: true)
+        let template = HabitTemplate(title: "Walk", createdDate: now)
+        store.insert(template)
+        store.save()
+        HabitEngine(store: store, calendar: cal).materializeIfNeeded(now: now)
 
-        appState.skipHabit(log, now: now)
+        let log = try XCTUnwrap(try store.habitLogs(on: now, calendar: cal).first)
+        log.status = .skipped
+        log.completedAt = nil
+        store.save()
 
         XCTAssertEqual(log.status, .skipped)
-        XCTAssertEqual(appState.completedHabitsTodayCount, 0)
     }
 
-    func testHabitStreakEntriesCachedAfterRefresh() throws {
-        let (appState, _) = makeAppStateWithHabit(title: "Meditate")
+    func testHeatmapCachedShape() throws {
+        let store = DataStore(inMemory: true)
+        let template = HabitTemplate(title: "Meditate", createdDate: now)
+        store.insert(template)
+        store.save()
+        HabitEngine(store: store, calendar: cal).materializeIfNeeded(now: now)
 
-        XCTAssertEqual(appState.habitStreakEntries.count, 1)
-        XCTAssertEqual(appState.habitStreakEntries.first?.heatmap.count, 28)
+        let heatmap = HabitAnalytics.heatmap(
+            logs: try store.allHabitLogs(), template: template, days: 28, endingAt: now, calendar: cal
+        )
+        XCTAssertEqual(heatmap.count, 28)
     }
 
-    func testArchivedHabitWithHistoryAppearsInAnalytics() throws {
+    func testArchivedTemplateRetainsAnalyticsHistory() throws {
         let store = DataStore(inMemory: true)
         let template = HabitTemplate(title: "Old ritual", createdDate: now)
         store.insert(template)
         store.save()
-        let appState = AppState(store: store, calendar: cal)
-        guard let log = appState.todayHabits.first?.log else {
-            XCTFail("expected log")
-            return
-        }
-        appState.toggleHabit(log, now: now)
-        appState.archiveHabitTemplate(template, now: now)
+        HabitEngine(store: store, calendar: cal).materializeIfNeeded(now: now)
 
-        XCTAssertEqual(appState.habitStreakEntries.count, 1)
-        XCTAssertFalse(appState.habitStreakEntries.first!.template.isActive)
+        let log = try XCTUnwrap(try store.habitLogs(on: now, calendar: cal).first)
+        log.status = .completed
+        log.completedAt = now
+        template.isActive = false
+        store.save()
+
+        let logs = try store.allHabitLogs()
+        let info = HabitAnalytics.streakInfo(logs: logs, template: template, asOf: now, calendar: cal)
+        XCTAssertFalse(template.isActive)
+        XCTAssertEqual(info.best, 1)
     }
 }

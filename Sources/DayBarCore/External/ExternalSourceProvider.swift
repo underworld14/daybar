@@ -22,4 +22,14 @@ public protocol ExternalSourceProvider: AnyObject {
     func apply(_ dto: ReminderDTO) async throws -> ReminderDTO
     /// Returns the reminder regardless of completion status; `nil` when deleted remotely.
     func fetchReminder(externalIdentifier: String) async throws -> ReminderDTO?
+
+    // MARK: - Recurring habit reminders
+
+    func fetchHabitReminders(calendarIdentifiers: [String]) async throws -> [HabitReminderDTO]
+    func createHabitReminder(
+        _ dto: HabitReminderDTO,
+        calendarIdentifier: String
+    ) async throws -> HabitReminderDTO
+    func applyHabitReminder(_ dto: HabitReminderDTO) async throws -> HabitReminderDTO
+    func fetchHabitReminder(externalIdentifier: String) async throws -> HabitReminderDTO?
 }
