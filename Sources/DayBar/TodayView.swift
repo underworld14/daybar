@@ -17,16 +17,24 @@ struct TodayView: View {
         VStack(alignment: .leading, spacing: 10) {
             header
             quickAdd
+            if appState.totalHabitsTodayCount > 0 { habitsProgressBar }
             if appState.totalTodayCount > 0 { progressBar }
+            if let milestone = appState.habitMilestoneMessage {
+                Text(milestone)
+                    .font(.caption)
+                    .foregroundStyle(.tint)
+                    .padding(.vertical, 2)
+            }
             Divider().padding(.top, 2)
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
+                    habitsSection
                     todaySection
                     if !appState.carriedTodos.isEmpty { carriedSection }
                 }
                 .padding(.vertical, 2)
             }
-            .frame(maxHeight: 360)
+            .frame(maxHeight: .infinity)
             Divider()
             PomodoroStrip(appState: appState)
         }
@@ -37,6 +45,15 @@ struct TodayView: View {
             DispatchQueue.main.async { addFocused = true }
         }
         .onChange(of: appState.quickAddFocusSignal) { _, _ in addFocused = true }
+        .onChange(of: appState.habitMilestoneMessage) { _, message in
+            guard let message else { return }
+            Task {
+                try? await Task.sleep(for: .seconds(3))
+                if appState.habitMilestoneMessage == message {
+                    appState.habitMilestoneMessage = nil
+                }
+            }
+        }
         .sheet(isPresented: $showSettings) {
             SettingsView(appState: appState)
         }
@@ -103,6 +120,16 @@ struct TodayView: View {
         addFocused = true // keep the field hot for multi-add
     }
 
+    private var habitsProgressBar: some View {
+        ProgressView(
+            value: Double(appState.completedHabitsTodayCount),
+            total: Double(max(1, appState.totalHabitsTodayCount))
+        )
+        .progressViewStyle(.linear)
+        .tint(.green)
+        .scaleEffect(x: 1, y: 0.6, anchor: .center)
+    }
+
     private var progressBar: some View {
         ProgressView(value: Double(appState.completedTodayCount), total: Double(max(1, appState.totalTodayCount)))
             .progressViewStyle(.linear)
@@ -111,6 +138,25 @@ struct TodayView: View {
     }
 
     // MARK: - Sections
+
+    private var habitsSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("HABITS").font(.caption2.weight(.semibold)).tracking(0.5).foregroundStyle(.secondary)
+                Spacer()
+                if appState.totalHabitsTodayCount > 0 {
+                    Text("\(appState.completedHabitsTodayCount)/\(appState.totalHabitsTodayCount)")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
+            }
+            if appState.todayHabits.isEmpty {
+                Text("No habits yet — add one in Settings.")
+                    .font(.caption).foregroundStyle(.secondary).padding(.vertical, 2)
+            } else {
+                ForEach(appState.todayHabits) { HabitRow(appState: appState, habit: $0) }
+            }
+        }
+    }
 
     private var todaySection: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -140,6 +186,63 @@ struct TodayView: View {
             }
             ForEach(appState.carriedTodos) { TodoRow(appState: appState, todo: $0, showReschedule: true) }
         }
+    }
+}
+
+/// A single habit row: checkbox, title, cue, and streak pill.
+struct HabitRow: View {
+    var appState: AppState
+    let habit: TodayHabit
+
+    @State private var hovering = false
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Button { appState.toggleHabit(habit.log) } label: {
+                Image(systemName: habit.log.isCompleted ? "checkmark.circle.fill" : "circle")
+                    .foregroundStyle(habit.log.isCompleted ? .green : .secondary)
+            }
+            .buttonStyle(.plain)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(habit.template.title)
+                    .strikethrough(habit.log.isCompleted)
+                    .foregroundStyle(habit.log.isCompleted ? .secondary : .primary)
+                    .lineLimit(1)
+                if !habit.template.cueText.isEmpty {
+                    Text(habit.template.cueText)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+
+            Spacer(minLength: 4)
+
+            if habit.currentStreak > 0 {
+                Text("\(habit.currentStreak)d")
+                    .font(.caption2.weight(.medium))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Capsule().fill(Color.green.opacity(0.15)))
+                    .foregroundStyle(.green)
+                    .help(habit.graceRemaining > 0 ? "\(habit.graceRemaining) grace day left this week" : "No grace days left this week")
+            }
+
+            Menu {
+                if !habit.log.isCompleted {
+                    Button("Skip today") { appState.skipHabit(habit.log) }
+                }
+            } label: {
+                Image(systemName: "ellipsis").foregroundStyle(.secondary)
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .opacity(hovering && !habit.log.isCompleted ? 1 : 0)
+        }
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
     }
 }
 

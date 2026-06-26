@@ -23,15 +23,54 @@ public struct TodoDTO: Codable, Sendable {
 
 public struct MetaDTO: Codable, Sendable {
     public var lastProcessedDay: Date?
+    public var lastHabitMaterializedDay: Date?
+}
+
+public struct HabitTemplateDTO: Codable, Sendable {
+    public var id: UUID
+    public var title: String
+    public var cueText: String
+    public var symbolName: String
+    public var sortOrder: Int
+    public var isActive: Bool
+    public var createdDate: Date
+    public var anchorHour: Int?
+    public var anchorMinute: Int?
+    public var notifyEnabled: Bool
+}
+
+public struct HabitLogDTO: Codable, Sendable {
+    public var id: UUID
+    public var templateId: UUID
+    public var day: Date
+    public var completedAt: Date?
+    public var statusRaw: String
 }
 
 public struct StoreSnapshotDTO: Codable, Sendable {
     public var todos: [TodoDTO]
     public var meta: MetaDTO?
+    public var habitTemplates: [HabitTemplateDTO]
+    public var habitLogs: [HabitLogDTO]
 
-    public init(todos: [TodoDTO], meta: MetaDTO? = nil) {
+    public init(
+        todos: [TodoDTO],
+        meta: MetaDTO? = nil,
+        habitTemplates: [HabitTemplateDTO] = [],
+        habitLogs: [HabitLogDTO] = []
+    ) {
         self.todos = todos
         self.meta = meta
+        self.habitTemplates = habitTemplates
+        self.habitLogs = habitLogs
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        todos = try c.decode([TodoDTO].self, forKey: .todos)
+        meta = try c.decodeIfPresent(MetaDTO.self, forKey: .meta)
+        habitTemplates = try c.decodeIfPresent([HabitTemplateDTO].self, forKey: .habitTemplates) ?? []
+        habitLogs = try c.decodeIfPresent([HabitLogDTO].self, forKey: .habitLogs) ?? []
     }
 }
 
@@ -55,6 +94,40 @@ public extension TodoDTO {
             priority: Priority(rawValue: priorityRaw) ?? .medium,
             delayCount: delayCount, snoozedUntil: snoozedUntil, pomodoroCount: pomodoroCount,
             source: TodoSource(rawValue: sourceRaw) ?? .local, externalIdentifier: externalIdentifier
+        )
+    }
+}
+
+public extension HabitTemplateDTO {
+    init(_ m: HabitTemplate) {
+        self.init(
+            id: m.id, title: m.title, cueText: m.cueText, symbolName: m.symbolName,
+            sortOrder: m.sortOrder, isActive: m.isActive, createdDate: m.createdDate,
+            anchorHour: m.anchorHour, anchorMinute: m.anchorMinute, notifyEnabled: m.notifyEnabled
+        )
+    }
+
+    func makeModel() -> HabitTemplate {
+        HabitTemplate(
+            id: id, title: title, cueText: cueText, symbolName: symbolName,
+            sortOrder: sortOrder, isActive: isActive, createdDate: createdDate,
+            anchorHour: anchorHour, anchorMinute: anchorMinute, notifyEnabled: notifyEnabled
+        )
+    }
+}
+
+public extension HabitLogDTO {
+    init(_ m: HabitLog) {
+        self.init(
+            id: m.id, templateId: m.templateId, day: m.day,
+            completedAt: m.completedAt, statusRaw: m.statusRaw
+        )
+    }
+
+    func makeModel() -> HabitLog {
+        HabitLog(
+            id: id, templateId: templateId, day: day, completedAt: completedAt,
+            status: HabitDayStatus(rawValue: statusRaw) ?? .pending
         )
     }
 }

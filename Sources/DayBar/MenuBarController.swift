@@ -27,6 +27,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private var statusItem: NSStatusItem!
     private var panel: FloatingPanel!
     private var outsideClickMonitor: Any?
+    private let panelWidth: CGFloat = 320
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -94,10 +95,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     private func setupPanel() {
         let hosting = NSHostingView(rootView: TodayView().environment(appState))
-        hosting.layoutSubtreeIfNeeded()
-        let fitting = hosting.fittingSize
-        let contentSize = NSSize(width: max(320, fitting.width), height: max(220, fitting.height))
         hosting.translatesAutoresizingMaskIntoConstraints = false
+        let contentSize = NSSize(width: panelWidth, height: desiredPanelHeight())
 
         // Frosted, rounded background so the panel reads like a native menu-bar popover
         // (the panel itself is clear; this view provides the material + corner radius).
@@ -105,9 +104,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         effect.material = .popover
         effect.blendingMode = .behindWindow
         effect.state = .active
-        effect.wantsLayer = true
-        effect.layer?.cornerRadius = 12
-        effect.layer?.masksToBounds = true
+        effect.maskImage = Self.roundedMaskImage(cornerRadius: 12)
         effect.addSubview(hosting)
         NSLayoutConstraint.activate([
             hosting.leadingAnchor.constraint(equalTo: effect.leadingAnchor),
@@ -140,6 +137,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         panel.contentView = effect
     }
 
+    /// A stretchable rounded-rect mask so the visual-effect view rounds cleanly — avoids the
+    /// white corner artifacts that `layer.cornerRadius` leaves on an NSVisualEffectView.
+    private static func roundedMaskImage(cornerRadius r: CGFloat) -> NSImage {
+        let edge = r * 2 + 1
+        let image = NSImage(size: NSSize(width: edge, height: edge), flipped: false) { rect in
+            NSColor.black.setFill()
+            NSBezierPath(roundedRect: rect, xRadius: r, yRadius: r).fill()
+            return true
+        }
+        image.capInsets = NSEdgeInsets(top: r, left: r, bottom: r, right: r)
+        image.resizingMode = .stretch
+        return image
+    }
+
+    /// Panel height sized to the current habit/task counts so a handful of rows don't force a
+    /// scroll; capped to 80% of the screen, then the list scrolls.
+    private func desiredPanelHeight() -> CGFloat {
+        var chrome: CGFloat = 196   // header + quick-add + dividers + pomodoro + padding
+        if appState.totalHabitsTodayCount > 0 { chrome += 14 } // habits progress bar
+        if appState.totalTodayCount > 0 { chrome += 14 }      // tasks progress bar
+        let rowHeight: CGFloat = 34   // habits may include a cue subtitle
+        let sectionHeader: CGFloat = 24
+        var rows: CGFloat = 0
+        if appState.totalHabitsTodayCount > 0 {
+            rows += sectionHeader + CGFloat(appState.totalHabitsTodayCount) * rowHeight
+        } else {
+            rows += sectionHeader + rowHeight // empty-state line
+        }
+        rows += sectionHeader + CGFloat(max(appState.totalTodayCount, 1)) * rowHeight
+        if !appState.carriedTodos.isEmpty {
+            rows += sectionHeader + CGFloat(appState.carriedTodos.count) * rowHeight
+        }
+        let screenHeight = (statusItem?.button?.window?.screen ?? NSScreen.main)?.visibleFrame.height ?? 800
+        return min(max(chrome + rows, 280), screenHeight * 0.8)
+    }
+
     @objc private func togglePanel() {
         if panel.isVisible { hidePanel() } else { showPanel() }
     }
@@ -157,6 +190,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     private func showPanel() {
         appState.refresh()
+        panel.setContentSize(NSSize(width: panelWidth, height: desiredPanelHeight()))
         positionPanel()
         NSApp.activate(ignoringOtherApps: true)
         panel.makeKeyAndOrderFront(nil)

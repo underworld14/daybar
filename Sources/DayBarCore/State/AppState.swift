@@ -16,11 +16,17 @@ public final class AppState {
     public let notifications = NotificationScheduler()
 
     @ObservationIgnored private let rollover: RolloverEngine
+    @ObservationIgnored private let habitEngine: HabitEngine
     @ObservationIgnored private let calendar: Calendar
     @ObservationIgnored private var observers: [any NSObjectProtocol] = []
+    @ObservationIgnored private var lastHabitNotifySignature: String?
 
     public private(set) var todayTodos: [DailyTodo] = []
     public private(set) var carriedTodos: [DailyTodo] = []
+    public private(set) var todayHabits: [TodayHabit] = []
+    public private(set) var habitStreakEntries: [HabitStreakEntry] = []
+    /// Ephemeral banner after hitting a streak milestone (7/30/100 days).
+    public var habitMilestoneMessage: String?
     public var isPanelPresented: Bool = false
     public var presentEndOfDayReview: Bool = false
     /// Bumped to ask the panel to focus the quick-add field (e.g. from the global hotkey).
@@ -32,6 +38,7 @@ public final class AppState {
         self.store = store
         self.calendar = calendar
         self.rollover = RolloverEngine(store: store, calendar: calendar)
+        self.habitEngine = HabitEngine(store: store, calendar: calendar)
         self.pomodoro = PomodoroEngine()
         self.pomodoro.onPhaseEnd = { [weak self] phase, elapsed, natural in
             self?.handlePhaseEnd(phase, elapsed: elapsed, completedNaturally: natural)
@@ -55,15 +62,21 @@ public final class AppState {
 
     public var completedTodayCount: Int { todayTodos.filter(\.isCompleted).count }
     public var totalTodayCount: Int { todayTodos.count }
+    public var completedHabitsTodayCount: Int { todayHabits.filter { $0.log.isCompleted }.count }
+    public var totalHabitsTodayCount: Int { todayHabits.count }
 
     // MARK: - Refresh
 
     /// Reconciles the day (idempotent rollover) and reloads the today/carried lists.
     public func refresh(now: Date = .now) {
         rollover.performRolloverIfNeeded(now: now)
+        habitEngine.materializeIfNeeded(now: now)
         todayTodos = (try? store.todos(on: now, calendar: calendar)) ?? []
         carriedTodos = (try? store.overdueIncompleteTodos(before: now, calendar: calendar)) ?? []
+        let rawHabits = (try? store.todayHabits(on: now, calendar: calendar)) ?? []
+        rebuildHabitCaches(rawHabits: rawHabits, now: now)
         notifications.updateBacklogNudge(agingCount: overdueCount, now: now, calendar: calendar)
+        rescheduleHabitNotificationsIfNeeded(now: now)
         maybePromptEndOfDayReview(now: now)
     }
 
@@ -118,6 +131,148 @@ public final class AppState {
         todo.status = .dropped
         store.save()
         refresh(now: now)
+    }
+
+    // MARK: - Habits
+
+    @discardableResult
+    public func addHabitTemplate(
+        title: String,
+        cueText: String = "",
+        symbolName: String = "circle",
+        anchorHour: Int? = nil,
+        anchorMinute: Int? = nil,
+        notifyEnabled: Bool = false,
+        now: Date = .now
+    ) -> HabitTemplate? {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let order = (try? store.activeHabitTemplates().count) ?? 0
+        let template = HabitTemplate(
+            title: trimmed,
+            cueText: cueText.trimmingCharacters(in: .whitespacesAndNewlines),
+            symbolName: symbolName,
+            sortOrder: order,
+            anchorHour: anchorHour,
+            anchorMinute: anchorMinute,
+            notifyEnabled: notifyEnabled
+        )
+        store.insert(template)
+        store.save()
+        invalidateHabitNotifications()
+        refresh(now: now)
+        return template
+    }
+
+    public func updateHabitTemplate(_ template: HabitTemplate, now: Date = .now) {
+        store.save()
+        invalidateHabitNotifications()
+        refresh(now: now)
+    }
+
+    public func archiveHabitTemplate(_ template: HabitTemplate, now: Date = .now) {
+        template.isActive = false
+        store.save()
+        invalidateHabitNotifications()
+        refresh(now: now)
+    }
+
+    public func toggleHabit(_ log: HabitLog, now: Date = .now) {
+        let priorStreak = habitStreakEntries.first(where: { $0.template.id == log.templateId })?.streak.current ?? 0
+        if log.isCompleted {
+            log.completedAt = nil
+            log.status = .pending
+            habitMilestoneMessage = nil
+        } else {
+            log.completedAt = now
+            log.status = .completed
+            let newStreak = priorStreak + 1
+            if HabitAnalytics.isMilestone(newStreak), newStreak > priorStreak,
+               let title = todayHabits.first(where: { $0.log.id == log.id })?.template.title {
+                habitMilestoneMessage = "\(newStreak) days of “\(title)” — keep going."
+            }
+        }
+        store.save()
+        refresh(now: now)
+    }
+
+    public func skipHabit(_ log: HabitLog, now: Date = .now) {
+        log.completedAt = nil
+        log.status = .skipped
+        store.save()
+        refresh(now: now)
+    }
+
+    public func streak(for templateId: UUID) -> Int {
+        habitStreakEntries.first(where: { $0.template.id == templateId })?.streak.current ?? 0
+    }
+
+    public func habitStatBuckets(granularity: Granularity, count: Int, now: Date = .now) -> [HabitStatBucket] {
+        let range = Analytics.range(endingAt: now, count: count, granularity: granularity, calendar: calendar)
+        let logs = (try? store.habitLogs(in: range)) ?? []
+        return HabitAnalytics.buckets(logs: logs, endingAt: now, count: count, granularity: granularity, calendar: calendar)
+    }
+
+    public func habitHeatmap(templateId: UUID) -> [HabitHeatmapCell] {
+        habitStreakEntries.first(where: { $0.template.id == templateId })?.heatmap ?? []
+    }
+
+    public func habitStreaks() -> [HabitStreakEntry] {
+        habitStreakEntries
+    }
+
+    /// Clears the notification debounce so the next `refresh()` reschedules habit anchors.
+    public func invalidateHabitNotifications() {
+        lastHabitNotifySignature = nil
+    }
+
+    private func rebuildHabitCaches(rawHabits: [TodayHabit], now: Date) {
+        let today = calendar.startOfDay(for: now)
+        let lookbackStart = calendar.date(
+            byAdding: .day, value: -HabitAnalytics.cacheLookbackDays, to: today
+        ) ?? today
+        let logs = (try? store.habitLogs(since: lookbackStart, through: today, calendar: calendar)) ?? []
+        let templates = analyticsTemplates(withHistoryIn: logs)
+        habitStreakEntries = templates.map { template in
+            let streak = HabitAnalytics.streakInfo(
+                logs: logs, templateId: template.id, asOf: now, calendar: calendar
+            )
+            let heatmap = HabitAnalytics.heatmap(
+                logs: logs, templateId: template.id, days: 28, endingAt: now, calendar: calendar
+            )
+            return HabitStreakEntry(template: template, streak: streak, heatmap: heatmap)
+        }
+        let streakByTemplate = Dictionary(uniqueKeysWithValues: habitStreakEntries.map { ($0.template.id, $0.streak) })
+        todayHabits = rawHabits.map { habit in
+            let info = streakByTemplate[habit.template.id]
+            return TodayHabit(
+                template: habit.template,
+                log: habit.log,
+                currentStreak: info?.current ?? 0,
+                graceRemaining: info?.graceRemaining ?? HabitAnalytics.gracePerWeek
+            )
+        }
+    }
+
+    private func analyticsTemplates(withHistoryIn logs: [HabitLog]) -> [HabitTemplate] {
+        let all = (try? store.allHabitTemplates()) ?? []
+        let loggedTemplateIds = Set(logs.map(\.templateId))
+        return all
+            .filter { $0.isActive || loggedTemplateIds.contains($0.id) }
+            .sorted { $0.sortOrder < $1.sortOrder }
+    }
+
+    private func rescheduleHabitNotificationsIfNeeded(now: Date = .now) {
+        let templates = (try? store.activeHabitTemplates()) ?? []
+        let logs = (try? store.habitLogs(on: now, calendar: calendar)) ?? []
+        let signature = HabitNotifySignature.make(
+            templates: templates,
+            todayLogs: logs,
+            habitNotifyEnabled: Preferences.habitNotifyEnabled
+        )
+        guard signature != lastHabitNotifySignature else { return }
+        lastHabitNotifySignature = signature
+        notifications.rescheduleHabitAnchors(templates: templates, todayLogs: logs)
     }
 
     /// One-button Pomodoro control: start when idle, pause when running, resume when paused.

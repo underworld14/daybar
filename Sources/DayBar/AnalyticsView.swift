@@ -2,11 +2,16 @@ import SwiftUI
 import Charts
 import DayBarCore
 
-/// Daily / weekly / monthly analytics: planned-vs-completed, completion-rate trend, and focus
-/// minutes. Read on the fly from the store via `appState.statBuckets`.
+private enum StatsTab: String, CaseIterable {
+    case tasks = "Tasks"
+    case habits = "Habits"
+}
+
+/// Daily / weekly / monthly analytics for tasks and habits.
 struct AnalyticsView: View {
     var appState: AppState
     @Environment(\.dismiss) private var dismiss
+    @State private var tab: StatsTab = .tasks
     @State private var granularity: Granularity = .day
 
     private func count(for g: Granularity) -> Int {
@@ -21,6 +26,10 @@ struct AnalyticsView: View {
         appState.statBuckets(granularity: granularity, count: count(for: granularity))
     }
 
+    private var habitBuckets: [HabitStatBucket] {
+        appState.habitStatBuckets(granularity: granularity, count: count(for: granularity))
+    }
+
     private var xUnit: Calendar.Component {
         switch granularity {
         case .day: return .day
@@ -30,8 +39,10 @@ struct AnalyticsView: View {
     }
 
     private var xDomain: ClosedRange<Date> {
-        let first = buckets.first?.date ?? Date.now
-        let last = Analytics.advance(buckets.last?.date ?? Date.now, granularity, by: 1)
+        let source = tab == .tasks ? buckets.first?.date : habitBuckets.first?.date
+        let lastSource = tab == .tasks ? buckets.last?.date : habitBuckets.last?.date
+        let first = source ?? Date.now
+        let last = Analytics.advance(lastSource ?? Date.now, granularity, by: 1)
         return first...last
     }
 
@@ -47,6 +58,11 @@ struct AnalyticsView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
+                    Picker("View", selection: $tab) {
+                        ForEach(StatsTab.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+
                     Picker("Range", selection: $granularity) {
                         Text("Day").tag(Granularity.day)
                         Text("Week").tag(Granularity.week)
@@ -54,19 +70,30 @@ struct AnalyticsView: View {
                     }
                     .pickerStyle(.segmented)
 
-                    summary
-                    chartSection("Planned vs completed") { plannedVsCompleted }
-                    chartSection("Completion rate") { completionRate }
-                    chartSection("Focus minutes") { focusMinutes }
-                    chartSection("Pomodoro sessions") { sessionsChart }
+                    if tab == .tasks {
+                        tasksContent
+                    } else {
+                        habitsContent
+                    }
                 }
                 .padding()
             }
         }
-        .frame(width: 460, height: 580)
+        .frame(width: 460, height: 640)
     }
 
-    private var summary: some View {
+    // MARK: - Tasks
+
+    @ViewBuilder
+    private var tasksContent: some View {
+        tasksSummary
+        chartSection("Planned vs completed") { plannedVsCompleted }
+        chartSection("Completion rate") { completionRate }
+        chartSection("Focus minutes") { focusMinutes }
+        chartSection("Pomodoro sessions") { sessionsChart }
+    }
+
+    private var tasksSummary: some View {
         let planned = buckets.reduce(0) { $0 + $1.planned }
         let completed = buckets.reduce(0) { $0 + $1.completed }
         let focus = buckets.reduce(0) { $0 + $1.focusMinutes }
@@ -74,8 +101,6 @@ struct AnalyticsView: View {
         let completedMinutes = buckets.reduce(0) { $0 + $1.completedMinutes }
         let rate = planned == 0 ? 0 : Int((Double(completed) / Double(planned) * 100).rounded())
         let avg = sessions == 0 ? 0 : completedMinutes / sessions
-        // "focus" = all real focused minutes (incl. partial skips); "avg/session" is over
-        // completed sessions only — they intentionally don't reconcile arithmetically.
         return HStack(spacing: 16) {
             stat("\(rate)%", "completion")
             stat(formatMinutes(focus), "focus")
@@ -83,6 +108,74 @@ struct AnalyticsView: View {
             stat("\(avg)m", "avg/session")
         }
     }
+
+    // MARK: - Habits
+
+    @ViewBuilder
+    private var habitsContent: some View {
+        habitsSummary
+        chartSection("Habit completion rate") { habitCompletionRate }
+        chartSection("Habits done") { habitsDoneChart }
+        consistencySection
+        streakSection
+    }
+
+    private var habitsSummary: some View {
+        let planned = habitBuckets.reduce(0) { $0 + $1.planned }
+        let completed = habitBuckets.reduce(0) { $0 + $1.completed }
+        let rate = planned == 0 ? 0 : Int((Double(completed) / Double(planned) * 100).rounded())
+        let dayCount = max(1, habitBuckets.filter { $0.planned > 0 }.count)
+        let avgPerDay = completed / dayCount
+        let longest = appState.habitStreaks().map(\.streak.current).max() ?? 0
+        return HStack(spacing: 16) {
+            stat("\(rate)%", "habits")
+            stat("\(avgPerDay)", "avg/day")
+            stat("\(longest)d", "longest")
+        }
+    }
+
+    private var consistencySection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("CONSISTENCY (28 DAYS)".uppercased())
+                .font(.caption2.weight(.semibold)).tracking(0.5).foregroundStyle(.secondary)
+            ForEach(appState.habitStreaks()) { entry in
+                HabitHeatmapRow(
+                    title: entry.template.title,
+                    cells: entry.heatmap,
+                    currentStreak: entry.streak.current,
+                    isArchived: !entry.template.isActive
+                )
+            }
+        }
+    }
+
+    private var streakSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("STREAKS".uppercased())
+                .font(.caption2.weight(.semibold)).tracking(0.5).foregroundStyle(.secondary)
+            ForEach(appState.habitStreaks()) { entry in
+                HStack {
+                    Text(entry.template.title)
+                        .lineLimit(1)
+                        .foregroundStyle(entry.template.isActive ? .primary : .secondary)
+                    if !entry.template.isActive {
+                        Text("archived")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
+                    Spacer()
+                    Text("\(entry.streak.current)d")
+                        .foregroundStyle(entry.template.isActive ? .green : .secondary)
+                    Text("(best \(entry.streak.best)d)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                .font(.caption)
+            }
+        }
+    }
+
+    // MARK: - Shared helpers
 
     private func formatMinutes(_ minutes: Int) -> String {
         if minutes >= 60 {
@@ -142,6 +235,38 @@ struct AnalyticsView: View {
         }
         .chartYScale(domain: 0...1)
         .chartYAxis { AxisMarks(format: FloatingPointFormatStyle<Double>.Percent()) }
+        .chartXScale(domain: xDomain)
+    }
+
+    private var habitCompletionRate: some View {
+        Chart {
+            ForEach(habitBuckets) { b in
+                LineMark(x: .value("Date", b.date, unit: xUnit), y: .value("Rate", b.completionRate))
+                    .interpolationMethod(.monotone)
+                    .foregroundStyle(Color.green)
+                PointMark(x: .value("Date", b.date, unit: xUnit), y: .value("Rate", b.completionRate))
+                    .foregroundStyle(Color.green)
+            }
+            RuleMark(y: .value("Target", 0.8))
+                .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
+                .foregroundStyle(.green.opacity(0.5))
+        }
+        .chartYScale(domain: 0...1)
+        .chartYAxis { AxisMarks(format: FloatingPointFormatStyle<Double>.Percent()) }
+        .chartXScale(domain: xDomain)
+    }
+
+    private var habitsDoneChart: some View {
+        let points = habitBuckets.flatMap {
+            [Point(date: $0.date, type: "Planned", count: $0.planned),
+             Point(date: $0.date, type: "Done", count: $0.completed)]
+        }
+        return Chart(points) { p in
+            BarMark(x: .value("Date", p.date, unit: xUnit), y: .value("Count", p.count))
+                .foregroundStyle(by: .value("Type", p.type))
+                .position(by: .value("Type", p.type))
+        }
+        .chartForegroundStyleScale(["Planned": Color.secondary.opacity(0.45), "Done": Color.green])
         .chartXScale(domain: xDomain)
     }
 

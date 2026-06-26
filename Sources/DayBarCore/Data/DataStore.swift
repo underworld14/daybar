@@ -11,7 +11,10 @@ public final class DataStore {
     public var context: ModelContext { container.mainContext }
 
     public init(inMemory: Bool = false) {
-        let schema = Schema([DailyTodo.self, AppMeta.self, FocusSession.self, DayLog.self])
+        let schema = Schema([
+            DailyTodo.self, AppMeta.self, FocusSession.self, DayLog.self,
+            HabitTemplate.self, HabitLog.self,
+        ])
         let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: inMemory)
         do {
             container = try ModelContainer(for: schema, configurations: [config])
@@ -140,12 +143,96 @@ public final class DataStore {
         return log
     }
 
+    // MARK: - Habits
+
+    @discardableResult
+    public func insert(_ template: HabitTemplate) -> HabitTemplate {
+        context.insert(template)
+        return template
+    }
+
+    @discardableResult
+    public func insert(_ log: HabitLog) -> HabitLog {
+        if hasHabitLog(templateId: log.templateId, day: log.day) {
+            return log
+        }
+        context.insert(log)
+        return log
+    }
+
+    public func delete(_ template: HabitTemplate) {
+        context.delete(template)
+    }
+
+    public func allHabitTemplates() throws -> [HabitTemplate] {
+        try context.fetch(FetchDescriptor<HabitTemplate>(
+            sortBy: [SortDescriptor(\.sortOrder), SortDescriptor(\.createdDate)]
+        ))
+    }
+
+    public func activeHabitTemplates() throws -> [HabitTemplate] {
+        try allHabitTemplates().filter(\.isActive)
+    }
+
+    public func habitLogs(on day: Date, calendar: Calendar = .current) throws -> [HabitLog] {
+        let start = calendar.startOfDay(for: day)
+        let end = calendar.date(byAdding: .day, value: 1, to: start) ?? start
+        let predicate = #Predicate<HabitLog> { $0.day >= start && $0.day < end }
+        return try context.fetch(FetchDescriptor(predicate: predicate, sortBy: [SortDescriptor(\.day)]))
+    }
+
+    public func habitLogs(in range: Range<Date>) throws -> [HabitLog] {
+        let start = range.lowerBound, end = range.upperBound
+        let predicate = #Predicate<HabitLog> { $0.day >= start && $0.day < end }
+        return try context.fetch(FetchDescriptor(predicate: predicate, sortBy: [SortDescriptor(\.day)]))
+    }
+
+    public func habitLogs(
+        since startDay: Date,
+        through endDay: Date,
+        calendar: Calendar = .current
+    ) throws -> [HabitLog] {
+        let start = calendar.startOfDay(for: startDay)
+        let end = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: endDay)) ?? start
+        return try habitLogs(in: start..<end)
+    }
+
+    public func allHabitLogs() throws -> [HabitLog] {
+        try context.fetch(FetchDescriptor<HabitLog>(sortBy: [SortDescriptor(\.day)]))
+    }
+
+    public func hasHabitLog(templateId: UUID, day: Date, calendar: Calendar = .current) -> Bool {
+        let logs = (try? habitLogs(on: day, calendar: calendar)) ?? []
+        return logs.contains { $0.templateId == templateId }
+    }
+
+    /// Active templates joined with today's logs, sorted by `sortOrder`.
+    public func todayHabits(on day: Date, calendar: Calendar = .current) throws -> [TodayHabit] {
+        let templates = try activeHabitTemplates()
+        let logs = try habitLogs(on: day, calendar: calendar)
+        let byTemplate = Dictionary(uniqueKeysWithValues: logs.map { ($0.templateId, $0) })
+        return templates.compactMap { template in
+            guard let log = byTemplate[template.id] else { return nil }
+            return TodayHabit(template: template, log: log)
+        }
+    }
+
     // MARK: - JSON export / import
 
     public func exportSnapshot() -> StoreSnapshotDTO {
         let todos = (try? allTodos()) ?? []
-        let last = (try? appMeta())?.lastProcessedDay
-        return StoreSnapshotDTO(todos: todos.map(TodoDTO.init), meta: MetaDTO(lastProcessedDay: last))
+        let meta = try? appMeta()
+        let habits = (try? allHabitTemplates()) ?? []
+        let habitLogs = (try? allHabitLogs()) ?? []
+        return StoreSnapshotDTO(
+            todos: todos.map(TodoDTO.init),
+            meta: MetaDTO(
+                lastProcessedDay: meta?.lastProcessedDay,
+                lastHabitMaterializedDay: meta?.lastHabitMaterializedDay
+            ),
+            habitTemplates: habits.map(HabitTemplateDTO.init),
+            habitLogs: habitLogs.map(HabitLogDTO.init)
+        )
     }
 
     /// Replace ALL todos with the snapshot's contents (used by Settings "Import"). Destructive
@@ -153,10 +240,15 @@ public final class DataStore {
     /// the re-inserts so preserved ids can't collide with the `@Attribute(.unique)` index.
     public func importSnapshot(_ snapshot: StoreSnapshotDTO) {
         for existing in (try? allTodos()) ?? [] { context.delete(existing) }
+        for existing in (try? allHabitTemplates()) ?? [] { context.delete(existing) }
+        for existing in (try? allHabitLogs()) ?? [] { context.delete(existing) }
         save()
         for dto in snapshot.todos { context.insert(dto.makeModel()) }
-        if let last = snapshot.meta?.lastProcessedDay, let meta = try? appMeta() {
-            meta.lastProcessedDay = last
+        for dto in snapshot.habitTemplates { context.insert(dto.makeModel()) }
+        for dto in snapshot.habitLogs { context.insert(dto.makeModel()) }
+        if let meta = try? appMeta() {
+            meta.lastProcessedDay = snapshot.meta?.lastProcessedDay
+            meta.lastHabitMaterializedDay = snapshot.meta?.lastHabitMaterializedDay
         }
         save()
     }
