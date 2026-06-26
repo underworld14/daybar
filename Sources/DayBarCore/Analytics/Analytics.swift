@@ -6,19 +6,24 @@ public enum Granularity: Sendable, CaseIterable {
 
 /// One aggregated period for the analytics charts.
 public struct StatBucket: Sendable, Identifiable {
-    public let date: Date   // start of the period
+    public let date: Date              // start of the period
     public var planned: Int
     public var completed: Int
-    public var focusMinutes: Int
+    public var focusMinutes: Int       // all real focused minutes (incl. partial skips)
+    public var sessions: Int           // completed Pomodoro sessions
+    public var completedMinutes: Int   // minutes from completed sessions only
 
     public var id: Date { date }
     public var completionRate: Double { planned == 0 ? 0 : Double(completed) / Double(planned) }
+    public var averageSessionMinutes: Int { sessions == 0 ? 0 : completedMinutes / sessions }
 
-    public init(date: Date, planned: Int = 0, completed: Int = 0, focusMinutes: Int = 0) {
+    public init(date: Date, planned: Int = 0, completed: Int = 0, focusMinutes: Int = 0, sessions: Int = 0, completedMinutes: Int = 0) {
         self.date = date
         self.planned = planned
         self.completed = completed
         self.focusMinutes = focusMinutes
+        self.sessions = sessions
+        self.completedMinutes = completedMinutes
     }
 }
 
@@ -78,6 +83,10 @@ public enum Analytics {
         for session in sessions {
             if let s = key(for: session.endedAt) {
                 map[s]?.focusMinutes += session.minutes
+                if session.completed {
+                    map[s]?.sessions += 1
+                    map[s]?.completedMinutes += session.minutes
+                }
             }
         }
         return starts.compactMap { map[$0] }

@@ -50,4 +50,16 @@ final class AnalyticsTests: XCTestCase {
         let buckets = Analytics.buckets(todos: todos, sessions: [], endingAt: now, count: 7, granularity: .day, calendar: cal)
         XCTAssertEqual(buckets.reduce(0) { $0 + $1.planned }, 0)
     }
+
+    func testSessionsCountCompletedOnly() {
+        let s = [
+            FocusSession(endedAt: now, minutes: 25, completed: true),
+            FocusSession(endedAt: now, minutes: 3, completed: false), // skipped
+        ]
+        let last = Analytics.buckets(todos: [], sessions: s, endingAt: now, count: 1, granularity: .day, calendar: cal).last!
+        XCTAssertEqual(last.focusMinutes, 28)       // all real minutes
+        XCTAssertEqual(last.sessions, 1)            // completed only
+        XCTAssertEqual(last.completedMinutes, 25)
+        XCTAssertEqual(last.averageSessionMinutes, 25)
+    }
 }

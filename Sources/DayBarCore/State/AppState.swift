@@ -31,7 +31,9 @@ public final class AppState {
         self.calendar = calendar
         self.rollover = RolloverEngine(store: store, calendar: calendar)
         self.pomodoro = PomodoroEngine()
-        self.pomodoro.onPhaseEnd = { [weak self] phase in self?.handlePhaseEnd(phase) }
+        self.pomodoro.onPhaseEnd = { [weak self] phase, elapsed, natural in
+            self?.handlePhaseEnd(phase, elapsed: elapsed, completedNaturally: natural)
+        }
         applyPreferences()
         refresh()
         observeSystem()
@@ -190,10 +192,13 @@ public final class AppState {
         refresh()
     }
 
-    private func handlePhaseEnd(_ phase: PomodoroPhase) {
+    private func handlePhaseEnd(_ phase: PomodoroPhase, elapsed: TimeInterval, completedNaturally: Bool) {
         if phase == .work {
-            store.insert(FocusSession(endedAt: .now, minutes: Int(pomodoro.config.workDuration / 60)))
-            store.save()
+            let minutes = Int((elapsed / 60).rounded())
+            if minutes > 0 {
+                store.insert(FocusSession(endedAt: .now, minutes: minutes, completed: completedNaturally))
+                store.save()
+            }
         }
         #if canImport(AppKit)
         if Preferences.soundEnabled { AppKitBridge.playPhaseEndSound(named: Preferences.soundName) }

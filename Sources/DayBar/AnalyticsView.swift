@@ -58,6 +58,7 @@ struct AnalyticsView: View {
                     chartSection("Planned vs completed") { plannedVsCompleted }
                     chartSection("Completion rate") { completionRate }
                     chartSection("Focus minutes") { focusMinutes }
+                    chartSection("Pomodoro sessions") { sessionsChart }
                 }
                 .padding()
             }
@@ -69,12 +70,24 @@ struct AnalyticsView: View {
         let planned = buckets.reduce(0) { $0 + $1.planned }
         let completed = buckets.reduce(0) { $0 + $1.completed }
         let focus = buckets.reduce(0) { $0 + $1.focusMinutes }
+        let sessions = buckets.reduce(0) { $0 + $1.sessions }
+        let completedMinutes = buckets.reduce(0) { $0 + $1.completedMinutes }
         let rate = planned == 0 ? 0 : Int((Double(completed) / Double(planned) * 100).rounded())
+        let avg = sessions == 0 ? 0 : completedMinutes / sessions
         return HStack(spacing: 16) {
             stat("\(rate)%", "completion")
-            stat("\(completed)/\(planned)", "done")
-            stat("\(focus)m", "focus")
+            stat(formatMinutes(focus), "focus")
+            stat("\(sessions)", "sessions")
+            stat("\(avg)m", "avg/session")
         }
+    }
+
+    private func formatMinutes(_ minutes: Int) -> String {
+        if minutes >= 60 {
+            let h = minutes / 60, m = minutes % 60
+            return m == 0 ? "\(h)h" : "\(h)h \(m)m"
+        }
+        return "\(minutes)m"
     }
 
     private func stat(_ value: String, _ label: String) -> some View {
@@ -134,6 +147,14 @@ struct AnalyticsView: View {
         Chart(buckets) { b in
             BarMark(x: .value("Date", b.date, unit: xUnit), y: .value("Minutes", b.focusMinutes))
                 .foregroundStyle(Color.orange.gradient)
+        }
+        .chartXScale(domain: xDomain)
+    }
+
+    private var sessionsChart: some View {
+        Chart(buckets) { b in
+            BarMark(x: .value("Date", b.date, unit: xUnit), y: .value("Sessions", b.sessions))
+                .foregroundStyle(Color.accentColor.gradient)
         }
         .chartXScale(domain: xDomain)
     }

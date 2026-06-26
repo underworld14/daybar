@@ -54,7 +54,8 @@ public final class PomodoroEngine {
     public var config: PomodoroConfig
 
     /// Fired when a phase reaches zero, with the phase that just finished.
-    public var onPhaseEnd: ((PomodoroPhase) -> Void)?
+    /// Fired when a phase ends: `(finishedPhase, elapsedSeconds, completedNaturally)`.
+    public var onPhaseEnd: ((PomodoroPhase, TimeInterval, Bool) -> Void)?
 
     @ObservationIgnored private var timer: Timer?
     @ObservationIgnored private var activityToken: (any NSObjectProtocol)?
@@ -122,7 +123,7 @@ public final class PomodoroEngine {
     /// Skip to the next phase as though the current one just ended.
     public func skip(now: Date = .now) {
         guard phase != .idle else { return }
-        handlePhaseEnd(now: now)
+        handlePhaseEnd(now: now, naturally: false)
     }
 
     /// Recompute remaining from the wall-clock `endDate`; fire the transition if elapsed.
@@ -132,7 +133,7 @@ public final class PomodoroEngine {
         let rem = end.timeIntervalSince(now)
         if rem <= 0 {
             remaining = 0
-            handlePhaseEnd(now: now)
+            handlePhaseEnd(now: now, naturally: true)
         } else {
             remaining = rem
         }
@@ -150,12 +151,14 @@ public final class PomodoroEngine {
         }
     }
 
-    private func handlePhaseEnd(now: Date) {
+    private func handlePhaseEnd(now: Date, naturally: Bool) {
         let finished = phase
+        let remainingAtEnd = naturally ? 0 : max(0, endDate?.timeIntervalSince(now) ?? remaining)
+        let elapsed = max(0, duration(for: finished) - remainingAtEnd)
         teardownTimer()
         endActivity()
         if finished == .work { completedWorkCount += 1 }
-        onPhaseEnd?(finished)
+        onPhaseEnd?(finished, elapsed, naturally)
 
         let next = nextPhase(after: finished)
         if config.autoStartNext {
