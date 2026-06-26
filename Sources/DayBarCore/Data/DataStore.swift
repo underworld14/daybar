@@ -18,7 +18,12 @@ public final class DataStore {
         } catch {
             fatalError("DayBar: failed to create ModelContainer: \(error)")
         }
-        if !inMemory { importLegacyJSONIfNeeded() }
+        if !inMemory {
+            performLegacyImport(
+                snapshot: JSONStore.loadLegacy(),
+                legacyFileExists: FileManager.default.fileExists(atPath: JSONStore.legacyFileURL.path)
+            )
+        }
     }
 
     /// Explicit save — SwiftData autosave can fail silently, so mutations call this.
@@ -92,9 +97,12 @@ public final class DataStore {
         return StoreSnapshotDTO(todos: todos.map(TodoDTO.init), meta: MetaDTO(lastProcessedDay: last))
     }
 
-    /// Replace all todos with the snapshot's contents (used by Settings "Import").
+    /// Replace ALL todos with the snapshot's contents (used by Settings "Import"). Destructive
+    /// by design — the caller should confirm with the user first. Deletes are committed before
+    /// the re-inserts so preserved ids can't collide with the `@Attribute(.unique)` index.
     public func importSnapshot(_ snapshot: StoreSnapshotDTO) {
         for existing in (try? allTodos()) ?? [] { context.delete(existing) }
+        save()
         for dto in snapshot.todos { context.insert(dto.makeModel()) }
         if let last = snapshot.meta?.lastProcessedDay, let meta = try? appMeta() {
             meta.lastProcessedDay = last
@@ -102,15 +110,35 @@ public final class DataStore {
         save()
     }
 
-    /// One-time migration of the Phase-1 JSON store into SwiftData (guarded by AppMeta).
-    private func importLegacyJSONIfNeeded() {
+    /// One-time migration of the Phase-1 JSON store into SwiftData. Idempotent (guarded by
+    /// `AppMeta.didImportLegacyJSON`). Internal + injectable so it is unit-testable. The guard
+    /// is burned only once the migration is genuinely settled: a present-but-unreadable file
+    /// leaves it unset so a transient read failure retries next launch instead of silently
+    /// discarding the Phase-1 data.
+    func performLegacyImport(snapshot: StoreSnapshotDTO?, legacyFileExists: Bool) {
         guard let meta = try? appMeta(), !meta.didImportLegacyJSON else { return }
-        meta.didImportLegacyJSON = true
+
+        // Store already has data → migration is effectively done; never overwrite.
         let count = (try? context.fetchCount(FetchDescriptor<DailyTodo>())) ?? 0
-        if count == 0, let snapshot = JSONStore.loadLegacy() {
-            for dto in snapshot.todos { context.insert(dto.makeModel()) }
-            if let last = snapshot.meta?.lastProcessedDay { meta.lastProcessedDay = last }
+        if count > 0 {
+            meta.didImportLegacyJSON = true
+            save()
+            return
         }
+
+        // No legacy file → nothing to migrate, ever.
+        if !legacyFileExists {
+            meta.didImportLegacyJSON = true
+            save()
+            return
+        }
+
+        // File present but unreadable/corrupt → leave the guard unset and retry next launch.
+        guard let snapshot else { return }
+
+        for dto in snapshot.todos { context.insert(dto.makeModel()) }
+        if let last = snapshot.meta?.lastProcessedDay { meta.lastProcessedDay = last }
+        meta.didImportLegacyJSON = true
         save()
     }
 }
