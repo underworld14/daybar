@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import Observation
 import DayBarCore
 
 /// A floating panel that can take key focus, so the quick-add `TextField` works.
@@ -39,15 +40,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let button = statusItem.button else { return }
         button.target = self
         button.action = #selector(togglePanel)
+        button.imagePosition = .imageLeading
+        // Monospaced digits so the live mm:ss countdown doesn't jitter the bar width.
+        button.font = .monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
+        updateStatusItem()
+        trackStatusUpdates()
+    }
 
-        let label = PassthroughHostingView(rootView: MenuBarLabel(appState: appState))
-        label.translatesAutoresizingMaskIntoConstraints = false
-        button.addSubview(label)
-        NSLayoutConstraint.activate([
-            label.centerYAnchor.constraint(equalTo: button.centerYAnchor),
-            label.leadingAnchor.constraint(equalTo: button.leadingAnchor, constant: 6),
-            label.trailingAnchor.constraint(equalTo: button.trailingAnchor, constant: -6),
-        ])
+    /// Reflect Pomodoro / overdue state in the menu-bar button: a live mm:ss countdown next to
+    /// the timer glyph while a phase runs, otherwise the app glyph with an amber overdue count.
+    private func updateStatusItem() {
+        guard let button = statusItem.button else { return }
+        let pomo = appState.pomodoro
+
+        let symbol = pomo.phase == .idle ? "checklist" : (pomo.phase.isBreak ? "cup.and.saucer.fill" : "timer")
+        let image = NSImage(systemSymbolName: symbol, accessibilityDescription: "DayBar")
+        image?.isTemplate = true
+        button.image = image
+
+        if pomo.isRunning {
+            button.title = " " + pomo.remainingString
+        } else if appState.overdueCount > 0 {
+            button.title = " \(appState.overdueCount)"
+        } else {
+            button.title = ""
+        }
+    }
+
+    /// Refresh the button whenever the timer ticks or the overdue count changes — reusing the
+    /// engine's existing 1-second tick (no extra timer). Self-re-arms after each change.
+    private func trackStatusUpdates() {
+        withObservationTracking {
+            _ = appState.pomodoro.phase
+            _ = appState.pomodoro.remaining
+            _ = appState.pomodoro.isRunning
+            _ = appState.overdueCount
+        } onChange: { [weak self] in
+            Task { @MainActor in
+                self?.updateStatusItem()
+                self?.trackStatusUpdates()
+            }
+        }
     }
 
     // MARK: - Panel
