@@ -56,6 +56,29 @@ final class ReminderMappingTests: XCTestCase {
         XCTAssertEqual(todo.externalIdentifier, "r2")
     }
 
+    func testDroppedNotReopenedByIncompleteRemote() {
+        let todo = DailyTodo(
+            title: "Dropped",
+            plannedForDate: today,
+            originalPlannedDate: today,
+            status: .dropped,
+            source: .reminders,
+            externalIdentifier: "r-drop"
+        )
+        let dto = ReminderDTO(
+            externalIdentifier: "r-drop",
+            title: "Remote title",
+            dueDate: today,
+            isCompleted: false,
+            calendarIdentifier: "list-1",
+            modifiedAt: now
+        )
+        ReminderMapping.apply(dto, to: todo, today: now, calendar: cal)
+        XCTAssertEqual(todo.status, .dropped)
+        XCTAssertEqual(todo.title, "Remote title")
+        XCTAssertEqual(todo.externalModifiedAt, now)
+    }
+
     func testDtoRoundTrip() {
         let todo = DailyTodo(
             title: "Task",

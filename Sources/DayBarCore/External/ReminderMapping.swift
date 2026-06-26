@@ -10,6 +10,14 @@ public enum ReminderMapping {
     }
 
     public static func apply(_ dto: ReminderDTO, to todo: DailyTodo, today: Date, calendar: Calendar) {
+        // Locally dropped items stay dropped until push completes; don't reopen from stale remote.
+        if todo.status == .dropped, !dto.isCompleted {
+            todo.title = dto.title
+            todo.notes = dto.notes
+            todo.externalModifiedAt = dto.modifiedAt
+            return
+        }
+
         let planned = plannedDay(for: dto, today: today, calendar: calendar)
         todo.title = dto.title
         todo.notes = dto.notes

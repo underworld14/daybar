@@ -76,9 +76,17 @@ struct RemindersSettingsSection: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
-                    Button("Sync now") {
-                        appState.invalidateRemindersSync()
-                        appState.refresh()
+                    HStack {
+                        Button("Sync now") {
+                            appState.invalidateRemindersSync()
+                            appState.refresh()
+                        }
+                        .disabled(appState.isRemindersSyncing)
+
+                        if appState.isRemindersSyncing {
+                            ProgressView()
+                                .controlSize(.small)
+                        }
                     }
                 }
             }

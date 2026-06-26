@@ -31,7 +31,16 @@ final class PersistenceTests: XCTestCase {
     }
 
     func testJSONRoundTrip() throws {
-        let model = DailyTodo(title: "x", plannedForDate: now, originalPlannedDate: now, status: .carriedOver)
+        let modified = Date(timeIntervalSince1970: 1_700_000_100)
+        let model = DailyTodo(
+            title: "x",
+            plannedForDate: now,
+            originalPlannedDate: now,
+            status: .carriedOver,
+            source: .reminders,
+            externalIdentifier: "ext-json"
+        )
+        model.externalModifiedAt = modified
         let template = HabitTemplate(title: "Read")
         let habitLog = HabitLog(templateId: template.id, day: now, status: .completed)
         let snapshot = StoreSnapshotDTO(
@@ -44,6 +53,9 @@ final class PersistenceTests: XCTestCase {
         let decoded = try JSONStore.decode(data)
         XCTAssertEqual(decoded.todos.count, 1)
         XCTAssertEqual(decoded.todos.first?.statusRaw, TodoStatus.carriedOver.rawValue)
+        XCTAssertEqual(decoded.todos.first?.externalIdentifier, "ext-json")
+        XCTAssertEqual(decoded.todos.first?.externalModifiedAt, modified)
+        XCTAssertEqual(decoded.todos.first?.makeModel().externalModifiedAt, modified)
         XCTAssertEqual(decoded.meta?.lastProcessedDay, now)
         XCTAssertEqual(decoded.habitTemplates.count, 1)
         XCTAssertEqual(decoded.habitLogs.count, 1)

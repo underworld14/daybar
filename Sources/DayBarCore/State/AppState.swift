@@ -28,6 +28,7 @@ public final class AppState {
 
     public private(set) var remindersLastSyncedAt: Date?
     public private(set) var remindersLastSyncError: String?
+    public private(set) var isRemindersSyncing = false
 
     public private(set) var todayTodos: [DailyTodo] = []
     public private(set) var carriedTodos: [DailyTodo] = []
@@ -53,6 +54,7 @@ public final class AppState {
         self.habitEngine = HabitEngine(store: store, calendar: calendar)
         let provider = remindersProvider ?? RemindersAdapter(calendar: calendar)
         self.remindersSync = RemindersSyncEngine(store: store, provider: provider, calendar: calendar)
+        self.remindersLastSyncedAt = remindersSync.lastSyncedAt
         self.pomodoro = PomodoroEngine()
         self.pomodoro.onPhaseEnd = { [weak self] phase, elapsed, natural in
             self?.handlePhaseEnd(phase, elapsed: elapsed, completedNaturally: natural)
@@ -115,9 +117,11 @@ public final class AppState {
     private func runRemindersSync(now: Date) {
         let force = forceRemindersSync
         forceRemindersSync = false
+        isRemindersSyncing = true
         remindersSyncTask = Task { @MainActor [weak self] in
             guard let self else { return }
             defer {
+                self.isRemindersSyncing = false
                 self.remindersSyncTask = nil
                 self.remindersLastSyncedAt = self.remindersSync.lastSyncedAt
                 self.remindersLastSyncError = self.remindersSync.lastSyncError

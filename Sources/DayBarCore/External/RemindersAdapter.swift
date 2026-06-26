@@ -101,7 +101,7 @@ public final class RemindersAdapter: ExternalSourceProvider {
         return mapReminder(reminder)
     }
 
-    public func apply(_ dto: ReminderDTO) async throws {
+    public func apply(_ dto: ReminderDTO) async throws -> ReminderDTO {
         guard let reminder = eventStore.calendarItem(withIdentifier: dto.externalIdentifier) as? EKReminder else {
             throw RemindersProviderError.reminderNotFound(dto.externalIdentifier)
         }
@@ -119,6 +119,7 @@ public final class RemindersAdapter: ExternalSourceProvider {
         reminder.isCompleted = dto.isCompleted
         reminder.completionDate = dto.isCompleted ? (dto.completionDate ?? Date()) : nil
         try eventStore.save(reminder, commit: true)
+        return mapReminder(reminder)
     }
 
     // MARK: - Private

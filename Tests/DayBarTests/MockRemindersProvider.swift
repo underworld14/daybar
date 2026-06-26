@@ -9,6 +9,10 @@ final class MockRemindersProvider: ExternalSourceProvider {
     var applied: [ReminderDTO] = []
     var created: [ReminderDTO] = []
     var shouldThrow = false
+    var failApplyIdentifiers: Set<String> = []
+    var fetchReminderThrowIdentifiers: Set<String> = []
+    var fetchIncompleteDelayNanoseconds: UInt64 = 0
+    var fetchIncompleteCallCount = 0
 
     func requestAccess() async throws -> Bool {
         accessStatus = .authorized
@@ -26,6 +30,10 @@ final class MockRemindersProvider: ExternalSourceProvider {
         includeUndated: Bool
     ) async throws -> [ReminderDTO] {
         if shouldThrow { throw NSError(domain: "test", code: 1) }
+        fetchIncompleteCallCount += 1
+        if fetchIncompleteDelayNanoseconds > 0 {
+            try await Task.sleep(nanoseconds: fetchIncompleteDelayNanoseconds)
+        }
         return reminders.filter { calendarIdentifiers.contains($0.calendarIdentifier) && !$0.isCompleted }
     }
 
@@ -50,20 +58,25 @@ final class MockRemindersProvider: ExternalSourceProvider {
         return dto
     }
 
-    func apply(_ dto: ReminderDTO) async throws {
-        guard reminders.contains(where: { $0.externalIdentifier == dto.externalIdentifier }) else {
+    func apply(_ dto: ReminderDTO) async throws -> ReminderDTO {
+        if failApplyIdentifiers.contains(dto.externalIdentifier) {
+            throw RemindersProviderError.reminderNotFound(dto.externalIdentifier)
+        }
+        guard let idx = reminders.firstIndex(where: { $0.externalIdentifier == dto.externalIdentifier }) else {
             throw RemindersProviderError.reminderNotFound(dto.externalIdentifier)
         }
         applied.append(dto)
-        if let idx = reminders.firstIndex(where: { $0.externalIdentifier == dto.externalIdentifier }) {
-            var updated = dto
-            updated.modifiedAt = dto.completionDate ?? dto.modifiedAt ?? Date()
-            reminders[idx] = updated
-        }
+        var updated = dto
+        updated.modifiedAt = dto.completionDate ?? dto.modifiedAt ?? Date()
+        reminders[idx] = updated
+        return updated
     }
 
     func fetchReminder(externalIdentifier: String) async throws -> ReminderDTO? {
         if shouldThrow { throw NSError(domain: "test", code: 1) }
+        if fetchReminderThrowIdentifiers.contains(externalIdentifier) {
+            throw NSError(domain: "test", code: 2)
+        }
         return reminders.first { $0.externalIdentifier == externalIdentifier }
     }
 }

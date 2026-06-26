@@ -292,11 +292,80 @@ final class RemindersSyncEngineTests: XCTestCase {
         let (store, mock, engine) = makeEngine()
         mock.shouldThrow = true
 
-        _ = await engine.reconcileIfNeeded(now: now, force: true)
+        let changed = await engine.reconcileIfNeeded(now: now, force: true)
+        XCTAssertFalse(changed)
 
         let meta = try store.appMeta()
         XCTAssertNil(meta.remindersLastSyncedAt)
         XCTAssertNotNil(engine.lastSyncError)
+    }
+
+    func testHydratesLastSyncedFromMeta() throws {
+        let store = DataStore(inMemory: true)
+        let meta = try store.appMeta()
+        meta.remindersLastSyncedAt = now
+        store.save()
+
+        let engine = RemindersSyncEngine(store: store, provider: MockRemindersProvider(), calendar: cal)
+        XCTAssertEqual(engine.lastSyncedAt, now)
+    }
+
+    func testPushFailureSurvivesSuccessfulPull() async throws {
+        let (store, mock, engine) = makeEngine()
+        let todo = DailyTodo(
+            title: "Push fail",
+            plannedForDate: today,
+            originalPlannedDate: today,
+            source: .reminders,
+            externalIdentifier: "ext-push-fail"
+        )
+        store.insert(todo)
+        store.save()
+        mock.reminders = [
+            ReminderDTO(
+                externalIdentifier: "ext-other",
+                title: "Other",
+                dueDate: today,
+                calendarIdentifier: "list-1"
+            ),
+        ]
+        mock.failApplyIdentifiers = ["ext-push-fail"]
+
+        todo.completedDate = now
+        todo.status = .completed
+        engine.enqueuePush(for: todo)
+        _ = await engine.reconcileIfNeeded(now: now, force: true)
+
+        XCTAssertNotNil(engine.lastSyncError)
+        XCTAssertNil(try store.appMeta().remindersLastSyncedAt)
+    }
+
+    func testReconcileFailureDoesNotUpdateMeta() async throws {
+        let (store, mock, engine) = makeEngine()
+        store.insert(DailyTodo(
+            title: "Bad reconcile",
+            plannedForDate: today,
+            originalPlannedDate: today,
+            source: .reminders,
+            externalIdentifier: "ext-bad-reconcile"
+        ))
+        store.save()
+        mock.reminders = [
+            ReminderDTO(
+                externalIdentifier: "ext-bad-reconcile",
+                title: "Bad reconcile",
+                dueDate: today,
+                isCompleted: true,
+                completionDate: now,
+                calendarIdentifier: "list-1"
+            ),
+        ]
+        mock.fetchReminderThrowIdentifiers = ["ext-bad-reconcile"]
+
+        _ = await engine.reconcileIfNeeded(now: now, force: true)
+
+        XCTAssertNotNil(engine.lastSyncError)
+        XCTAssertNil(try store.appMeta().remindersLastSyncedAt)
     }
 
     func testSkipsWhenSyncDisabled() async {

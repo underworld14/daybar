@@ -18,7 +18,8 @@ public protocol ExternalSourceProvider: AnyObject {
         priority: Priority,
         calendarIdentifier: String
     ) async throws -> ReminderDTO
-    func apply(_ dto: ReminderDTO) async throws
+    /// Applies changes and returns the post-save reminder (for `lastModifiedDate`).
+    func apply(_ dto: ReminderDTO) async throws -> ReminderDTO
     /// Returns the reminder regardless of completion status; `nil` when deleted remotely.
     func fetchReminder(externalIdentifier: String) async throws -> ReminderDTO?
 }
