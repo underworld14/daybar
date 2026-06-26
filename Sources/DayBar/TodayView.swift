@@ -120,10 +120,11 @@ struct TodayView: View {
     }
 
     private var progressBar: some View {
-        ProgressView(value: Double(appState.completedTodayCount), total: Double(max(1, appState.totalTodayCount)))
-            .progressViewStyle(.linear)
-            .tint(.accentColor)
-            .scaleEffect(x: 1, y: 0.6, anchor: .center)
+        StackedTodoProgressBar(
+            done: appState.completedTodayCount,
+            inProgress: appState.inProgressTodayCount,
+            total: appState.totalTodayCount
+        )
     }
 
     // MARK: - Sections
@@ -155,7 +156,7 @@ struct TodayView: View {
             HStack {
                 Text("TODAY").font(.caption2.weight(.semibold)).tracking(0.5).foregroundStyle(.secondary)
                 Spacer()
-                Text("\(appState.completedTodayCount)/\(appState.totalTodayCount)")
+                todoProgressLabel
                     .font(.caption2).foregroundStyle(.secondary)
             }
             if appState.todayTodos.isEmpty {
@@ -168,6 +169,16 @@ struct TodayView: View {
                 }
             }
         }
+    }
+
+    private var todoProgressLabel: Text {
+        let done = appState.completedTodayCount
+        let active = appState.inProgressTodayCount
+        let total = appState.totalTodayCount
+        if active > 0 {
+            return Text("\(done) done · \(active) active · \(total)")
+        }
+        return Text("\(done)/\(total)")
     }
 
     private var carriedSection: some View {
@@ -258,12 +269,13 @@ struct TodoRow: View {
     var body: some View {
         HStack(spacing: 8) {
             Button {
-                appState.toggleComplete(todo)
+                appState.advanceTodo(todo)
             } label: {
-                Image(systemName: todo.isCompleted ? "checkmark.circle.fill" : "circle")
-                    .foregroundStyle(todo.isCompleted ? .green : .secondary)
+                Image(systemName: todoStatusIcon)
+                    .foregroundStyle(todoStatusColor)
             }
             .buttonStyle(.plain)
+            .help("Tap: to-do → in progress → done")
 
             if isEditing {
                 TextField("Task", text: $draft)
@@ -285,6 +297,7 @@ struct TodoRow: View {
                     Text(todo.title)
                         .strikethrough(todo.isCompleted)
                         .foregroundStyle(todo.isCompleted ? .secondary : .primary)
+                        .fontWeight(todo.isInProgress ? .medium : .regular)
                         .lineLimit(2)
                 }
                 .contentShape(Rectangle())
@@ -301,7 +314,12 @@ struct TodoRow: View {
             if !isEditing {
                 Menu {
                     if todo.isCompleted {
-                        Button("Mark incomplete") { appState.toggleComplete(todo) }
+                        Button("Reset to to-do") { appState.resetTodo(todo) }
+                    } else if todo.isInProgress {
+                        Button("Mark done") { appState.advanceTodo(todo) }
+                        Button("Reset to to-do") { appState.resetTodo(todo) }
+                    } else {
+                        Button("Start") { appState.advanceTodo(todo) }
                     }
                     Button("Edit", action: beginEdit)
                     if showReschedule { Button("Bring to today") { appState.reschedule(todo) } }
@@ -337,6 +355,66 @@ struct TodoRow: View {
     private func cancelEdit() {
         isEditing = false
         fieldFocused = false
+    }
+
+    private var todoStatusIcon: String {
+        if todo.isCompleted { return "checkmark.circle.fill" }
+        if todo.isInProgress { return "circle.lefthalf.filled" }
+        return "circle"
+    }
+
+    private var todoStatusColor: Color {
+        if todo.isCompleted { return .green }
+        if todo.isInProgress { return .accentColor }
+        return .secondary
+    }
+}
+
+/// Stacked bar: done (green) + in progress (accent) in one track.
+struct StackedTodoProgressBar: View {
+    let done: Int
+    let inProgress: Int
+    let total: Int
+
+    var body: some View {
+        let denom = max(1, total)
+        let doneFraction = CGFloat(done) / CGFloat(denom)
+        let progressFraction = CGFloat(inProgress) / CGFloat(denom)
+
+        VStack(alignment: .leading, spacing: 4) {
+            GeometryReader { geo in
+                let width = geo.size.width
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(Color.secondary.opacity(0.18))
+                    HStack(spacing: 0) {
+                        if done > 0 {
+                            Capsule()
+                                .fill(Color.green)
+                                .frame(width: width * doneFraction)
+                        }
+                        if inProgress > 0 {
+                            Capsule()
+                                .fill(Color.accentColor)
+                                .frame(width: width * progressFraction)
+                        }
+                    }
+                }
+            }
+            .frame(height: 6)
+
+            HStack(spacing: 10) {
+                if done > 0 {
+                    Label("\(done) done", systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                }
+                if inProgress > 0 {
+                    Label("\(inProgress) active", systemImage: "circle.lefthalf.filled")
+                        .foregroundStyle(Color.accentColor)
+                }
+            }
+            .font(.caption2)
+        }
     }
 }
 

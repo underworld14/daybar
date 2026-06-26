@@ -77,6 +77,7 @@ public final class AppState {
     }
 
     public var completedTodayCount: Int { todayTodos.filter(\.isCompleted).count }
+    public var inProgressTodayCount: Int { todayTodos.filter(\.isInProgress).count }
     public var totalTodayCount: Int { todayTodos.count }
     public var completedHabitsTodayCount: Int { todayHabits.filter { $0.log.isCompleted }.count }
     public var totalHabitsTodayCount: Int { todayHabits.count }
@@ -164,6 +165,41 @@ public final class AppState {
         return todo
     }
 
+    /// Cycles todo status: to-do → in progress → done → to-do (todos only).
+    public func advanceTodo(_ todo: DailyTodo, now: Date = .now) {
+        let today = DayMath.startOfDay(now, calendar: calendar)
+        switch todo.status {
+        case .completed:
+            todo.completedDate = nil
+            todo.status = todo.plannedForDate < today ? .carriedOver : .planned
+        case .inProgress:
+            todo.completedDate = now
+            todo.status = .completed
+        case .planned, .carriedOver, .snoozed:
+            todo.completedDate = nil
+            todo.status = .inProgress
+        case .dropped:
+            return
+        }
+        markRemindersTodoLocallyModified(todo, now: now)
+        remindersSync.enqueuePush(for: todo)
+        store.save()
+        refresh(now: now)
+    }
+
+    /// Returns a todo to the to-do state from in progress or done.
+    public func resetTodo(_ todo: DailyTodo, now: Date = .now) {
+        guard todo.status != .dropped else { return }
+        todo.completedDate = nil
+        let today = DayMath.startOfDay(now, calendar: calendar)
+        todo.status = todo.plannedForDate < today ? .carriedOver : .planned
+        markRemindersTodoLocallyModified(todo, now: now)
+        remindersSync.enqueuePush(for: todo)
+        store.save()
+        refresh(now: now)
+    }
+
+    /// Jumps straight to done (e.g. end-of-day review).
     public func toggleComplete(_ todo: DailyTodo, now: Date = .now) {
         if todo.isCompleted {
             todo.completedDate = nil

@@ -82,6 +82,8 @@ public extension DailyTodo {
 
     var isCompleted: Bool { completedDate != nil }
 
+    var isInProgress: Bool { status == .inProgress }
+
     /// Days since the task was first planned (clamped at 0), computed live from the
     /// immutable `originalPlannedDate` so no per-row daily writes are needed.
     func carryOverAgeInDays(asOf now: Date = .now, calendar: Calendar = .current) -> Int {

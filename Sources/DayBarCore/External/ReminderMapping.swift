@@ -36,6 +36,8 @@ public enum ReminderMapping {
         } else if todo.status == .completed || todo.status == .dropped {
             todo.completedDate = nil
             todo.status = planned < calendar.startOfDay(for: today) ? .carriedOver : .planned
+        } else if todo.status == .inProgress {
+            // Keep in-progress; metadata already applied above.
         }
     }
 

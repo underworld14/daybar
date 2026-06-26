@@ -155,7 +155,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// scroll; capped to 80% of the screen, then the list scrolls.
     private func desiredPanelHeight() -> CGFloat {
         var chrome: CGFloat = 196   // header + quick-add + dividers + pomodoro + padding
-        if appState.totalTodayCount > 0 { chrome += 14 } // tasks progress bar
+        if appState.totalTodayCount > 0 { chrome += 28 } // stacked tasks progress bar + legend
         let rowHeight: CGFloat = 34   // habits may include a cue subtitle
         let sectionHeader: CGFloat = 24
         var rows: CGFloat = 0

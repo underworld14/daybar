@@ -4,6 +4,7 @@ import Foundation
 /// the typed `status` accessor lives on `DailyTodo`.
 public enum TodoStatus: String, CaseIterable, Codable, Sendable {
     case planned
+    case inProgress
     case completed
     case carriedOver
     case snoozed
