@@ -4,7 +4,7 @@ import DayBarCore
 /// The menu-bar panel: quick-add, today's list, the carry-over backlog, and the Pomodoro
 /// control strip. Multi-add quick-add (Return adds and keeps focus) is the morning ritual.
 struct TodayView: View {
-    var appState: AppState
+    @Environment(AppState.self) private var appState
 
     @State private var newTitle: String = ""
     @FocusState private var addFocused: Bool
@@ -32,8 +32,7 @@ struct TodayView: View {
         .frame(width: 320)
         .onAppear {
             appState.refresh()
-            AppKitBridge.makeMenuBarWindowKey()
-            addFocused = true
+            DispatchQueue.main.async { addFocused = true }
         }
     }
 
@@ -54,6 +53,13 @@ struct TodayView: View {
                 .textFieldStyle(.plain)
                 .focused($addFocused)
                 .onSubmit(addCurrent)
+            Button(action: addCurrent) {
+                Image(systemName: "return")
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .disabled(newTitle.trimmingCharacters(in: .whitespaces).isEmpty)
+            .help("Add task")
         }
     }
 

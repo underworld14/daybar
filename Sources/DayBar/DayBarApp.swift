@@ -24,7 +24,8 @@ struct MenuBarScene: Scene {
 
     var body: some Scene {
         MenuBarExtra {
-            TodayView(appState: appState)
+            TodayView()
+                .environment(appState)
         } label: {
             MenuBarLabel(appState: appState)
         }
