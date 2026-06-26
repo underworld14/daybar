@@ -153,6 +153,9 @@ public final class DataStore {
 
     @discardableResult
     public func insert(_ log: HabitLog) -> HabitLog {
+        if hasHabitLog(templateId: log.templateId, day: log.day) {
+            return log
+        }
         context.insert(log)
         return log
     }
@@ -182,6 +185,16 @@ public final class DataStore {
         let start = range.lowerBound, end = range.upperBound
         let predicate = #Predicate<HabitLog> { $0.day >= start && $0.day < end }
         return try context.fetch(FetchDescriptor(predicate: predicate, sortBy: [SortDescriptor(\.day)]))
+    }
+
+    public func habitLogs(
+        since startDay: Date,
+        through endDay: Date,
+        calendar: Calendar = .current
+    ) throws -> [HabitLog] {
+        let start = calendar.startOfDay(for: startDay)
+        let end = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: endDay)) ?? start
+        return try habitLogs(in: start..<end)
     }
 
     public func allHabitLogs() throws -> [HabitLog] {

@@ -34,6 +34,7 @@ public final class HabitEngine {
         }
 
         changed = materializeDay(today, templates: templates) || changed
+        changed = backfillFromTemplateCreation(templates: templates, through: today) || changed
 
         if meta.lastHabitMaterializedDay != today {
             meta.lastHabitMaterializedDay = today
@@ -44,16 +45,32 @@ public final class HabitEngine {
         return changed
     }
 
-    private func materializeDay(_ day: Date, templates: [HabitTemplate]) -> Bool {
+    /// Ensures every active template has logs from its `createdDate` through `through`.
+    private func backfillFromTemplateCreation(templates: [HabitTemplate], through today: Date) -> Bool {
         var changed = false
         for template in templates where template.isActive {
             let createdDay = calendar.startOfDay(for: template.createdDate)
-            guard day >= createdDay else { continue }
-            let normalizedDay = calendar.startOfDay(for: day)
-            if !(store.hasHabitLog(templateId: template.id, day: normalizedDay, calendar: calendar)) {
-                store.insert(HabitLog(templateId: template.id, day: normalizedDay))
-                changed = true
+            var day = createdDay
+            while day <= today {
+                changed = materializeDay(day, templates: [template]) || changed
+                day = DayMath.nextDay(day, calendar: calendar)
             }
+        }
+        return changed
+    }
+
+    private func materializeDay(_ day: Date, templates: [HabitTemplate]) -> Bool {
+        let normalizedDay = calendar.startOfDay(for: day)
+        let existingTemplateIds = Set(
+            (try? store.habitLogs(on: normalizedDay, calendar: calendar))?.map(\.templateId) ?? []
+        )
+        var changed = false
+        for template in templates where template.isActive {
+            let createdDay = calendar.startOfDay(for: template.createdDate)
+            guard normalizedDay >= createdDay else { continue }
+            guard !existingTemplateIds.contains(template.id) else { continue }
+            store.insert(HabitLog(templateId: template.id, day: normalizedDay))
+            changed = true
         }
         return changed
     }

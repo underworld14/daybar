@@ -61,6 +61,8 @@ public struct HabitHeatmapCell: Sendable, Identifiable {
 public enum HabitAnalytics {
     public static let gracePerWeek = 1
     public static let milestoneDays: [Int] = [7, 30, 100]
+    /// Lookback window for cache rebuilds (heatmap, current streak, grace, best).
+    public static let cacheLookbackDays = 365
 
     public static func buckets(
         logs: [HabitLog],
@@ -105,7 +107,12 @@ public enum HabitAnalytics {
             byDay[calendar.startOfDay(for: log.day)] = log
         }
 
-        let graceDays = graceDaysUsed(logs: templateLogs, templateId: templateId, asOf: now, calendar: calendar)
+        guard let windowStart = calendar.date(byAdding: .day, value: -(days - 1), to: today) else {
+            return []
+        }
+        let graceDays = graceDaysChronological(
+            logs: templateLogs, from: windowStart, through: today, today: today, calendar: calendar
+        )
 
         var cells: [HabitHeatmapCell] = []
         for offset in stride(from: days - 1, through: 0, by: -1) {
@@ -128,7 +135,14 @@ public enum HabitAnalytics {
         let templateLogs = logs.filter { $0.templateId == templateId }
         let current = currentStreak(logs: templateLogs, asOf: now, calendar: calendar)
         let best = bestStreak(logs: templateLogs, calendar: calendar)
-        let graceRemaining = max(0, gracePerWeek - graceUsedInRollingWindow(logs: templateLogs, asOf: now, calendar: calendar))
+        let graceUsed = graceDaysChronological(
+            logs: templateLogs,
+            from: calendar.date(byAdding: .day, value: -6, to: calendar.startOfDay(for: now)) ?? now,
+            through: calendar.startOfDay(for: now),
+            today: calendar.startOfDay(for: now),
+            calendar: calendar
+        ).count
+        let graceRemaining = max(0, gracePerWeek - graceUsed)
         return StreakInfo(current: current, best: best, graceRemaining: graceRemaining)
     }
 
@@ -136,7 +150,53 @@ public enum HabitAnalytics {
         milestoneDays.contains(streak)
     }
 
-    // MARK: - Private streak helpers
+    // MARK: - Grace helpers
+
+    /// Explicit skip or a past-day still pending — counts toward the weekly grace budget.
+    private static func consumesGraceSlot(
+        _ status: HabitDayStatus,
+        day: Date,
+        today: Date
+    ) -> Bool {
+        switch status {
+        case .completed: return false
+        case .skipped: return true
+        case .pending: return day < today
+        }
+    }
+
+    /// Walk a date range oldest-first and return days that consumed a grace slot.
+    private static func graceDaysChronological(
+        logs: [HabitLog],
+        from windowStart: Date,
+        through windowEnd: Date,
+        today: Date,
+        calendar: Calendar
+    ) -> Set<Date> {
+        let start = calendar.startOfDay(for: windowStart)
+        let end = calendar.startOfDay(for: windowEnd)
+        var byDay: [Date: HabitLog] = [:]
+        for log in logs {
+            let day = calendar.startOfDay(for: log.day)
+            if day >= start && day <= end { byDay[day] = log }
+        }
+
+        var graceDates: [Date] = []
+        var used = Set<Date>()
+        var day = start
+        while day <= end {
+            if let log = byDay[day],
+               consumesGraceSlot(log.status, day: day, today: today),
+               canUseGrace(on: day, graceDates: &graceDates, calendar: calendar) {
+                used.insert(day)
+            }
+            guard let next = calendar.date(byAdding: .day, value: 1, to: day) else { break }
+            day = calendar.startOfDay(for: next)
+        }
+        return used
+    }
+
+    // MARK: - Streak helpers
 
     private static func currentStreak(
         logs: [HabitLog],
@@ -161,12 +221,14 @@ public enum HabitAnalytics {
             switch log.status {
             case .completed:
                 streak += 1
-            case .skipped, .pending:
+            case .skipped:
                 if canUseGrace(on: checkDay, graceDates: &graceDates, calendar: calendar) {
                     streak += 1
                 } else {
                     return streak
                 }
+            case .pending:
+                return streak
             }
             guard let prev = calendar.date(byAdding: .day, value: -1, to: checkDay) else { break }
             checkDay = calendar.startOfDay(for: prev)
@@ -221,65 +283,5 @@ public enum HabitAnalytics {
         guard usedInWindow < gracePerWeek else { return false }
         graceDates.append(day)
         return true
-    }
-
-    private static func graceDaysUsed(
-        logs: [HabitLog],
-        templateId: UUID,
-        asOf now: Date,
-        calendar: Calendar
-    ) -> Set<Date> {
-        _ = templateId
-        let today = calendar.startOfDay(for: now)
-        var byDay: [Date: HabitLog] = [:]
-        for log in logs { byDay[calendar.startOfDay(for: log.day)] = log }
-
-        var graceDays = Set<Date>()
-        var checkDay = today
-        if let todayLog = byDay[today], todayLog.status != .completed {
-            guard let yesterday = calendar.date(byAdding: .day, value: -1, to: today) else { return graceDays }
-            checkDay = calendar.startOfDay(for: yesterday)
-        }
-
-        var graceDates: [Date] = []
-        while let log = byDay[checkDay] {
-            if log.status == .completed {
-                // no grace
-            } else if canUseGrace(on: checkDay, graceDates: &graceDates, calendar: calendar) {
-                graceDays.insert(checkDay)
-            } else {
-                break
-            }
-            guard let prev = calendar.date(byAdding: .day, value: -1, to: checkDay) else { break }
-            checkDay = calendar.startOfDay(for: prev)
-        }
-        return graceDays
-    }
-
-    private static func graceUsedInRollingWindow(
-        logs: [HabitLog],
-        asOf now: Date,
-        calendar: Calendar
-    ) -> Int {
-        let today = calendar.startOfDay(for: now)
-        guard let windowStart = calendar.date(byAdding: .day, value: -6, to: today) else { return 0 }
-        var byDay: [Date: HabitLog] = [:]
-        for log in logs {
-            let day = calendar.startOfDay(for: log.day)
-            if day >= windowStart && day <= today { byDay[day] = log }
-        }
-
-        var graceDates: [Date] = []
-        var used = 0
-        var day = windowStart
-        while day <= today {
-            if let log = byDay[day], log.status == .skipped,
-               canUseGrace(on: day, graceDates: &graceDates, calendar: calendar) {
-                used += 1
-            }
-            guard let next = calendar.date(byAdding: .day, value: 1, to: day) else { break }
-            day = calendar.startOfDay(for: next)
-        }
-        return used
     }
 }

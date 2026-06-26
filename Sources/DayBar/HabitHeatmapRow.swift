@@ -6,6 +6,7 @@ struct HabitHeatmapRow: View {
     let title: String
     let cells: [HabitHeatmapCell]
     let currentStreak: Int
+    var isArchived: Bool = false
 
     private let cellSize: CGFloat = 8
     private let cellSpacing: CGFloat = 2
@@ -15,7 +16,13 @@ struct HabitHeatmapRow: View {
             HStack {
                 Text(title)
                     .font(.caption)
+                    .foregroundStyle(isArchived ? .secondary : .primary)
                     .lineLimit(1)
+                if isArchived {
+                    Text("archived")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
                 Spacer()
                 if currentStreak > 0 {
                     Text("\(currentStreak)d")

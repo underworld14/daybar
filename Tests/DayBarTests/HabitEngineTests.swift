@@ -72,6 +72,34 @@ final class HabitEngineTests: XCTestCase {
         XCTAssertTrue(engine.materializeIfNeeded(now: now))
 
         let all = try store.allHabitLogs()
-        XCTAssertEqual(all.count, 2) // yesterday + today (not before template existed if same)
+        XCTAssertEqual(all.count, 3) // creation day + yesterday + today
+    }
+
+    func testBackfillsFromTemplateCreationDay() throws {
+        let store = DataStore(inMemory: true)
+        let threeDaysAgo = cal.date(byAdding: .day, value: -3, to: cal.startOfDay(for: now))!
+        let template = HabitTemplate(title: "Late import", createdDate: threeDaysAgo)
+        store.insert(template)
+        let meta = try store.appMeta()
+        meta.lastHabitMaterializedDay = cal.startOfDay(for: now)
+        store.save()
+
+        let engine = HabitEngine(store: store, calendar: cal)
+        XCTAssertTrue(engine.materializeIfNeeded(now: now))
+
+        let all = try store.allHabitLogs()
+        XCTAssertEqual(all.count, 4)
+        XCTAssertTrue(all.contains { cal.isDate($0.day, inSameDayAs: threeDaysAgo) })
+    }
+
+    func testMaterializeDayFetchesLogsOncePerDay() throws {
+        let store = DataStore(inMemory: true)
+        let templates = (0..<3).map { HabitTemplate(title: "Habit \($0)", createdDate: now) }
+        templates.forEach { store.insert($0) }
+        store.save()
+
+        let engine = HabitEngine(store: store, calendar: cal)
+        XCTAssertTrue(engine.materializeIfNeeded(now: now))
+        XCTAssertEqual(try store.habitLogs(on: now, calendar: cal).count, 3)
     }
 }

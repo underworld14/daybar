@@ -159,18 +159,21 @@ public final class AppState {
         )
         store.insert(template)
         store.save()
+        invalidateHabitNotifications()
         refresh(now: now)
         return template
     }
 
     public func updateHabitTemplate(_ template: HabitTemplate, now: Date = .now) {
         store.save()
+        invalidateHabitNotifications()
         refresh(now: now)
     }
 
     public func archiveHabitTemplate(_ template: HabitTemplate, now: Date = .now) {
         template.isActive = false
         store.save()
+        invalidateHabitNotifications()
         refresh(now: now)
     }
 
@@ -224,8 +227,12 @@ public final class AppState {
     }
 
     private func rebuildHabitCaches(rawHabits: [TodayHabit], now: Date) {
-        let templates = (try? store.activeHabitTemplates()) ?? []
-        let logs = (try? store.allHabitLogs()) ?? []
+        let today = calendar.startOfDay(for: now)
+        let lookbackStart = calendar.date(
+            byAdding: .day, value: -HabitAnalytics.cacheLookbackDays, to: today
+        ) ?? today
+        let logs = (try? store.habitLogs(since: lookbackStart, through: today, calendar: calendar)) ?? []
+        let templates = analyticsTemplates(withHistoryIn: logs)
         habitStreakEntries = templates.map { template in
             let streak = HabitAnalytics.streakInfo(
                 logs: logs, templateId: template.id, asOf: now, calendar: calendar
@@ -247,27 +254,25 @@ public final class AppState {
         }
     }
 
+    private func analyticsTemplates(withHistoryIn logs: [HabitLog]) -> [HabitTemplate] {
+        let all = (try? store.allHabitTemplates()) ?? []
+        let loggedTemplateIds = Set(logs.map(\.templateId))
+        return all
+            .filter { $0.isActive || loggedTemplateIds.contains($0.id) }
+            .sorted { $0.sortOrder < $1.sortOrder }
+    }
+
     private func rescheduleHabitNotificationsIfNeeded(now: Date = .now) {
         let templates = (try? store.activeHabitTemplates()) ?? []
         let logs = (try? store.habitLogs(on: now, calendar: calendar)) ?? []
-        let signature = habitNotifySignature(templates: templates, logs: logs)
+        let signature = HabitNotifySignature.make(
+            templates: templates,
+            todayLogs: logs,
+            habitNotifyEnabled: Preferences.habitNotifyEnabled
+        )
         guard signature != lastHabitNotifySignature else { return }
         lastHabitNotifySignature = signature
         notifications.rescheduleHabitAnchors(templates: templates, todayLogs: logs)
-    }
-
-    private func habitNotifySignature(templates: [HabitTemplate], logs: [HabitLog]) -> String {
-        let templatePart = templates
-            .sorted { $0.id.uuidString < $1.id.uuidString }
-            .map { t in
-                "\(t.id)|\(t.notifyEnabled)|\(t.anchorHour ?? -1)|\(t.anchorMinute ?? -1)|\(t.isActive)"
-            }
-            .joined(separator: ";")
-        let logPart = logs
-            .sorted { $0.templateId.uuidString < $1.templateId.uuidString }
-            .map { "\($0.templateId)|\($0.statusRaw)" }
-            .joined(separator: ";")
-        return "\(Preferences.habitNotifyEnabled)|\(templatePart)|\(logPart)"
     }
 
     /// One-button Pomodoro control: start when idle, pause when running, resume when paused.

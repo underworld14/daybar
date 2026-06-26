@@ -142,7 +142,8 @@ struct AnalyticsView: View {
                 HabitHeatmapRow(
                     title: entry.template.title,
                     cells: entry.heatmap,
-                    currentStreak: entry.streak.current
+                    currentStreak: entry.streak.current,
+                    isArchived: !entry.template.isActive
                 )
             }
         }
@@ -154,10 +155,17 @@ struct AnalyticsView: View {
                 .font(.caption2.weight(.semibold)).tracking(0.5).foregroundStyle(.secondary)
             ForEach(appState.habitStreaks()) { entry in
                 HStack {
-                    Text(entry.template.title).lineLimit(1)
+                    Text(entry.template.title)
+                        .lineLimit(1)
+                        .foregroundStyle(entry.template.isActive ? .primary : .secondary)
+                    if !entry.template.isActive {
+                        Text("archived")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
                     Spacer()
                     Text("\(entry.streak.current)d")
-                        .foregroundStyle(.green)
+                        .foregroundStyle(entry.template.isActive ? .green : .secondary)
                     Text("(best \(entry.streak.best)d)")
                         .font(.caption2)
                         .foregroundStyle(.secondary)

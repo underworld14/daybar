@@ -97,4 +97,35 @@ final class HabitAnalyticsTests: XCTestCase {
         let info = HabitAnalytics.streakInfo(logs: logs, templateId: templateId, asOf: now, calendar: cal)
         XCTAssertEqual(info.graceRemaining, 0)
     }
+
+    func testGraceRemainingAfterPendingMiss() {
+        let logs = [log(-1, status: .pending), log(0, status: .completed)]
+        let info = HabitAnalytics.streakInfo(logs: logs, templateId: templateId, asOf: now, calendar: cal)
+        XCTAssertEqual(info.current, 1)
+        XCTAssertEqual(info.graceRemaining, 0)
+    }
+
+    func testHistoricalPendingBreaksCurrentStreak() {
+        let logs = [
+            log(-2, status: .completed),
+            log(-1, status: .pending),
+            log(0, status: .completed),
+        ]
+        let info = HabitAnalytics.streakInfo(logs: logs, templateId: templateId, asOf: now, calendar: cal)
+        XCTAssertEqual(info.current, 1)
+        XCTAssertEqual(info.best, 1)
+    }
+
+    func testHeatmapMarksGraceOffStreakPath() {
+        let logs = [
+            log(-5, status: .skipped),
+            log(-4, status: .completed),
+            log(0, status: .completed),
+        ]
+        let cells = HabitAnalytics.heatmap(
+            logs: logs, templateId: templateId, days: 28, endingAt: now, calendar: cal
+        )
+        let skippedCell = cells.first { $0.status == .skipped }
+        XCTAssertTrue(skippedCell?.usedGrace == true)
+    }
 }
