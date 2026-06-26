@@ -51,9 +51,19 @@ final class MockRemindersProvider: ExternalSourceProvider {
     }
 
     func apply(_ dto: ReminderDTO) async throws {
+        guard reminders.contains(where: { $0.externalIdentifier == dto.externalIdentifier }) else {
+            throw RemindersProviderError.reminderNotFound(dto.externalIdentifier)
+        }
         applied.append(dto)
         if let idx = reminders.firstIndex(where: { $0.externalIdentifier == dto.externalIdentifier }) {
-            reminders[idx] = dto
+            var updated = dto
+            updated.modifiedAt = dto.completionDate ?? dto.modifiedAt ?? Date()
+            reminders[idx] = updated
         }
+    }
+
+    func fetchReminder(externalIdentifier: String) async throws -> ReminderDTO? {
+        if shouldThrow { throw NSError(domain: "test", code: 1) }
+        return reminders.first { $0.externalIdentifier == externalIdentifier }
     }
 }

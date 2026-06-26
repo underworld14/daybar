@@ -60,17 +60,21 @@ struct RemindersSettingsSection: View {
                         }
                     }
 
-                    if let synced = appState.remindersSync.lastSyncedAt {
+                    if let synced = appState.remindersLastSyncedAt {
                         Text("Last synced \(synced.formatted(date: .omitted, time: .shortened))")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
 
-                    if let error = appState.remindersSync.lastSyncError {
+                    if let error = appState.remindersLastSyncError {
                         Text(error)
                             .font(.caption)
                             .foregroundStyle(.orange)
                     }
+
+                    Text("Dropping a synced task marks it completed in Reminders.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
 
                     Button("Sync now") {
                         appState.invalidateRemindersSync()

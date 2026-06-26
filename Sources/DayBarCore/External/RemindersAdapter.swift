@@ -94,9 +94,16 @@ public final class RemindersAdapter: ExternalSourceProvider {
         return mapReminder(reminder)
     }
 
+    public func fetchReminder(externalIdentifier: String) async throws -> ReminderDTO? {
+        guard let reminder = eventStore.calendarItem(withIdentifier: externalIdentifier) as? EKReminder else {
+            return nil
+        }
+        return mapReminder(reminder)
+    }
+
     public func apply(_ dto: ReminderDTO) async throws {
         guard let reminder = eventStore.calendarItem(withIdentifier: dto.externalIdentifier) as? EKReminder else {
-            return
+            throw RemindersProviderError.reminderNotFound(dto.externalIdentifier)
         }
         reminder.title = dto.title
         reminder.notes = dto.notes.isEmpty ? nil : dto.notes

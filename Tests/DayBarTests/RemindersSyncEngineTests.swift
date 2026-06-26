@@ -25,6 +25,7 @@ final class RemindersSyncEngineTests: XCTestCase {
         UserDefaults.standard.removeObject(forKey: PreferenceKeys.remindersSyncEnabled)
         UserDefaults.standard.removeObject(forKey: PreferenceKeys.selectedReminderCalendarIDs)
         UserDefaults.standard.removeObject(forKey: PreferenceKeys.remindersIncludeUndated)
+        UserDefaults.standard.removeObject(forKey: PreferenceKeys.remindersPushNewTodos)
         super.tearDown()
     }
 
@@ -36,7 +37,8 @@ final class RemindersSyncEngineTests: XCTestCase {
                 title: "From Reminders",
                 dueDate: today,
                 calendarIdentifier: "list-1",
-                calendarTitle: "Personal"
+                calendarTitle: "Personal",
+                modifiedAt: now
             ),
         ]
 
@@ -46,6 +48,7 @@ final class RemindersSyncEngineTests: XCTestCase {
         let todo = try store.todo(externalIdentifier: "ext-1")
         XCTAssertEqual(todo?.title, "From Reminders")
         XCTAssertEqual(todo?.source, .reminders)
+        XCTAssertEqual(todo?.externalModifiedAt, now)
     }
 
     func testPullUpdatesExistingMirror() async throws {
@@ -57,6 +60,7 @@ final class RemindersSyncEngineTests: XCTestCase {
             source: .reminders,
             externalIdentifier: "ext-2"
         )
+        existing.externalModifiedAt = today
         store.insert(existing)
         store.save()
 
@@ -90,6 +94,99 @@ final class RemindersSyncEngineTests: XCTestCase {
         XCTAssertNil(try store.todo(externalIdentifier: "ext-3"))
     }
 
+    func testCompleteLocallyDoesNotDeleteMirror() async throws {
+        let (store, mock, engine) = makeEngine()
+        let todo = DailyTodo(
+            title: "Done",
+            plannedForDate: today,
+            originalPlannedDate: today,
+            source: .reminders,
+            externalIdentifier: "ext-complete"
+        )
+        todo.completedDate = now
+        todo.status = .completed
+        store.insert(todo)
+        store.save()
+
+        mock.reminders = [
+            ReminderDTO(
+                externalIdentifier: "ext-complete",
+                title: "Done",
+                dueDate: today,
+                isCompleted: true,
+                completionDate: now,
+                calendarIdentifier: "list-1",
+                modifiedAt: now
+            ),
+        ]
+
+        _ = await engine.reconcileIfNeeded(now: now, force: true)
+
+        let kept = try store.todo(externalIdentifier: "ext-complete")
+        XCTAssertNotNil(kept)
+        XCTAssertTrue(kept?.isCompleted == true)
+    }
+
+    func testDelayDoesNotDeleteMirror() async throws {
+        let (store, mock, engine) = makeEngine()
+        let tomorrow = cal.date(byAdding: .day, value: 1, to: today)!
+        let todo = DailyTodo(
+            title: "Later",
+            plannedForDate: tomorrow,
+            originalPlannedDate: today,
+            source: .reminders,
+            externalIdentifier: "ext-delay"
+        )
+        todo.status = .snoozed
+        store.insert(todo)
+        store.save()
+
+        mock.reminders = [
+            ReminderDTO(
+                externalIdentifier: "ext-delay",
+                title: "Later",
+                dueDate: tomorrow,
+                calendarIdentifier: "list-1",
+                modifiedAt: now
+            ),
+        ]
+
+        _ = await engine.reconcileIfNeeded(now: now, force: true)
+
+        let kept = try store.todo(externalIdentifier: "ext-delay")
+        XCTAssertNotNil(kept)
+        XCTAssertEqual(kept?.plannedForDate, tomorrow)
+    }
+
+    func testRemoteCompleteUpdatesLocalMirror() async throws {
+        let (store, mock, engine) = makeEngine()
+        store.insert(DailyTodo(
+            title: "Remote done",
+            plannedForDate: today,
+            originalPlannedDate: today,
+            source: .reminders,
+            externalIdentifier: "ext-remote-done"
+        ))
+        store.save()
+
+        mock.reminders = [
+            ReminderDTO(
+                externalIdentifier: "ext-remote-done",
+                title: "Remote done",
+                dueDate: today,
+                isCompleted: true,
+                completionDate: now,
+                calendarIdentifier: "list-1",
+                modifiedAt: now
+            ),
+        ]
+
+        _ = await engine.reconcileIfNeeded(now: now, force: true)
+
+        let updated = try store.todo(externalIdentifier: "ext-remote-done")
+        XCTAssertTrue(updated?.isCompleted == true)
+    }
+
     func testPushQueueMarksCompleteOnDrop() async throws {
         let (store, mock, engine) = makeEngine()
         let todo = DailyTodo(
@@ -116,6 +213,90 @@ final class RemindersSyncEngineTests: XCTestCase {
 
         XCTAssertEqual(mock.applied.count, 1)
         XCTAssertTrue(mock.applied.first?.isCompleted == true)
+        XCTAssertEqual(todo.externalModifiedAt, now)
+    }
+
+    func testPushCompleteUpdatesExternalModifiedAt() async throws {
+        let (store, mock, engine) = makeEngine()
+        let todo = DailyTodo(
+            title: "Finish",
+            plannedForDate: today,
+            originalPlannedDate: today,
+            source: .reminders,
+            externalIdentifier: "ext-push"
+        )
+        store.insert(todo)
+        mock.reminders = [
+            ReminderDTO(
+                externalIdentifier: "ext-push",
+                title: "Finish",
+                dueDate: today,
+                calendarIdentifier: "list-1"
+            ),
+        ]
+        store.save()
+
+        todo.completedDate = now
+        todo.status = .completed
+        engine.enqueuePush(for: todo)
+        _ = await engine.reconcileIfNeeded(now: now, force: true)
+
+        XCTAssertEqual(mock.applied.count, 1)
+        XCTAssertTrue(mock.applied.first?.isCompleted == true)
+        XCTAssertEqual(todo.externalModifiedAt, now)
+    }
+
+    func testSkipsRemoteUpdateWhenLocalIsNewer() async throws {
+        let (store, mock, engine) = makeEngine()
+        let localModified = now.addingTimeInterval(3600)
+        let existing = DailyTodo(
+            title: "Local wins",
+            plannedForDate: today,
+            originalPlannedDate: today,
+            source: .reminders,
+            externalIdentifier: "ext-conflict"
+        )
+        existing.externalModifiedAt = localModified
+        store.insert(existing)
+        store.save()
+
+        mock.reminders = [
+            ReminderDTO(
+                externalIdentifier: "ext-conflict",
+                title: "Remote rename",
+                dueDate: today,
+                calendarIdentifier: "list-1",
+                modifiedAt: now
+            ),
+        ]
+
+        _ = await engine.reconcileIfNeeded(now: now, force: true)
+        XCTAssertEqual(try store.todo(externalIdentifier: "ext-conflict")?.title, "Local wins")
+    }
+
+    func testCreateReminderForNewTodo() async throws {
+        UserDefaults.standard.set(true, forKey: PreferenceKeys.remindersPushNewTodos)
+        let (store, mock, engine) = makeEngine()
+        let todo = DailyTodo(title: "New local", plannedForDate: today, originalPlannedDate: today)
+        store.insert(todo)
+        store.save()
+
+        await engine.createReminderForNewTodo(todo, now: now)
+
+        XCTAssertEqual(todo.source, .reminders)
+        XCTAssertNotNil(todo.externalIdentifier)
+        XCTAssertEqual(mock.created.count, 1)
+    }
+
+    func testPullFailureDoesNotUpdateMetaTimestamp() async throws {
+        let (store, mock, engine) = makeEngine()
+        mock.shouldThrow = true
+
+        _ = await engine.reconcileIfNeeded(now: now, force: true)
+
+        let meta = try store.appMeta()
+        XCTAssertNil(meta.remindersLastSyncedAt)
+        XCTAssertNotNil(engine.lastSyncError)
     }
 
     func testSkipsWhenSyncDisabled() async {

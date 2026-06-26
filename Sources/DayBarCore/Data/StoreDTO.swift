@@ -19,6 +19,7 @@ public struct TodoDTO: Codable, Sendable {
     public var pomodoroCount: Int
     public var sourceRaw: String
     public var externalIdentifier: String?
+    public var externalModifiedAt: Date?
 }
 
 public struct MetaDTO: Codable, Sendable {
@@ -81,12 +82,13 @@ public extension TodoDTO {
             plannedForDate: m.plannedForDate, originalPlannedDate: m.originalPlannedDate,
             dueDate: m.dueDate, completedDate: m.completedDate, statusRaw: m.statusRaw,
             priorityRaw: m.priorityRaw, delayCount: m.delayCount, snoozedUntil: m.snoozedUntil,
-            pomodoroCount: m.pomodoroCount, sourceRaw: m.sourceRaw, externalIdentifier: m.externalIdentifier
+            pomodoroCount: m.pomodoroCount, sourceRaw: m.sourceRaw, externalIdentifier: m.externalIdentifier,
+            externalModifiedAt: m.externalModifiedAt
         )
     }
 
     func makeModel() -> DailyTodo {
-        DailyTodo(
+        let todo = DailyTodo(
             id: id, title: title, notes: notes, createdDate: createdDate,
             plannedForDate: plannedForDate, originalPlannedDate: originalPlannedDate,
             dueDate: dueDate, completedDate: completedDate,
@@ -95,6 +97,8 @@ public extension TodoDTO {
             delayCount: delayCount, snoozedUntil: snoozedUntil, pomodoroCount: pomodoroCount,
             source: TodoSource(rawValue: sourceRaw) ?? .local, externalIdentifier: externalIdentifier
         )
+        todo.externalModifiedAt = externalModifiedAt
+        return todo
     }
 }
 

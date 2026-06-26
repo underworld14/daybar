@@ -61,11 +61,13 @@ public final class RemindersSyncEngine {
         }
 
         await processPushQueue(now: now)
-        await pull(now: now, calendarIDs: selected)
-        lastPullAt = now
-        if let meta = try? store.appMeta() {
-            meta.remindersLastSyncedAt = now
-            store.save()
+        let pullSucceeded = await pull(now: now, calendarIDs: selected)
+        if pullSucceeded {
+            lastPullAt = now
+            if let meta = try? store.appMeta() {
+                meta.remindersLastSyncedAt = now
+                store.save()
+            }
         }
         return true
     }
@@ -106,15 +108,18 @@ public final class RemindersSyncEngine {
             }
             do {
                 try await provider.apply(dto)
+                todo.externalModifiedAt = now
                 lastSyncError = nil
             } catch {
                 lastSyncError = error.localizedDescription
                 pushQueue.insert(todo.id)
             }
         }
+        store.save()
     }
 
-    private func pull(now: Date, calendarIDs: [String]) async {
+    @discardableResult
+    private func pull(now: Date, calendarIDs: [String]) async -> Bool {
         let today = calendar.startOfDay(for: now)
         let endOfDay = calendar.date(byAdding: .day, value: 1, to: today)?.addingTimeInterval(-1) ?? now
         do {
@@ -134,12 +139,14 @@ public final class RemindersSyncEngine {
                     store.insert(ReminderMapping.makeTodo(from: dto, today: now, calendar: calendar))
                 }
             }
-            pruneRemindersMirrors(keeping: seen)
+            await reconcileMirrorsOffPullSet(keeping: seen, now: now)
             lastSyncedAt = now
             lastSyncError = nil
             store.save()
+            return true
         } catch {
             lastSyncError = error.localizedDescription
+            return false
         }
     }
 
@@ -148,12 +155,21 @@ public final class RemindersSyncEngine {
         return remote >= local
     }
 
-    private func pruneRemindersMirrors(keeping ids: Set<String>) {
+    /// Mirrors missing from the incomplete pull set may be completed, future-dated, or deleted remotely.
+    private func reconcileMirrorsOffPullSet(keeping seen: Set<String>, now: Date) async {
         let mirrors = (try? store.remindersTodos()) ?? []
         for todo in mirrors {
-            guard let ext = todo.externalIdentifier else { continue }
-            if !ids.contains(ext) {
-                store.delete(todo)
+            guard let ext = todo.externalIdentifier, !seen.contains(ext) else { continue }
+            do {
+                guard let remote = try await provider.fetchReminder(externalIdentifier: ext) else {
+                    store.delete(todo)
+                    continue
+                }
+                if shouldApplyRemote(remote, over: todo) {
+                    ReminderMapping.apply(remote, to: todo, today: now, calendar: calendar)
+                }
+            } catch {
+                lastSyncError = error.localizedDescription
             }
         }
     }

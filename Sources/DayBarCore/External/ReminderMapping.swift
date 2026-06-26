@@ -45,7 +45,7 @@ public enum ReminderMapping {
             status = .planned
             completedDate = nil
         }
-        return DailyTodo(
+        let todo = DailyTodo(
             title: dto.title,
             notes: dto.notes,
             plannedForDate: planned,
@@ -57,6 +57,8 @@ public enum ReminderMapping {
             source: .reminders,
             externalIdentifier: dto.externalIdentifier
         )
+        todo.externalModifiedAt = dto.modifiedAt
+        return todo
     }
 
     public static func dto(from todo: DailyTodo) -> ReminderDTO? {

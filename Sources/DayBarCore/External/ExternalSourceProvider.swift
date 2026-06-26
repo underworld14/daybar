@@ -19,4 +19,6 @@ public protocol ExternalSourceProvider: AnyObject {
         calendarIdentifier: String
     ) async throws -> ReminderDTO
     func apply(_ dto: ReminderDTO) async throws
+    /// Returns the reminder regardless of completion status; `nil` when deleted remotely.
+    func fetchReminder(externalIdentifier: String) async throws -> ReminderDTO?
 }

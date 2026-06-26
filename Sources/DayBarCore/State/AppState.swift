@@ -23,7 +23,11 @@ public final class AppState {
     @ObservationIgnored private var observers: [any NSObjectProtocol] = []
     @ObservationIgnored private var lastHabitNotifySignature: String?
     @ObservationIgnored private var forceRemindersSync = false
+    @ObservationIgnored private var pendingRemindersSync = false
     @ObservationIgnored private var remindersSyncTask: Task<Void, Never>?
+
+    public private(set) var remindersLastSyncedAt: Date?
+    public private(set) var remindersLastSyncError: String?
 
     public private(set) var todayTodos: [DailyTodo] = []
     public private(set) var carriedTodos: [DailyTodo] = []
@@ -101,12 +105,30 @@ public final class AppState {
 
     private func scheduleRemindersSync(now: Date) {
         guard Preferences.remindersSyncEnabled else { return }
-        remindersSyncTask?.cancel()
+        if remindersSyncTask != nil {
+            pendingRemindersSync = true
+            return
+        }
+        runRemindersSync(now: now)
+    }
+
+    private func runRemindersSync(now: Date) {
         let force = forceRemindersSync
         forceRemindersSync = false
         remindersSyncTask = Task { @MainActor [weak self] in
             guard let self else { return }
+            defer {
+                self.remindersSyncTask = nil
+                self.remindersLastSyncedAt = self.remindersSync.lastSyncedAt
+                self.remindersLastSyncError = self.remindersSync.lastSyncError
+                if self.pendingRemindersSync {
+                    self.pendingRemindersSync = false
+                    self.runRemindersSync(now: .now)
+                }
+            }
             let changed = await self.remindersSync.reconcileIfNeeded(now: now, force: force)
+            self.remindersLastSyncedAt = self.remindersSync.lastSyncedAt
+            self.remindersLastSyncError = self.remindersSync.lastSyncError
             if changed {
                 self.reloadLists(now: now)
                 let rawHabits = (try? self.store.todayHabits(on: now, calendar: self.calendar)) ?? []
@@ -170,6 +192,16 @@ public final class AppState {
 
     public func drop(_ todo: DailyTodo, now: Date = .now) {
         todo.status = .dropped
+        remindersSync.enqueuePush(for: todo)
+        store.save()
+        refresh(now: now)
+    }
+
+    /// Rename a task. No-op for an empty/whitespace or unchanged title.
+    public func rename(_ todo: DailyTodo, to title: String, now: Date = .now) {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed != todo.title else { return }
+        todo.title = trimmed
         remindersSync.enqueuePush(for: todo)
         store.save()
         refresh(now: now)

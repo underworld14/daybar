@@ -25,6 +25,20 @@ final class ReminderMappingTests: XCTestCase {
         XCTAssertEqual(todo.source, .reminders)
         XCTAssertEqual(todo.externalIdentifier, "r1")
         XCTAssertTrue(todo.isCompleted)
+        XCTAssertEqual(todo.externalModifiedAt, dto.modifiedAt)
+    }
+
+    func testMakeTodoPreservesExternalModifiedAt() {
+        let modified = Date(timeIntervalSince1970: 1_700_000_100)
+        let dto = ReminderDTO(
+            externalIdentifier: "r-mod",
+            title: "Task",
+            dueDate: today,
+            calendarIdentifier: "list-1",
+            modifiedAt: modified
+        )
+        let todo = ReminderMapping.makeTodo(from: dto, today: now, calendar: cal)
+        XCTAssertEqual(todo.externalModifiedAt, modified)
     }
 
     func testApplyUpdatesExistingTodo() {
