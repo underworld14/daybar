@@ -5,7 +5,7 @@ what you planned** — with unfinished tasks carried into tomorrow under a *gent
 nudge instead of silently disappearing.
 
 ![platform](https://img.shields.io/badge/platform-macOS%2015%2B-blue)
-![swift](https://img.shields.io/badge/Swift-6.0-orange)
+![swift](https://img.shields.io/badge/Swift-5%20mode%20·%206%20toolchain-orange)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
 > Lives in your menu bar — no Dock icon. Plan in the morning, work through the day, and run a

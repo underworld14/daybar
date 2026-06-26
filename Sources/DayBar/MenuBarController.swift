@@ -35,7 +35,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         appState.notifications.requestAuthorization()
         setupStatusItem()
         setupPanel()
-        KeyboardShortcuts.onKeyDown(for: .quickAdd) { [weak self] in self?.revealForQuickAdd() }
+        KeyboardShortcuts.onKeyDown(for: .quickAdd) { [weak self] in
+            MainActor.assumeIsolated { self?.revealForQuickAdd() }
+        }
     }
 
     // MARK: - Status item
