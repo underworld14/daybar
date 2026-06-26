@@ -3,38 +3,18 @@ import DayBarCore
 
 @main
 struct DayBarApp: App {
-    @State private var appState: AppState
-
-    init() {
-        AppKitBridge.setAccessoryActivationPolicy()
-        let store = DataStore()
-        _appState = State(initialValue: AppState(store: store))
-    }
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
 
     var body: some Scene {
-        MenuBarScene(appState: appState)
-    }
-}
-
-/// Nested `Scene` struct that holds the state — the documented workaround for the
-/// `MenuBarExtra` content-body-not-re-rendering bug. Uses the `.window` style so the
-/// panel can host interactive controls (list, checkboxes, quick-add field).
-struct MenuBarScene: Scene {
-    let appState: AppState
-
-    var body: some Scene {
-        MenuBarExtra {
-            TodayView()
-                .environment(appState)
-        } label: {
-            MenuBarLabel(appState: appState)
-        }
-        .menuBarExtraStyle(.window)
+        // The whole UI is an NSStatusItem + NSPanel driven by AppDelegate (see
+        // MenuBarController.swift). This empty Settings scene just satisfies the `App`
+        // protocol; it is never shown.
+        Settings { EmptyView() }
     }
 }
 
 /// Dynamic menu-bar label: a focus glyph + coarse minutes while a Pomodoro runs, and an
-/// amber overdue count. Rendered inside the SwiftUI label closure (not via AppKit drawing).
+/// amber overdue count. Hosted in the status-item button via `PassthroughHostingView`.
 struct MenuBarLabel: View {
     var appState: AppState
 

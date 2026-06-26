@@ -26,8 +26,12 @@ public enum AppKitBridge {
         }
     }
 
-    public static func playPhaseEndSound() {
-        NSSound.beep()
+    public static func playPhaseEndSound(named name: String = "Glass") {
+        if let sound = NSSound(named: NSSound.Name(name)) {
+            sound.play()
+        } else {
+            NSSound.beep()
+        }
     }
 }
 #endif

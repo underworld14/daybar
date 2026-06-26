@@ -23,7 +23,6 @@ public final class AppState {
     public var isPanelPresented: Bool = false
 
     public var thresholds: EscalationThresholds = .gentle
-    public var pomodoroSoundEnabled: Bool = true
 
     public init(store: DataStore, calendar: Calendar = .current) {
         self.store = store
@@ -31,6 +30,7 @@ public final class AppState {
         self.rollover = RolloverEngine(store: store, calendar: calendar)
         self.pomodoro = PomodoroEngine()
         self.pomodoro.onPhaseEnd = { [weak self] phase in self?.handlePhaseEnd(phase) }
+        applyPreferences()
         refresh()
         observeSystem()
     }
@@ -123,6 +123,11 @@ public final class AppState {
         }
     }
 
+    /// Rebuild the Pomodoro configuration from saved Preferences (call after a Settings change).
+    public func applyPreferences() {
+        pomodoro.config = Preferences.pomodoroConfig
+    }
+
     // MARK: - System wiring
 
     private func observeSystem() {
@@ -150,7 +155,7 @@ public final class AppState {
 
     private func handlePhaseEnd(_ phase: PomodoroPhase) {
         #if canImport(AppKit)
-        if pomodoroSoundEnabled { AppKitBridge.playPhaseEndSound() }
+        if Preferences.soundEnabled { AppKitBridge.playPhaseEndSound(named: Preferences.soundName) }
         #endif
     }
 }

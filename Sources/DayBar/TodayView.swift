@@ -6,60 +6,81 @@ import DayBarCore
 struct TodayView: View {
     @Environment(AppState.self) private var appState
 
-    @State private var newTitle: String = ""
+    @State private var newTitle = ""
     @FocusState private var addFocused: Bool
+    @State private var showSettings = false
+
+    private let wordmarkFont = Font.system(size: 15, weight: .bold, design: .rounded)
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             header
             quickAdd
-            Divider()
+            if appState.totalTodayCount > 0 { progressBar }
+            Divider().padding(.top, 2)
             ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: 16) {
                     todaySection
-                    if !appState.carriedTodos.isEmpty {
-                        carriedSection
-                    }
+                    if !appState.carriedTodos.isEmpty { carriedSection }
                 }
                 .padding(.vertical, 2)
             }
             .frame(maxHeight: 360)
             Divider()
             PomodoroStrip(appState: appState)
-            footer
         }
-        .padding(12)
+        .padding(14)
         .frame(width: 320)
         .onAppear {
             appState.refresh()
             DispatchQueue.main.async { addFocused = true }
         }
-    }
-
-    private var header: some View {
-        HStack {
-            Text("DayBar").font(.headline)
-            Spacer()
-            Text(Date.now, format: .dateTime.weekday(.wide).day().month())
-                .font(.caption)
-                .foregroundStyle(.secondary)
+        .sheet(isPresented: $showSettings) {
+            SettingsView(appState: appState)
         }
     }
 
+    // MARK: - Header
+
+    private var header: some View {
+        HStack(spacing: 8) {
+            Text("DayBar").font(wordmarkFont)
+            Spacer()
+            Text(Date.now, format: .dateTime.weekday(.abbreviated).day().month(.abbreviated))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Menu {
+                Button { showSettings = true } label: { Label("Settings…", systemImage: "gearshape") }
+                Divider()
+                Button("Quit DayBar") { NSApplication.shared.terminate(nil) }
+            } label: {
+                Image(systemName: "gearshape").font(.system(size: 12)).foregroundStyle(.secondary)
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+        }
+    }
+
+    // MARK: - Quick add
+
+    private var trimmed: String { newTitle.trimmingCharacters(in: .whitespaces) }
+
     private var quickAdd: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 8) {
             Image(systemName: "plus.circle.fill").foregroundStyle(.tint)
             TextField("Add a task for today…", text: $newTitle)
                 .textFieldStyle(.plain)
                 .focused($addFocused)
                 .onSubmit(addCurrent)
-            Button(action: addCurrent) {
-                Image(systemName: "return")
+            if !trimmed.isEmpty {
+                Button(action: addCurrent) {
+                    Image(systemName: "return").font(.system(size: 11, weight: .semibold))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .help("Add task")
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
-            .disabled(newTitle.trimmingCharacters(in: .whitespaces).isEmpty)
-            .help("Add task")
         }
     }
 
@@ -69,21 +90,28 @@ struct TodayView: View {
         addFocused = true // keep the field hot for multi-add
     }
 
+    private var progressBar: some View {
+        ProgressView(value: Double(appState.completedTodayCount), total: Double(max(1, appState.totalTodayCount)))
+            .progressViewStyle(.linear)
+            .tint(.accentColor)
+            .scaleEffect(x: 1, y: 0.6, anchor: .center)
+    }
+
+    // MARK: - Sections
+
     private var todaySection: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text("Today").font(.subheadline).bold()
+                Text("TODAY").font(.caption2.weight(.semibold)).tracking(0.5).foregroundStyle(.secondary)
                 Spacer()
-                Text("\(appState.completedTodayCount)/\(appState.totalTodayCount) done")
-                    .font(.caption).foregroundStyle(.secondary)
+                Text("\(appState.completedTodayCount)/\(appState.totalTodayCount)")
+                    .font(.caption2).foregroundStyle(.secondary)
             }
             if appState.todayTodos.isEmpty {
                 Text("Nothing planned yet. What matters today?")
                     .font(.caption).foregroundStyle(.secondary).padding(.vertical, 2)
             } else {
-                ForEach(appState.todayTodos) { todo in
-                    TodoRow(appState: appState, todo: todo)
-                }
+                ForEach(appState.todayTodos) { TodoRow(appState: appState, todo: $0) }
             }
         }
     }
@@ -91,35 +119,24 @@ struct TodayView: View {
     private var carriedSection: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text("Carried over").font(.subheadline).bold()
+                Text("CARRIED OVER").font(.caption2.weight(.semibold)).tracking(0.5).foregroundStyle(.secondary)
                 Spacer()
                 if appState.overdueCount > 0 {
-                    Text("\(appState.overdueCount) aging")
-                        .font(.caption).foregroundStyle(.orange)
+                    Text("\(appState.overdueCount) aging").font(.caption2).foregroundStyle(.orange)
                 }
             }
-            ForEach(appState.carriedTodos) { todo in
-                TodoRow(appState: appState, todo: todo, showReschedule: true)
-            }
-        }
-    }
-
-    private var footer: some View {
-        HStack {
-            Spacer()
-            Button("Quit") { NSApplication.shared.terminate(nil) }
-                .buttonStyle(.plain)
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            ForEach(appState.carriedTodos) { TodoRow(appState: appState, todo: $0, showReschedule: true) }
         }
     }
 }
 
-/// A single task row: checkbox, title, optional age pill, and an overflow menu of actions.
+/// A single task row: checkbox, title, optional age pill, and a hover-revealed actions menu.
 struct TodoRow: View {
     var appState: AppState
     let todo: DailyTodo
-    var showReschedule: Bool = false
+    var showReschedule = false
+
+    @State private var hovering = false
 
     var body: some View {
         HStack(spacing: 8) {
@@ -143,17 +160,19 @@ struct TodoRow: View {
             }
 
             Menu {
-                if showReschedule {
-                    Button("Bring to today") { appState.reschedule(todo) }
-                }
+                if showReschedule { Button("Bring to today") { appState.reschedule(todo) } }
                 Button("Delay to tomorrow") { appState.delay(todo) }
                 Button("Drop", role: .destructive) { appState.drop(todo) }
             } label: {
-                Image(systemName: "ellipsis.circle").foregroundStyle(.secondary)
+                Image(systemName: "ellipsis").foregroundStyle(.secondary)
             }
             .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
             .fixedSize()
+            .opacity(hovering ? 1 : 0)
         }
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
     }
 }
 
@@ -178,37 +197,31 @@ struct AgePill: View {
 struct PomodoroStrip: View {
     var appState: AppState
 
+    private let digitFont = Font.system(.subheadline, design: .rounded).weight(.semibold).monospacedDigit()
+
     var body: some View {
         let pomo = appState.pomodoro
         HStack(spacing: 8) {
-            Image(systemName: pomo.phase.isBreak ? "cup.and.saucer" : "timer")
-                .foregroundStyle(.tint)
-            Text(pomo.phase == .idle ? "Focus" : pomo.phase.displayName)
-                .font(.subheadline)
+            Image(systemName: pomo.phase.isBreak ? "cup.and.saucer" : "timer").foregroundStyle(.tint)
+            Text(pomo.phase == .idle ? "Focus" : pomo.phase.displayName).font(.subheadline)
 
             Spacer()
 
-            if let end = pomo.endDate, pomo.isRunning, end > Date.now {
-                Text(timerInterval: Date.now...end, countsDown: true)
-                    .monospacedDigit()
-                    .font(.subheadline.weight(.semibold))
-            } else {
-                Text(pomo.remainingString)
-                    .monospacedDigit()
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.secondary)
+            Group {
+                if let end = pomo.endDate, pomo.isRunning, end > Date.now {
+                    Text(timerInterval: Date.now...end, countsDown: true)
+                } else {
+                    Text(pomo.remainingString).foregroundStyle(.secondary)
+                }
             }
+            .font(digitFont)
 
-            Button {
-                appState.togglePomodoro()
-            } label: {
+            Button { appState.togglePomodoro() } label: {
                 Image(systemName: pomo.isRunning ? "pause.fill" : "play.fill")
             }
             .buttonStyle(.plain)
 
-            Button {
-                pomo.stop()
-            } label: {
+            Button { pomo.stop() } label: {
                 Image(systemName: "stop.fill")
             }
             .buttonStyle(.plain)
