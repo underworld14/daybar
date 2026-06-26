@@ -17,7 +17,6 @@ struct TodayView: View {
         VStack(alignment: .leading, spacing: 10) {
             header
             quickAdd
-            if appState.totalHabitsTodayCount > 0 { habitsProgressBar }
             if appState.totalTodayCount > 0 { progressBar }
             if let milestone = appState.habitMilestoneMessage {
                 Text(milestone)
@@ -120,16 +119,6 @@ struct TodayView: View {
         addFocused = true // keep the field hot for multi-add
     }
 
-    private var habitsProgressBar: some View {
-        ProgressView(
-            value: Double(appState.completedHabitsTodayCount),
-            total: Double(max(1, appState.totalHabitsTodayCount))
-        )
-        .progressViewStyle(.linear)
-        .tint(.green)
-        .scaleEffect(x: 1, y: 0.6, anchor: .center)
-    }
-
     private var progressBar: some View {
         ProgressView(value: Double(appState.completedTodayCount), total: Double(max(1, appState.totalTodayCount)))
             .progressViewStyle(.linear)
@@ -153,7 +142,10 @@ struct TodayView: View {
                 Text("No habits yet — add one in Settings.")
                     .font(.caption).foregroundStyle(.secondary).padding(.vertical, 2)
             } else {
-                ForEach(appState.todayHabits) { HabitRow(appState: appState, habit: $0) }
+                ForEach(appState.todayHabits) { habit in
+                    HabitRow(appState: appState, habit: habit)
+                        .id("\(habit.log.id)-\(habit.log.statusRaw)")
+                }
             }
         }
     }
@@ -170,7 +162,10 @@ struct TodayView: View {
                 Text("Nothing planned yet. What matters today?")
                     .font(.caption).foregroundStyle(.secondary).padding(.vertical, 2)
             } else {
-                ForEach(appState.todayTodos) { TodoRow(appState: appState, todo: $0) }
+                ForEach(appState.todayTodos) { todo in
+                    TodoRow(appState: appState, todo: todo)
+                        .id("\(todo.id)-\(todo.statusRaw)-\(todo.completedDate?.timeIntervalSince1970 ?? 0)")
+                }
             }
         }
     }
@@ -230,7 +225,9 @@ struct HabitRow: View {
             }
 
             Menu {
-                if !habit.log.isCompleted {
+                if habit.log.isCompleted || habit.log.status == .skipped {
+                    Button("Mark incomplete") { appState.toggleHabit(habit.log) }
+                } else {
                     Button("Skip today") { appState.skipHabit(habit.log) }
                 }
             } label: {
@@ -239,20 +236,24 @@ struct HabitRow: View {
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .fixedSize()
-            .opacity(hovering && !habit.log.isCompleted ? 1 : 0)
+            .opacity(hovering ? 1 : 0)
         }
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
     }
 }
 
-/// A single task row: checkbox, title, optional age pill, and a hover-revealed actions menu.
+/// A single task row: checkbox, title (double-click to rename), optional age pill, and a
+/// hover-revealed actions menu.
 struct TodoRow: View {
     var appState: AppState
     let todo: DailyTodo
     var showReschedule = false
 
     @State private var hovering = false
+    @State private var isEditing = false
+    @State private var draft = ""
+    @FocusState private var fieldFocused: Bool
 
     var body: some View {
         HStack(spacing: 8) {
@@ -264,39 +265,78 @@ struct TodoRow: View {
             }
             .buttonStyle(.plain)
 
-            HStack(spacing: 4) {
-                if todo.source == .reminders {
-                    Image(systemName: "list.bullet")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .help("Synced from Apple Reminders")
+            if isEditing {
+                TextField("Task", text: $draft)
+                    .textFieldStyle(.plain)
+                    .focused($fieldFocused)
+                    .onSubmit(commitEdit)
+                    .onExitCommand(perform: cancelEdit)
+                    .onChange(of: fieldFocused) { _, focused in
+                        if !focused && isEditing { commitEdit() }
+                    }
+            } else {
+                HStack(spacing: 4) {
+                    if todo.source == .reminders {
+                        Image(systemName: "list.bullet")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .help("Synced from Apple Reminders")
+                    }
+                    Text(todo.title)
+                        .strikethrough(todo.isCompleted)
+                        .foregroundStyle(todo.isCompleted ? .secondary : .primary)
+                        .lineLimit(2)
                 }
-                Text(todo.title)
-                    .strikethrough(todo.isCompleted)
-                    .foregroundStyle(todo.isCompleted ? .secondary : .primary)
-                    .lineLimit(2)
+                .contentShape(Rectangle())
+                .onTapGesture(count: 2, perform: beginEdit)
+                .help("Double-click to edit")
             }
 
             Spacer(minLength: 4)
 
-            if let label = todo.ageLabel() {
+            if !isEditing, let label = todo.ageLabel() {
                 AgePill(text: label, tier: todo.escalationTier(thresholds: appState.thresholds))
             }
 
-            Menu {
-                if showReschedule { Button("Bring to today") { appState.reschedule(todo) } }
-                Button("Delay to tomorrow") { appState.delay(todo) }
-                Button("Drop", role: .destructive) { appState.drop(todo) }
-            } label: {
-                Image(systemName: "ellipsis").foregroundStyle(.secondary)
+            if !isEditing {
+                Menu {
+                    if todo.isCompleted {
+                        Button("Mark incomplete") { appState.toggleComplete(todo) }
+                    }
+                    Button("Edit", action: beginEdit)
+                    if showReschedule { Button("Bring to today") { appState.reschedule(todo) } }
+                    if !todo.isCompleted {
+                        Button("Delay to tomorrow") { appState.delay(todo) }
+                    }
+                    Button("Drop", role: .destructive) { appState.drop(todo) }
+                } label: {
+                    Image(systemName: "ellipsis").foregroundStyle(.secondary)
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .opacity(hovering ? 1 : 0)
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
-            .opacity(hovering ? 1 : 0)
         }
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
+    }
+
+    private func beginEdit() {
+        draft = todo.title
+        isEditing = true
+        fieldFocused = true
+    }
+
+    private func commitEdit() {
+        appState.rename(todo, to: draft)
+        isEditing = false
+        fieldFocused = false
+    }
+
+    private func cancelEdit() {
+        isEditing = false
+        fieldFocused = false
     }
 }
 

@@ -100,6 +100,12 @@ public final class AppState {
         forceRemindersSync = true
     }
 
+    private func markRemindersTodoLocallyModified(_ todo: DailyTodo, now: Date) {
+        guard todo.source == .reminders else { return }
+        todo.externalModifiedAt = now
+        invalidateRemindersSync()
+    }
+
     private func reloadLists(now: Date) {
         todayTodos = (try? store.todos(on: now, calendar: calendar)) ?? []
         carriedTodos = (try? store.overdueIncompleteTodos(before: now, calendar: calendar)) ?? []
@@ -167,6 +173,7 @@ public final class AppState {
             todo.completedDate = now
             todo.status = .completed
         }
+        markRemindersTodoLocallyModified(todo, now: now)
         remindersSync.enqueuePush(for: todo)
         store.save()
         refresh(now: now)
@@ -179,6 +186,7 @@ public final class AppState {
         todo.plannedForDate = tomorrow
         todo.snoozedUntil = tomorrow
         todo.status = .snoozed
+        markRemindersTodoLocallyModified(todo, now: now)
         remindersSync.enqueuePush(for: todo)
         store.save()
         refresh(now: now)
@@ -189,6 +197,7 @@ public final class AppState {
         todo.plannedForDate = DayMath.startOfDay(day, calendar: calendar)
         todo.snoozedUntil = nil
         todo.status = .planned
+        markRemindersTodoLocallyModified(todo, now: now)
         remindersSync.enqueuePush(for: todo)
         store.save()
         refresh(now: now)
@@ -196,6 +205,7 @@ public final class AppState {
 
     public func drop(_ todo: DailyTodo, now: Date = .now) {
         todo.status = .dropped
+        markRemindersTodoLocallyModified(todo, now: now)
         remindersSync.enqueuePush(for: todo)
         store.save()
         refresh(now: now)
@@ -206,6 +216,7 @@ public final class AppState {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, trimmed != todo.title else { return }
         todo.title = trimmed
+        markRemindersTodoLocallyModified(todo, now: now)
         remindersSync.enqueuePush(for: todo)
         store.save()
         refresh(now: now)
@@ -261,6 +272,9 @@ public final class AppState {
             log.completedAt = nil
             log.status = .pending
             habitMilestoneMessage = nil
+        } else if log.status == .skipped {
+            log.completedAt = now
+            log.status = .completed
         } else {
             log.completedAt = now
             log.status = .completed
@@ -271,7 +285,9 @@ public final class AppState {
             }
         }
         store.save()
-        refresh(now: now)
+        reloadLists(now: now)
+        let rawHabits = (try? store.todayHabits(on: now, calendar: calendar)) ?? []
+        rebuildHabitCaches(rawHabits: rawHabits, now: now)
     }
 
     public func skipHabit(_ log: HabitLog, now: Date = .now) {
