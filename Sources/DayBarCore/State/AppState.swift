@@ -23,6 +23,8 @@ public final class AppState {
     public private(set) var carriedTodos: [DailyTodo] = []
     public var isPanelPresented: Bool = false
     public var presentEndOfDayReview: Bool = false
+    /// Bumped to ask the panel to focus the quick-add field (e.g. from the global hotkey).
+    public var quickAddFocusSignal: Int = 0
 
     public var thresholds: EscalationThresholds = .gentle
 

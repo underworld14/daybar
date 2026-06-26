@@ -36,6 +36,7 @@ struct TodayView: View {
             appState.refresh()
             DispatchQueue.main.async { addFocused = true }
         }
+        .onChange(of: appState.quickAddFocusSignal) { _, _ in addFocused = true }
         .sheet(isPresented: $showSettings) {
             SettingsView(appState: appState)
         }

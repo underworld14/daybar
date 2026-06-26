@@ -1,4 +1,5 @@
 import SwiftUI
+import KeyboardShortcuts
 import DayBarCore
 
 /// In-panel settings sheet: Pomodoro durations, the timer-end sound, and launch-at-login.
@@ -91,6 +92,10 @@ struct SettingsView: View {
                     if LaunchAtLogin.requiresApproval {
                         Button("Open Login Items in System Settings") { LaunchAtLogin.openSystemSettings() }
                     }
+                }
+
+                Section("Shortcut") {
+                    KeyboardShortcuts.Recorder("Quick-add task", name: .quickAdd)
                 }
             }
             .formStyle(.grouped)

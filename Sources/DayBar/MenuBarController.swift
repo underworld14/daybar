@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 import Observation
 import UserNotifications
+import KeyboardShortcuts
 import DayBarCore
 
 /// A floating panel that can take key focus, so the quick-add `TextField` works.
@@ -34,6 +35,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         appState.notifications.requestAuthorization()
         setupStatusItem()
         setupPanel()
+        KeyboardShortcuts.onKeyDown(for: .quickAdd) { [weak self] in self?.revealForQuickAdd() }
     }
 
     // MARK: - Status item
@@ -138,6 +140,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     @objc private func togglePanel() {
         if panel.isVisible { hidePanel() } else { showPanel() }
+    }
+
+    /// Open the panel (if needed) and focus the quick-add field — used by the global hotkey.
+    private func revealForQuickAdd() {
+        if panel.isVisible {
+            NSApp.activate(ignoringOtherApps: true)
+            panel.makeKeyAndOrderFront(nil)
+        } else {
+            showPanel()
+        }
+        appState.quickAddFocusSignal += 1
     }
 
     private func showPanel() {
