@@ -71,4 +71,30 @@ final class HabitAnalyticsTests: XCTestCase {
         XCTAssertTrue(HabitAnalytics.isMilestone(7))
         XCTAssertFalse(HabitAnalytics.isMilestone(6))
     }
+
+    func testBestStreakPendingDoesNotUseGrace() {
+        let logs = [
+            log(-2, status: .completed),
+            log(-1, status: .pending),
+            log(0, status: .completed),
+        ]
+        let info = HabitAnalytics.streakInfo(logs: logs, templateId: templateId, asOf: now, calendar: cal)
+        XCTAssertEqual(info.best, 1)
+    }
+
+    func testBestStreakSkippedUsesGrace() {
+        let logs = [
+            log(-2, status: .completed),
+            log(-1, status: .skipped),
+            log(0, status: .completed),
+        ]
+        let info = HabitAnalytics.streakInfo(logs: logs, templateId: templateId, asOf: now, calendar: cal)
+        XCTAssertEqual(info.best, 3)
+    }
+
+    func testGraceRemainingAfterSkip() {
+        let logs = [log(-1, status: .skipped), log(0, status: .completed)]
+        let info = HabitAnalytics.streakInfo(logs: logs, templateId: templateId, asOf: now, calendar: cal)
+        XCTAssertEqual(info.graceRemaining, 0)
+    }
 }

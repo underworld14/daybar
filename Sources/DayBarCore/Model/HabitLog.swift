@@ -38,10 +38,19 @@ public extension HabitLog {
 public struct TodayHabit: Identifiable {
     public let template: HabitTemplate
     public let log: HabitLog
+    public let currentStreak: Int
+    public let graceRemaining: Int
     public var id: UUID { log.id }
 
-    public init(template: HabitTemplate, log: HabitLog) {
+    public init(
+        template: HabitTemplate,
+        log: HabitLog,
+        currentStreak: Int = 0,
+        graceRemaining: Int = HabitAnalytics.gracePerWeek
+    ) {
         self.template = template
         self.log = log
+        self.currentStreak = currentStreak
+        self.graceRemaining = graceRemaining
     }
 }

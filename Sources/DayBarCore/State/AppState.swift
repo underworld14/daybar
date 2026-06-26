@@ -19,10 +19,12 @@ public final class AppState {
     @ObservationIgnored private let habitEngine: HabitEngine
     @ObservationIgnored private let calendar: Calendar
     @ObservationIgnored private var observers: [any NSObjectProtocol] = []
+    @ObservationIgnored private var lastHabitNotifySignature: String?
 
     public private(set) var todayTodos: [DailyTodo] = []
     public private(set) var carriedTodos: [DailyTodo] = []
     public private(set) var todayHabits: [TodayHabit] = []
+    public private(set) var habitStreakEntries: [HabitStreakEntry] = []
     /// Ephemeral banner after hitting a streak milestone (7/30/100 days).
     public var habitMilestoneMessage: String?
     public var isPanelPresented: Bool = false
@@ -71,9 +73,10 @@ public final class AppState {
         habitEngine.materializeIfNeeded(now: now)
         todayTodos = (try? store.todos(on: now, calendar: calendar)) ?? []
         carriedTodos = (try? store.overdueIncompleteTodos(before: now, calendar: calendar)) ?? []
-        todayHabits = (try? store.todayHabits(on: now, calendar: calendar)) ?? []
+        let rawHabits = (try? store.todayHabits(on: now, calendar: calendar)) ?? []
+        rebuildHabitCaches(rawHabits: rawHabits, now: now)
         notifications.updateBacklogNudge(agingCount: overdueCount, now: now, calendar: calendar)
-        rescheduleHabitNotifications(now: now)
+        rescheduleHabitNotificationsIfNeeded(now: now)
         maybePromptEndOfDayReview(now: now)
     }
 
@@ -172,7 +175,7 @@ public final class AppState {
     }
 
     public func toggleHabit(_ log: HabitLog, now: Date = .now) {
-        let priorStreak = streak(for: log.templateId, now: now)
+        let priorStreak = habitStreakEntries.first(where: { $0.template.id == log.templateId })?.streak.current ?? 0
         if log.isCompleted {
             log.completedAt = nil
             log.status = .pending
@@ -180,7 +183,7 @@ public final class AppState {
         } else {
             log.completedAt = now
             log.status = .completed
-            let newStreak = streak(for: log.templateId, now: now)
+            let newStreak = priorStreak + 1
             if HabitAnalytics.isMilestone(newStreak), newStreak > priorStreak,
                let title = todayHabits.first(where: { $0.log.id == log.id })?.template.title {
                 habitMilestoneMessage = "\(newStreak) days of “\(title)” — keep going."
@@ -197,9 +200,8 @@ public final class AppState {
         refresh(now: now)
     }
 
-    public func streak(for templateId: UUID, now: Date = .now) -> Int {
-        let logs = (try? store.allHabitLogs()) ?? []
-        return HabitAnalytics.streakInfo(logs: logs, templateId: templateId, asOf: now, calendar: calendar).current
+    public func streak(for templateId: UUID) -> Int {
+        habitStreakEntries.first(where: { $0.template.id == templateId })?.streak.current ?? 0
     }
 
     public func habitStatBuckets(granularity: Granularity, count: Int, now: Date = .now) -> [HabitStatBucket] {
@@ -208,24 +210,64 @@ public final class AppState {
         return HabitAnalytics.buckets(logs: logs, endingAt: now, count: count, granularity: granularity, calendar: calendar)
     }
 
-    public func habitHeatmap(templateId: UUID, days: Int = 28, now: Date = .now) -> [HabitHeatmapCell] {
-        let logs = (try? store.allHabitLogs()) ?? []
-        return HabitAnalytics.heatmap(logs: logs, templateId: templateId, days: days, endingAt: now, calendar: calendar)
+    public func habitHeatmap(templateId: UUID) -> [HabitHeatmapCell] {
+        habitStreakEntries.first(where: { $0.template.id == templateId })?.heatmap ?? []
     }
 
-    public func habitStreaks(now: Date = .now) -> [(template: HabitTemplate, streak: StreakInfo)] {
+    public func habitStreaks() -> [HabitStreakEntry] {
+        habitStreakEntries
+    }
+
+    /// Clears the notification debounce so the next `refresh()` reschedules habit anchors.
+    public func invalidateHabitNotifications() {
+        lastHabitNotifySignature = nil
+    }
+
+    private func rebuildHabitCaches(rawHabits: [TodayHabit], now: Date) {
         let templates = (try? store.activeHabitTemplates()) ?? []
         let logs = (try? store.allHabitLogs()) ?? []
-        return templates.map { template in
-            let info = HabitAnalytics.streakInfo(logs: logs, templateId: template.id, asOf: now, calendar: calendar)
-            return (template, info)
+        habitStreakEntries = templates.map { template in
+            let streak = HabitAnalytics.streakInfo(
+                logs: logs, templateId: template.id, asOf: now, calendar: calendar
+            )
+            let heatmap = HabitAnalytics.heatmap(
+                logs: logs, templateId: template.id, days: 28, endingAt: now, calendar: calendar
+            )
+            return HabitStreakEntry(template: template, streak: streak, heatmap: heatmap)
+        }
+        let streakByTemplate = Dictionary(uniqueKeysWithValues: habitStreakEntries.map { ($0.template.id, $0.streak) })
+        todayHabits = rawHabits.map { habit in
+            let info = streakByTemplate[habit.template.id]
+            return TodayHabit(
+                template: habit.template,
+                log: habit.log,
+                currentStreak: info?.current ?? 0,
+                graceRemaining: info?.graceRemaining ?? HabitAnalytics.gracePerWeek
+            )
         }
     }
 
-    private func rescheduleHabitNotifications(now: Date = .now) {
+    private func rescheduleHabitNotificationsIfNeeded(now: Date = .now) {
         let templates = (try? store.activeHabitTemplates()) ?? []
         let logs = (try? store.habitLogs(on: now, calendar: calendar)) ?? []
+        let signature = habitNotifySignature(templates: templates, logs: logs)
+        guard signature != lastHabitNotifySignature else { return }
+        lastHabitNotifySignature = signature
         notifications.rescheduleHabitAnchors(templates: templates, todayLogs: logs)
+    }
+
+    private func habitNotifySignature(templates: [HabitTemplate], logs: [HabitLog]) -> String {
+        let templatePart = templates
+            .sorted { $0.id.uuidString < $1.id.uuidString }
+            .map { t in
+                "\(t.id)|\(t.notifyEnabled)|\(t.anchorHour ?? -1)|\(t.anchorMinute ?? -1)|\(t.isActive)"
+            }
+            .joined(separator: ";")
+        let logPart = logs
+            .sorted { $0.templateId.uuidString < $1.templateId.uuidString }
+            .map { "\($0.templateId)|\($0.statusRaw)" }
+            .joined(separator: ";")
+        return "\(Preferences.habitNotifyEnabled)|\(templatePart)|\(logPart)"
     }
 
     /// One-button Pomodoro control: start when idle, pause when running, resume when paused.

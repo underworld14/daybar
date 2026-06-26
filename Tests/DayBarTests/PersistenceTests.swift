@@ -70,6 +70,28 @@ final class PersistenceTests: XCTestCase {
         XCTAssertEqual(all.map(\.title), ["new"])
     }
 
+    func testImportSnapshotReplacesHabits() throws {
+        let store = DataStore(inMemory: true)
+        let oldTemplate = HabitTemplate(title: "Old habit")
+        store.insert(oldTemplate)
+        store.insert(HabitLog(templateId: oldTemplate.id, day: now, status: .completed))
+        store.save()
+
+        let newTemplate = HabitTemplate(title: "Imported habit")
+        let newLog = HabitLog(templateId: newTemplate.id, day: now, status: .pending)
+        store.importSnapshot(
+            StoreSnapshotDTO(
+                todos: [],
+                habitTemplates: [HabitTemplateDTO(newTemplate)],
+                habitLogs: [HabitLogDTO(newLog)]
+            )
+        )
+
+        XCTAssertEqual(try store.allHabitTemplates().map(\.title), ["Imported habit"])
+        XCTAssertEqual(try store.allHabitLogs().count, 1)
+        XCTAssertEqual(try store.allHabitLogs().first?.status, .pending)
+    }
+
     func testImportSnapshotWithOverlappingIDs() throws {
         let store = DataStore(inMemory: true)
         let shared = UUID()

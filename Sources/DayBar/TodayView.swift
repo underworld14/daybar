@@ -24,11 +24,6 @@ struct TodayView: View {
                     .font(.caption)
                     .foregroundStyle(.tint)
                     .padding(.vertical, 2)
-                    .onAppear {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-                            appState.habitMilestoneMessage = nil
-                        }
-                    }
             }
             Divider().padding(.top, 2)
             ScrollView {
@@ -50,6 +45,15 @@ struct TodayView: View {
             DispatchQueue.main.async { addFocused = true }
         }
         .onChange(of: appState.quickAddFocusSignal) { _, _ in addFocused = true }
+        .onChange(of: appState.habitMilestoneMessage) { _, message in
+            guard let message else { return }
+            Task {
+                try? await Task.sleep(for: .seconds(3))
+                if appState.habitMilestoneMessage == message {
+                    appState.habitMilestoneMessage = nil
+                }
+            }
+        }
         .sheet(isPresented: $showSettings) {
             SettingsView(appState: appState)
         }
@@ -192,8 +196,6 @@ struct HabitRow: View {
 
     @State private var hovering = false
 
-    private var streak: Int { appState.streak(for: habit.template.id) }
-
     var body: some View {
         HStack(spacing: 8) {
             Button { appState.toggleHabit(habit.log) } label: {
@@ -217,13 +219,14 @@ struct HabitRow: View {
 
             Spacer(minLength: 4)
 
-            if streak > 0 {
-                Text("\(streak)d")
+            if habit.currentStreak > 0 {
+                Text("\(habit.currentStreak)d")
                     .font(.caption2.weight(.medium))
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
                     .background(Capsule().fill(Color.green.opacity(0.15)))
                     .foregroundStyle(.green)
+                    .help(habit.graceRemaining > 0 ? "\(habit.graceRemaining) grace day left this week" : "No grace days left this week")
             }
 
             Menu {

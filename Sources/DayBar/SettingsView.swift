@@ -107,6 +107,7 @@ struct SettingsView: View {
         .frame(width: 380, height: 640)
         .onChange(of: pomodoroSnapshot) { _, _ in appState.applyPreferences() }
         .onChange(of: notifSnapshot) { _, _ in
+            appState.invalidateHabitNotifications()
             appState.notifications.rescheduleRepeating()
             appState.refresh()
         }

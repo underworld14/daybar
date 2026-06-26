@@ -27,7 +27,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private var statusItem: NSStatusItem!
     private var panel: FloatingPanel!
     private var outsideClickMonitor: Any?
-    private let panelWidth: CGFloat = 348
+    private let panelWidth: CGFloat = 320
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)

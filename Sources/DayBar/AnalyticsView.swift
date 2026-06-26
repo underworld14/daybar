@@ -138,10 +138,10 @@ struct AnalyticsView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("CONSISTENCY (28 DAYS)".uppercased())
                 .font(.caption2.weight(.semibold)).tracking(0.5).foregroundStyle(.secondary)
-            ForEach(appState.habitStreaks(), id: \.template.id) { entry in
+            ForEach(appState.habitStreaks()) { entry in
                 HabitHeatmapRow(
                     title: entry.template.title,
-                    cells: appState.habitHeatmap(templateId: entry.template.id),
+                    cells: entry.heatmap,
                     currentStreak: entry.streak.current
                 )
             }
@@ -152,7 +152,7 @@ struct AnalyticsView: View {
         VStack(alignment: .leading, spacing: 6) {
             Text("STREAKS".uppercased())
                 .font(.caption2.weight(.semibold)).tracking(0.5).foregroundStyle(.secondary)
-            ForEach(appState.habitStreaks(), id: \.template.id) { entry in
+            ForEach(appState.habitStreaks()) { entry in
                 HStack {
                     Text(entry.template.title).lineLimit(1)
                     Spacer()

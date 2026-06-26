@@ -28,6 +28,21 @@ public struct StreakInfo: Sendable {
     }
 }
 
+/// Cached per-template streak + heatmap for analytics and the today panel.
+public struct HabitStreakEntry: Identifiable {
+    public let template: HabitTemplate
+    public let streak: StreakInfo
+    public let heatmap: [HabitHeatmapCell]
+
+    public var id: UUID { template.id }
+
+    public init(template: HabitTemplate, streak: StreakInfo, heatmap: [HabitHeatmapCell]) {
+        self.template = template
+        self.streak = streak
+        self.heatmap = heatmap
+    }
+}
+
 public struct HabitHeatmapCell: Sendable, Identifiable {
     public let date: Date
     public let status: HabitDayStatus?
@@ -113,7 +128,6 @@ public enum HabitAnalytics {
         let templateLogs = logs.filter { $0.templateId == templateId }
         let current = currentStreak(logs: templateLogs, asOf: now, calendar: calendar)
         let best = bestStreak(logs: templateLogs, calendar: calendar)
-        let graceUsed = graceDaysUsed(logs: templateLogs, templateId: templateId, asOf: now, calendar: calendar).count
         let graceRemaining = max(0, gracePerWeek - graceUsedInRollingWindow(logs: templateLogs, asOf: now, calendar: calendar))
         return StreakInfo(current: current, best: best, graceRemaining: graceRemaining)
     }
@@ -181,13 +195,16 @@ public enum HabitAnalytics {
             switch log.status {
             case .completed:
                 current += 1
-            case .skipped, .pending:
+            case .skipped:
                 if canUseGrace(on: day, graceDates: &graceDates, calendar: calendar) {
                     current += 1
                 } else {
                     current = 0
                     graceDates = []
                 }
+            case .pending:
+                current = 0
+                graceDates = []
             }
             best = max(best, current)
         }
@@ -246,7 +263,23 @@ public enum HabitAnalytics {
     ) -> Int {
         let today = calendar.startOfDay(for: now)
         guard let windowStart = calendar.date(byAdding: .day, value: -6, to: today) else { return 0 }
-        return graceDaysUsed(logs: logs, templateId: UUID(), asOf: now, calendar: calendar)
-            .filter { $0 >= windowStart && $0 <= today }.count
+        var byDay: [Date: HabitLog] = [:]
+        for log in logs {
+            let day = calendar.startOfDay(for: log.day)
+            if day >= windowStart && day <= today { byDay[day] = log }
+        }
+
+        var graceDates: [Date] = []
+        var used = 0
+        var day = windowStart
+        while day <= today {
+            if let log = byDay[day], log.status == .skipped,
+               canUseGrace(on: day, graceDates: &graceDates, calendar: calendar) {
+                used += 1
+            }
+            guard let next = calendar.date(byAdding: .day, value: 1, to: day) else { break }
+            day = calendar.startOfDay(for: next)
+        }
+        return used
     }
 }

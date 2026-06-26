@@ -110,6 +110,10 @@ private struct HabitEditorSheet: View {
                             selection: timeBinding,
                             displayedComponents: .hourAndMinute
                         )
+                    } else {
+                        Text("Turn on a reminder time, or notifications won't fire.")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
                     }
                 }
                 if !isNew, let template {
@@ -183,6 +187,7 @@ private struct HabitEditorSheet: View {
             template.anchorHour = hour
             template.anchorMinute = minute
             appState.updateHabitTemplate(template)
+            appState.invalidateHabitNotifications()
         }
         onSave()
         dismiss()

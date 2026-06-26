@@ -49,8 +49,9 @@ public final class HabitEngine {
         for template in templates where template.isActive {
             let createdDay = calendar.startOfDay(for: template.createdDate)
             guard day >= createdDay else { continue }
-            if !(store.hasHabitLog(templateId: template.id, day: day, calendar: calendar)) {
-                store.insert(HabitLog(templateId: template.id, day: day))
+            let normalizedDay = calendar.startOfDay(for: day)
+            if !(store.hasHabitLog(templateId: template.id, day: normalizedDay, calendar: calendar)) {
+                store.insert(HabitLog(templateId: template.id, day: normalizedDay))
                 changed = true
             }
         }
