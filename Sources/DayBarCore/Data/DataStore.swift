@@ -1,41 +1,31 @@
 import Foundation
+import SwiftData
 
-/// Local JSON-file persistence with typed query helpers. Holds the todos and the single
-/// `AppMeta` in memory and writes an atomic JSON snapshot on `save()`. The query helpers
-/// take an injected day so callers never embed calendar math in storage internals.
-///
-/// This is the P1 store (Command Line Tools compatible). The public surface — `insert`,
-/// `delete`, `save`, `todos(on:)`, `overdueIncompleteTodos(before:)`, `appMeta()` — is the
-/// seam a SwiftData-backed implementation will slot into once Xcode is available.
+/// SwiftData-backed persistence with typed query helpers. The public surface is identical to
+/// the Phase-1 JSON store, so `RolloverEngine`/`AppState` are unchanged. Day-boundary dates
+/// are computed by the caller and injected into `#Predicate`s (never `Calendar` calls or
+/// view `@State` inside a predicate).
 @MainActor
 public final class DataStore {
-    private var todos: [DailyTodo]
-    public let meta: AppMeta
-    private let fileURL: URL?
+    public let container: ModelContainer
+    public var context: ModelContext { container.mainContext }
 
     public init(inMemory: Bool = false) {
-        let url = inMemory ? nil : Self.defaultFileURL()
-        self.fileURL = url
-        if let url, let data = try? Data(contentsOf: url),
-           let snapshot = try? JSONDecoder.dayBar.decode(StoreSnapshot.self, from: data) {
-            self.todos = snapshot.todos
-            self.meta = snapshot.meta
-        } else {
-            self.todos = []
-            self.meta = AppMeta()
+        let schema = Schema([DailyTodo.self, AppMeta.self])
+        let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: inMemory)
+        do {
+            container = try ModelContainer(for: schema, configurations: [config])
+        } catch {
+            fatalError("DayBar: failed to create ModelContainer: \(error)")
         }
+        if !inMemory { importLegacyJSONIfNeeded() }
     }
 
-    /// Persist the current snapshot. No-op for in-memory stores (tests).
+    /// Explicit save — SwiftData autosave can fail silently, so mutations call this.
     public func save() {
-        guard let url = fileURL else { return }
-        let snapshot = StoreSnapshot(todos: todos, meta: meta)
+        guard context.hasChanges else { return }
         do {
-            let data = try JSONEncoder.dayBar.encode(snapshot)
-            try FileManager.default.createDirectory(
-                at: url.deletingLastPathComponent(), withIntermediateDirectories: true
-            )
-            try data.write(to: url, options: .atomic)
+            try context.save()
         } catch {
             print("DayBar: save error: \(error)")
         }
@@ -43,15 +33,17 @@ public final class DataStore {
 
     @discardableResult
     public func insert(_ todo: DailyTodo) -> DailyTodo {
-        todos.append(todo)
+        context.insert(todo)
         return todo
     }
 
     public func delete(_ todo: DailyTodo) {
-        todos.removeAll { $0.id == todo.id }
+        context.delete(todo)
     }
 
-    public func allTodos() -> [DailyTodo] { todos }
+    public func allTodos() throws -> [DailyTodo] {
+        try context.fetch(FetchDescriptor<DailyTodo>(sortBy: [SortDescriptor(\.createdDate)]))
+    }
 
     // MARK: - Queries
 
@@ -59,62 +51,66 @@ public final class DataStore {
     public func todos(on day: Date, calendar: Calendar = .current) throws -> [DailyTodo] {
         let start = calendar.startOfDay(for: day)
         let end = calendar.date(byAdding: .day, value: 1, to: start) ?? start
-        return todos
-            .filter { $0.plannedForDate >= start && $0.plannedForDate < end && $0.status != .dropped }
-            .sorted(by: Self.byPriorityThenCreated)
+        let dropped = TodoStatus.dropped.rawValue
+        let predicate = #Predicate<DailyTodo> { todo in
+            todo.plannedForDate >= start && todo.plannedForDate < end && todo.statusRaw != dropped
+        }
+        return try context.fetch(FetchDescriptor(
+            predicate: predicate,
+            sortBy: [SortDescriptor(\.priorityRaw, order: .reverse), SortDescriptor(\.createdDate)]
+        ))
     }
 
-    /// Past-due, not-completed, not-dropped todos before the given day — the carry-over
-    /// backlog. Oldest first.
+    /// Past-due, not-completed, not-dropped todos before the given day — the carry-over backlog.
     public func overdueIncompleteTodos(before day: Date, calendar: Calendar = .current) throws -> [DailyTodo] {
         let start = calendar.startOfDay(for: day)
-        return todos
-            .filter { $0.plannedForDate < start && $0.completedDate == nil && $0.status != .dropped }
-            .sorted(by: Self.byOriginalThenCreated)
+        let dropped = TodoStatus.dropped.rawValue
+        let predicate = #Predicate<DailyTodo> { todo in
+            todo.plannedForDate < start && todo.completedDate == nil && todo.statusRaw != dropped
+        }
+        return try context.fetch(FetchDescriptor(
+            predicate: predicate,
+            sortBy: [SortDescriptor(\.originalPlannedDate), SortDescriptor(\.createdDate)]
+        ))
     }
 
-    public func appMeta() throws -> AppMeta { meta }
-
-    // MARK: - Internals
-
-    private static func byPriorityThenCreated(_ lhs: DailyTodo, _ rhs: DailyTodo) -> Bool {
-        if lhs.priority != rhs.priority { return lhs.priority > rhs.priority }
-        return lhs.createdDate < rhs.createdDate
+    /// The single metadata row, creating it on first access.
+    public func appMeta() throws -> AppMeta {
+        if let existing = try context.fetch(FetchDescriptor<AppMeta>()).first {
+            return existing
+        }
+        let meta = AppMeta()
+        context.insert(meta)
+        return meta
     }
 
-    private static func byOriginalThenCreated(_ lhs: DailyTodo, _ rhs: DailyTodo) -> Bool {
-        if lhs.originalPlannedDate != rhs.originalPlannedDate { return lhs.originalPlannedDate < rhs.originalPlannedDate }
-        return lhs.createdDate < rhs.createdDate
+    // MARK: - JSON export / import
+
+    public func exportSnapshot() -> StoreSnapshotDTO {
+        let todos = (try? allTodos()) ?? []
+        let last = (try? appMeta())?.lastProcessedDay
+        return StoreSnapshotDTO(todos: todos.map(TodoDTO.init), meta: MetaDTO(lastProcessedDay: last))
     }
 
-    private static func defaultFileURL() -> URL {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? FileManager.default.temporaryDirectory
-        return base
-            .appendingPathComponent("DayBar", isDirectory: true)
-            .appendingPathComponent("daybar-store.json")
+    /// Replace all todos with the snapshot's contents (used by Settings "Import").
+    public func importSnapshot(_ snapshot: StoreSnapshotDTO) {
+        for existing in (try? allTodos()) ?? [] { context.delete(existing) }
+        for dto in snapshot.todos { context.insert(dto.makeModel()) }
+        if let last = snapshot.meta?.lastProcessedDay, let meta = try? appMeta() {
+            meta.lastProcessedDay = last
+        }
+        save()
     }
-}
 
-/// On-disk snapshot of the whole store.
-struct StoreSnapshot: Codable {
-    var todos: [DailyTodo]
-    var meta: AppMeta
-}
-
-private extension JSONEncoder {
-    static let dayBar: JSONEncoder = {
-        let e = JSONEncoder()
-        e.dateEncodingStrategy = .iso8601
-        e.outputFormatting = [.prettyPrinted, .sortedKeys]
-        return e
-    }()
-}
-
-private extension JSONDecoder {
-    static let dayBar: JSONDecoder = {
-        let d = JSONDecoder()
-        d.dateDecodingStrategy = .iso8601
-        return d
-    }()
+    /// One-time migration of the Phase-1 JSON store into SwiftData (guarded by AppMeta).
+    private func importLegacyJSONIfNeeded() {
+        guard let meta = try? appMeta(), !meta.didImportLegacyJSON else { return }
+        meta.didImportLegacyJSON = true
+        let count = (try? context.fetchCount(FetchDescriptor<DailyTodo>())) ?? 0
+        if count == 0, let snapshot = JSONStore.loadLegacy() {
+            for dto in snapshot.todos { context.insert(dto.makeModel()) }
+            if let last = snapshot.meta?.lastProcessedDay { meta.lastProcessedDay = last }
+        }
+        save()
+    }
 }

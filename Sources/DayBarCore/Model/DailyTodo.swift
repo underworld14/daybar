@@ -1,31 +1,32 @@
 import Foundation
+import SwiftData
 
-/// A single planned task. Plain `Codable` reference type (JSON-backed for P1 under
-/// Command Line Tools; swappable to a SwiftData `@Model` once Xcode is installed —
-/// the persisted shape is identical). `statusRaw`/`priorityRaw`/`sourceRaw` are the
-/// stored source of truth; typed accessors are computed (never both stored).
-public final class DailyTodo: Codable, Identifiable {
-    public var id: UUID
-    public var title: String
-    public var notes: String
-    public var createdDate: Date
+/// A single planned task, persisted with SwiftData. `statusRaw`/`priorityRaw`/`sourceRaw`
+/// are the stored source of truth; typed accessors are computed (never both stored). Every
+/// stored property has a default/optional so lightweight migration stays safe.
+@Model
+public final class DailyTodo {
+    @Attribute(.unique) public var id: UUID = UUID()
+    public var title: String = ""
+    public var notes: String = ""
+    public var createdDate: Date = Date.now
 
     /// Normalized start-of-day. Drives today/overdue queries; mutated on reschedule/snooze.
-    public var plannedForDate: Date
+    public var plannedForDate: Date = Date.now
     /// Normalized start-of-day, set once at creation and never mutated. Basis for age.
-    public var originalPlannedDate: Date
+    public var originalPlannedDate: Date = Date.now
 
     public var dueDate: Date?
     /// nil == not done; presence doubles as the completion timestamp.
     public var completedDate: Date?
 
-    public var statusRaw: String
-    public var priorityRaw: Int
-    public var delayCount: Int
+    public var statusRaw: String = TodoStatus.planned.rawValue
+    public var priorityRaw: Int = Priority.medium.rawValue
+    public var delayCount: Int = 0
     public var snoozedUntil: Date?
-    public var pomodoroCount: Int
+    public var pomodoroCount: Int = 0
 
-    public var sourceRaw: String
+    public var sourceRaw: String = TodoSource.local.rawValue
     public var externalIdentifier: String?
 
     public init(

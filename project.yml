@@ -1,0 +1,63 @@
+name: DayBar
+options:
+  bundleIdPrefix: com.yusrilizza
+  deploymentTarget:
+    macOS: "15.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "0.2.0"
+    CURRENT_PROJECT_VERSION: "1"
+    DEVELOPMENT_TEAM: ""
+targets:
+  DayBarCore:
+    type: framework
+    platform: macOS
+    sources:
+      - path: Sources/DayBarCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.yusrilizza.DayBarCore
+        GENERATE_INFOPLIST_FILE: "YES"
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "-"
+  DayBar:
+    type: application
+    platform: macOS
+    sources:
+      - path: Sources/DayBar
+    dependencies:
+      - target: DayBarCore
+        embed: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.yusrilizza.DayBar
+        PRODUCT_NAME: DayBar
+        INFOPLIST_FILE: DayBar/Info.plist
+        CODE_SIGN_ENTITLEMENTS: DayBar/DayBar.entitlements
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "-"
+  DayBarTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests/DayBarTests
+    dependencies:
+      - target: DayBarCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.yusrilizza.DayBarTests
+        GENERATE_INFOPLIST_FILE: "YES"
+schemes:
+  DayBar:
+    build:
+      targets:
+        DayBar: all
+        DayBarTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - DayBarTests

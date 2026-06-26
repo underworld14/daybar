@@ -5,67 +5,63 @@ through them with a Pomodoro, and before sleep see whether you did what you plan
 with unfinished items carried forward as tomorrow's priorities under a *gentle*,
 escalating nudge.
 
-> Status: **Phase 1 (Core MVP) implemented and verified.** See
-> `docs/superpowers/specs/2026-06-26-daybar-design.md` for the full design and roadmap.
+> Status: **Phase 1 done. Phase 2 in progress** — now a full Xcode app (SwiftData + XCTest +
+> signed `.app`). Foundation landed; the P2 features (analytics, notifications,
+> launch-at-login, end-of-day review, full settings, JSON export/import, global hotkey) are
+> being layered on. See `docs/superpowers/specs/2026-06-26-daybar-design.md`.
 
 ## Requirements
 
-- macOS 15+ (developed on macOS 26 Tahoe)
-- Swift 6.3 toolchain — **Command Line Tools is enough** for Phase 1 (no full Xcode needed yet)
+- macOS 15+ (developed on macOS 26 Tahoe), **Xcode 26+**
+- [XcodeGen](https://github.com/yonaskolb/XcodeGen): `brew install xcodegen`
 
-## Run it
+## Generate, build, run
 
-```sh
-swift run DayBar
-```
-
-DayBar is an *accessory* app: it has **no Dock icon**. Look for its item in the **menu
-bar** (top-right). Click it to open the panel — add tasks, check them off, delay/drop
-them, and start a Pomodoro. Quit from the panel's "Quit" button.
-
-## Verify the logic
-
-There is no GUI test harness on Command Line Tools, so a headless check-runner exercises
-the core logic (escalation tiers, DST/timezone-safe day math, idempotent sleep-safe
-rollover, AppState intents, Pomodoro wall-clock + sleep catch-up):
+The Xcode project is generated from `project.yml` (not committed):
 
 ```sh
-swift run DayBarChecks
+xcodegen generate          # creates DayBar.xcodeproj
+open DayBar.xcodeproj       # then Run the "DayBar" scheme
 ```
 
-It prints each check and exits non-zero on any failure.
+Or from the CLI:
+
+```sh
+xcodebuild -project DayBar.xcodeproj -scheme DayBar -destination 'platform=macOS' build
+```
+
+DayBar is an *accessory* app — **no Dock icon**. Look for its item in the **menu bar**.
+
+> For notifications and launch-at-login (Phase 2) to work, the app must be a signed bundle.
+> The build uses local ad-hoc signing ("Sign to Run Locally"); running once from Xcode with
+> automatic signing (your free Apple ID) is the most reliable way to grant notification
+> permission.
+
+## Test
+
+```sh
+xcodebuild -project DayBar.xcodeproj -scheme DayBar -destination 'platform=macOS' test
+```
+
+XCTest target `DayBarTests` covers escalation tiers, DST/timezone day-math, rollover
+idempotency/multi-day catch-up, SwiftData persistence, and JSON import/export.
 
 ## Architecture
 
-A SwiftPM package with a testable, UI-free core and a thin SwiftUI executable.
-
 | Target | What |
 |---|---|
-| `DayBarCore` | Models, `DataStore`, `RolloverEngine`, `EscalationModel`, `PomodoroEngine`, `AppState`, `AppKitBridge` — all UI-free and headless-runnable. |
+| `DayBarCore` | Framework: models (`@Model`), `DataStore` (SwiftData), `RolloverEngine`, `EscalationModel`, `PomodoroEngine`, `AppState`, DTOs, `AppKitBridge`. |
 | `DayBar` | SwiftUI `@main` app: `MenuBarExtra(.window)` + `TodayView`. |
-| `DayBarChecks` | Headless assertion runner (stands in for unit tests under CLT). |
+| `DayBarTests` | XCTest unit tests. |
 
-Single source of truth: `AppState` (`@Observable @MainActor`). The carry-over age is a
-*computed* value from each task's immutable `originalPlannedDate`, so escalation needs no
-daily per-row writes. New-day rollover is idempotent and keyed on `lastProcessedDay`
-stored alongside the data, so it survives the Mac sleeping across one or many days. The
-Pomodoro's truth is a wall-clock `endDate`, so the countdown stays correct across
-sleep/wake and fires any missed transition on wake.
-
-## Build tooling note
-
-Phase 1 ships as a **Swift Package** persisting to a local JSON file
-(`~/Library/Application Support/DayBar/daybar-store.json`). This is deliberate: full Xcode
-isn't installed, and SwiftData's `@Model` macro plugin and XCTest/Testing modules are
-Xcode-only — neither is available to `swift build` under Command Line Tools.
-
-When Xcode is installed, migrating the persistence layer to **SwiftData** touches only
-`Sources/DayBarCore/Data/DataStore.swift` and the two model files (the public store API is
-unchanged). The JSON store also doubles as the "export/backup" format planned for Phase 2.
+Single source of truth: `AppState` (`@Observable @MainActor`), read by views via
+`@Environment`. Carry-over age is computed from each task's immutable `originalPlannedDate`;
+rollover is idempotent and keyed in the SwiftData store; the Pomodoro's truth is a
+wall-clock `endDate`. Persistence is **SwiftData**; the Phase-1 `daybar-store.json` is
+imported once on first launch and JSON remains the export/backup format.
 
 ## Roadmap
 
-- **P2** — Swift Charts analytics (daily/weekly/monthly), notifications (morning plan /
-  evening review / Pomodoro phase-end), launch-at-login, end-of-day review, JSON export,
-  optional global quick-add hotkey.
+- **P2 (in progress)** — analytics (Swift Charts), notifications, launch-at-login,
+  end-of-day review, full settings, JSON export/import, global quick-add hotkey.
 - **P3** — Apple Reminders + Calendar (EventKit) behind an adapter protocol.
