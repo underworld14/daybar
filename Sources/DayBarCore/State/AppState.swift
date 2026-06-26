@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import EventKit
 #if canImport(AppKit)
 import AppKit
 #endif
@@ -14,12 +15,15 @@ public final class AppState {
     public let store: DataStore
     public let pomodoro: PomodoroEngine
     public let notifications = NotificationScheduler()
+    public let remindersSync: RemindersSyncEngine
 
     @ObservationIgnored private let rollover: RolloverEngine
     @ObservationIgnored private let habitEngine: HabitEngine
     @ObservationIgnored private let calendar: Calendar
     @ObservationIgnored private var observers: [any NSObjectProtocol] = []
     @ObservationIgnored private var lastHabitNotifySignature: String?
+    @ObservationIgnored private var forceRemindersSync = false
+    @ObservationIgnored private var remindersSyncTask: Task<Void, Never>?
 
     public private(set) var todayTodos: [DailyTodo] = []
     public private(set) var carriedTodos: [DailyTodo] = []
@@ -34,11 +38,17 @@ public final class AppState {
 
     public var thresholds: EscalationThresholds = .gentle
 
-    public init(store: DataStore, calendar: Calendar = .current) {
+    public init(
+        store: DataStore,
+        calendar: Calendar = .current,
+        remindersProvider: ExternalSourceProvider? = nil
+    ) {
         self.store = store
         self.calendar = calendar
         self.rollover = RolloverEngine(store: store, calendar: calendar)
         self.habitEngine = HabitEngine(store: store, calendar: calendar)
+        let provider = remindersProvider ?? RemindersAdapter(calendar: calendar)
+        self.remindersSync = RemindersSyncEngine(store: store, provider: provider, calendar: calendar)
         self.pomodoro = PomodoroEngine()
         self.pomodoro.onPhaseEnd = { [weak self] phase, elapsed, natural in
             self?.handlePhaseEnd(phase, elapsed: elapsed, completedNaturally: natural)
@@ -71,13 +81,38 @@ public final class AppState {
     public func refresh(now: Date = .now) {
         rollover.performRolloverIfNeeded(now: now)
         habitEngine.materializeIfNeeded(now: now)
-        todayTodos = (try? store.todos(on: now, calendar: calendar)) ?? []
-        carriedTodos = (try? store.overdueIncompleteTodos(before: now, calendar: calendar)) ?? []
+        reloadLists(now: now)
         let rawHabits = (try? store.todayHabits(on: now, calendar: calendar)) ?? []
         rebuildHabitCaches(rawHabits: rawHabits, now: now)
         notifications.updateBacklogNudge(agingCount: overdueCount, now: now, calendar: calendar)
         rescheduleHabitNotificationsIfNeeded(now: now)
         maybePromptEndOfDayReview(now: now)
+        scheduleRemindersSync(now: now)
+    }
+
+    public func invalidateRemindersSync() {
+        forceRemindersSync = true
+    }
+
+    private func reloadLists(now: Date) {
+        todayTodos = (try? store.todos(on: now, calendar: calendar)) ?? []
+        carriedTodos = (try? store.overdueIncompleteTodos(before: now, calendar: calendar)) ?? []
+    }
+
+    private func scheduleRemindersSync(now: Date) {
+        guard Preferences.remindersSyncEnabled else { return }
+        remindersSyncTask?.cancel()
+        let force = forceRemindersSync
+        forceRemindersSync = false
+        remindersSyncTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            let changed = await self.remindersSync.reconcileIfNeeded(now: now, force: force)
+            if changed {
+                self.reloadLists(now: now)
+                let rawHabits = (try? self.store.todayHabits(on: now, calendar: self.calendar)) ?? []
+                self.rebuildHabitCaches(rawHabits: rawHabits, now: now)
+            }
+        }
     }
 
     // MARK: - Intents
@@ -90,6 +125,9 @@ public final class AppState {
         let todo = DailyTodo(title: trimmed, plannedForDate: day, originalPlannedDate: day, status: .planned, priority: priority)
         store.insert(todo)
         store.save()
+        if Preferences.remindersPushNewTodos {
+            Task { await remindersSync.createReminderForNewTodo(todo, now: now) }
+        }
         refresh(now: now)
         return todo
     }
@@ -103,6 +141,7 @@ public final class AppState {
             todo.completedDate = now
             todo.status = .completed
         }
+        remindersSync.enqueuePush(for: todo)
         store.save()
         refresh(now: now)
     }
@@ -114,6 +153,7 @@ public final class AppState {
         todo.plannedForDate = tomorrow
         todo.snoozedUntil = tomorrow
         todo.status = .snoozed
+        remindersSync.enqueuePush(for: todo)
         store.save()
         refresh(now: now)
     }
@@ -123,12 +163,14 @@ public final class AppState {
         todo.plannedForDate = DayMath.startOfDay(day, calendar: calendar)
         todo.snoozedUntil = nil
         todo.status = .planned
+        remindersSync.enqueuePush(for: todo)
         store.save()
         refresh(now: now)
     }
 
     public func drop(_ todo: DailyTodo, now: Date = .now) {
         todo.status = .dropped
+        remindersSync.enqueuePush(for: todo)
         store.save()
         refresh(now: now)
     }
@@ -342,6 +384,16 @@ public final class AppState {
             MainActor.assumeIsolated { self?.refresh() }
         }
         observers.append(dayChange)
+
+        let remindersChange = NotificationCenter.default.addObserver(
+            forName: .EKEventStoreChanged, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.invalidateRemindersSync()
+                self?.refresh()
+            }
+        }
+        observers.append(remindersChange)
     }
 
     private func handleWake() {

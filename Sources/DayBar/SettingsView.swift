@@ -90,6 +90,7 @@ struct SettingsView: View {
                 }
 
                 HabitsSettingsSection(appState: appState)
+                RemindersSettingsSection(appState: appState)
 
                 Section("Startup") {
                     Toggle("Launch DayBar at login", isOn: $launchAtLogin)

@@ -28,6 +28,8 @@ public final class DailyTodo {
 
     public var sourceRaw: String = TodoSource.local.rawValue
     public var externalIdentifier: String?
+    /// Last known modification time from EventKit (conflict detection).
+    public var externalModifiedAt: Date?
 
     public init(
         id: UUID = UUID(),

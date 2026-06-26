@@ -22,6 +22,8 @@ targets:
     platform: macOS
     sources:
       - path: Sources/DayBarCore
+    dependencies:
+      - sdk: EventKit.framework
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.yusrilizza.DayBarCore

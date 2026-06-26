@@ -20,6 +20,12 @@ public enum PreferenceKeys {
     public static let phaseEndNotify = "notify.phaseEndEnabled"
     public static let backlogNotify = "notify.backlogEnabled"
     public static let habitNotifyEnabled = "notify.habitAnchorsEnabled"
+
+    public static let remindersSyncEnabled = "reminders.syncEnabled"
+    public static let selectedReminderCalendarIDs = "reminders.selectedCalendarIDs"
+    public static let remindersIncludeUndated = "reminders.includeUndated"
+    public static let remindersPushNewTodos = "reminders.pushNewTodos"
+    public static let defaultReminderCalendarID = "reminders.defaultCalendarID"
 }
 
 /// Typed reads of the app preferences. Getters bake in the same defaults SettingsView
@@ -66,6 +72,28 @@ public enum Preferences {
     public static var phaseEndNotify: Bool { boolOrTrue(PreferenceKeys.phaseEndNotify) }
     public static var backlogNotify: Bool { boolOrTrue(PreferenceKeys.backlogNotify) }
     public static var habitNotifyEnabled: Bool { boolOrTrue(PreferenceKeys.habitNotifyEnabled) }
+
+    // MARK: - Apple Reminders
+
+    public static var remindersSyncEnabled: Bool {
+        defaults.bool(forKey: PreferenceKeys.remindersSyncEnabled)
+    }
+
+    public static var selectedReminderCalendarIDs: [String] {
+        defaults.stringArray(forKey: PreferenceKeys.selectedReminderCalendarIDs) ?? []
+    }
+
+    public static var remindersIncludeUndated: Bool {
+        defaults.object(forKey: PreferenceKeys.remindersIncludeUndated) as? Bool ?? true
+    }
+
+    public static var remindersPushNewTodos: Bool {
+        defaults.bool(forKey: PreferenceKeys.remindersPushNewTodos)
+    }
+
+    public static var defaultReminderCalendarID: String? {
+        defaults.string(forKey: PreferenceKeys.defaultReminderCalendarID)
+    }
 
     /// The evening-review time on `day`, used to gate the end-of-day auto-prompt.
     public static func eveningTime(on day: Date, calendar: Calendar = .current) -> Date {
