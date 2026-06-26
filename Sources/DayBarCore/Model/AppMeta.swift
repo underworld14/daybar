@@ -9,15 +9,19 @@ public final class AppMeta {
     public var lastProcessedDay: Date?
     /// Last calendar day for which `HabitEngine` materialized logs (idempotency key).
     public var lastHabitMaterializedDay: Date?
+    /// Last successful Apple Reminders pull.
+    public var remindersLastSyncedAt: Date?
     public var didImportLegacyJSON: Bool = false
 
     public init(
         lastProcessedDay: Date? = nil,
         lastHabitMaterializedDay: Date? = nil,
+        remindersLastSyncedAt: Date? = nil,
         didImportLegacyJSON: Bool = false
     ) {
         self.lastProcessedDay = lastProcessedDay
         self.lastHabitMaterializedDay = lastHabitMaterializedDay
+        self.remindersLastSyncedAt = remindersLastSyncedAt
         self.didImportLegacyJSON = didImportLegacyJSON
     }
 }

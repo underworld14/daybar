@@ -27,6 +27,8 @@ nudge instead of silently disappearing.
 - **End-of-day review** — "Did you finish what you planned?" — triage what's left and jot a
   one-line reflection.
 - **Quick-add hotkey** — a global shortcut (default ⌥⌘D) opens the panel focused on the field.
+- **Apple Reminders sync** — optional two-way sync with selected Reminder lists (complete,
+  delay, and reschedule flow back to Reminders).
 - **Local & private** — stored on-device with SwiftData; no account, no cloud.
 
 ## Requirements
@@ -71,7 +73,7 @@ is idempotent and survives the Mac sleeping; the Pomodoro's truth is a wall-cloc
 
 ## Roadmap
 
-- **P3** — Apple Reminders + Calendar (EventKit) integration behind an adapter protocol.
+- **P3b** — Apple Calendar read-mostly integration behind the same adapter protocol.
 
 ## Contributing
 

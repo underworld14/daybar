@@ -264,10 +264,18 @@ struct TodoRow: View {
             }
             .buttonStyle(.plain)
 
-            Text(todo.title)
-                .strikethrough(todo.isCompleted)
-                .foregroundStyle(todo.isCompleted ? .secondary : .primary)
-                .lineLimit(2)
+            HStack(spacing: 4) {
+                if todo.source == .reminders {
+                    Image(systemName: "list.bullet")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .help("Synced from Apple Reminders")
+                }
+                Text(todo.title)
+                    .strikethrough(todo.isCompleted)
+                    .foregroundStyle(todo.isCompleted ? .secondary : .primary)
+                    .lineLimit(2)
+            }
 
             Spacer(minLength: 4)
 

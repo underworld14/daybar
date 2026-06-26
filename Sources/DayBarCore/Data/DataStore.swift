@@ -53,6 +53,18 @@ public final class DataStore {
         try context.fetch(FetchDescriptor<DailyTodo>(sortBy: [SortDescriptor(\.createdDate)]))
     }
 
+    public func todo(externalIdentifier: String) throws -> DailyTodo? {
+        let id = externalIdentifier
+        let predicate = #Predicate<DailyTodo> { $0.externalIdentifier == id }
+        return try context.fetch(FetchDescriptor(predicate: predicate)).first
+    }
+
+    public func remindersTodos() throws -> [DailyTodo] {
+        let source = TodoSource.reminders.rawValue
+        let predicate = #Predicate<DailyTodo> { $0.sourceRaw == source }
+        return try context.fetch(FetchDescriptor(predicate: predicate))
+    }
+
     // MARK: - Queries
 
     /// Non-dropped todos planned for the given calendar day, high priority first.

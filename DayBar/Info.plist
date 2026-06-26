@@ -26,5 +26,7 @@
     <true/>
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
+    <key>NSRemindersFullAccessUsageDescription</key>
+    <string>DayBar reads and updates your Apple Reminders so tasks stay in sync between the menu bar and Reminders.</string>
 </dict>
 </plist>
