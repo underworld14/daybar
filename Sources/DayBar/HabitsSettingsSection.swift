@@ -11,7 +11,7 @@ struct HabitsSettingsSection: View {
     var body: some View {
         Section("Habits") {
             if templates.isEmpty {
-                Text("No habits yet. Add a daily ritual like “Read after Dhuha”.")
+                Text("No habits yet. Add a daily ritual like “Read after morning coffee”.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else {
@@ -95,7 +95,7 @@ private struct HabitEditorSheet: View {
 
             Form {
                 TextField("Title", text: $title)
-                TextField("Cue (e.g. After Dhuha prayer)", text: $cueText)
+                TextField("Cue (e.g. After morning coffee)", text: $cueText)
                 Picker("Icon", selection: $symbolName) {
                     ForEach(Self.symbols, id: \.self) { name in
                         Label(name, systemImage: name).tag(name)

@@ -13,7 +13,7 @@ nudge instead of silently disappearing.
 
 ## Features
 
-- **Daily habits** — recurring rituals (e.g. after Dhuha) auto-appear each morning; one-tap
+- **Daily habits** — recurring rituals (e.g. after morning coffee) auto-appear each morning; one-tap
   check-off, streak tracking with a gentle grace day, optional anchor reminders.
 - **Daily todos** — capture today's plan; check off, delay, reschedule, or drop.
 - **Gentle carry-over** — unfinished tasks roll to the next day and age (grey → amber pill +
