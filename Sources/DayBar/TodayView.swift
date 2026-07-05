@@ -10,6 +10,8 @@ struct TodayView: View {
     @FocusState private var addFocused: Bool
     @State private var showSettings = false
     @State private var showStats = false
+    @State private var showHistory = false
+    @State private var addForTomorrow = false
 
     private let wordmarkFont = Font.system(size: 15, weight: .bold, design: .rounded)
 
@@ -29,12 +31,14 @@ struct TodayView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     habitsSection
                     todaySection
+                    if !appState.tomorrowTodos.isEmpty { tomorrowSection }
                     if !appState.carriedTodos.isEmpty { carriedSection }
                 }
                 .padding(.vertical, 2)
             }
             .frame(maxHeight: .infinity)
             Divider()
+            LofiRadioStrip()
             PomodoroStrip(appState: appState)
         }
         .padding(14)
@@ -42,6 +46,7 @@ struct TodayView: View {
         .onAppear {
             appState.refresh()
             DispatchQueue.main.async { addFocused = true }
+            Task { await appState.loadRadioChannels() }
         }
         .onChange(of: appState.quickAddFocusSignal) { _, _ in addFocused = true }
         .onChange(of: appState.habitMilestoneMessage) { _, message in
@@ -58,6 +63,9 @@ struct TodayView: View {
         }
         .sheet(isPresented: $showStats) {
             AnalyticsView(appState: appState)
+        }
+        .sheet(isPresented: $showHistory) {
+            TaskHistoryView(appState: appState)
         }
         .sheet(isPresented: Binding(
             get: { appState.presentEndOfDayReview },
@@ -79,6 +87,7 @@ struct TodayView: View {
             Menu {
                 Button { showSettings = true } label: { Label("Settings…", systemImage: "gearshape") }
                 Button { showStats = true } label: { Label("Statistics…", systemImage: "chart.bar") }
+                Button { showHistory = true } label: { Label("Task History…", systemImage: "clock.arrow.circlepath") }
                 Button { appState.presentEndOfDayReview = true } label: { Label("Review day…", systemImage: "checkmark.circle") }
                 Divider()
                 Button("Quit DayBar") { NSApplication.shared.terminate(nil) }
@@ -96,25 +105,39 @@ struct TodayView: View {
     private var trimmed: String { newTitle.trimmingCharacters(in: .whitespaces) }
 
     private var quickAdd: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "plus.circle.fill").foregroundStyle(.tint)
-            TextField("Add a task for today…", text: $newTitle)
-                .textFieldStyle(.plain)
-                .focused($addFocused)
-                .onSubmit(addCurrent)
-            if !trimmed.isEmpty {
-                Button(action: addCurrent) {
-                    Image(systemName: "return").font(.system(size: 11, weight: .semibold))
+        VStack(alignment: .leading, spacing: 6) {
+            Picker("Plan for", selection: $addForTomorrow) {
+                Text("Today").tag(false)
+                Text("Tomorrow").tag(true)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+
+            HStack(spacing: 8) {
+                Image(systemName: "plus.circle.fill").foregroundStyle(.tint)
+                TextField(addForTomorrow ? "Add a task for tomorrow…" : "Add a task for today…", text: $newTitle)
+                    .textFieldStyle(.plain)
+                    .focused($addFocused)
+                    .onSubmit(addCurrent)
+                if !trimmed.isEmpty {
+                    Button(action: addCurrent) {
+                        Image(systemName: "return").font(.system(size: 11, weight: .semibold))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                    .help("Add task")
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
-                .help("Add task")
             }
         }
     }
 
     private func addCurrent() {
-        appState.addTodo(title: newTitle)
+        if addForTomorrow {
+            let tomorrow = DayMath.nextDay(.now)
+            appState.addTodo(title: newTitle, plannedFor: tomorrow)
+        } else {
+            appState.addTodo(title: newTitle)
+        }
         newTitle = ""
         addFocused = true // keep the field hot for multi-add
     }
@@ -191,6 +214,21 @@ struct TodayView: View {
                 }
             }
             ForEach(appState.carriedTodos) { TodoRow(appState: appState, todo: $0, showReschedule: true) }
+        }
+    }
+
+    private var tomorrowSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("TOMORROW").font(.caption2.weight(.semibold)).tracking(0.5).foregroundStyle(.secondary)
+                Spacer()
+                Text("\(appState.tomorrowTodos.count)")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+            ForEach(appState.tomorrowTodos) { todo in
+                TodoRow(appState: appState, todo: todo)
+                    .id("tomorrow-\(todo.id)-\(todo.statusRaw)-\(todo.completedDate?.timeIntervalSince1970 ?? 0)")
+            }
         }
     }
 }
@@ -475,6 +513,15 @@ struct PomodoroStrip: View {
             }
             .buttonStyle(.plain)
             .foregroundStyle(.secondary)
+
+            if pomo.phase.isBreak {
+                Button { appState.skipBreakAndStartWork() } label: {
+                    Image(systemName: "forward.fill")
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .help("Skip break")
+            }
         }
     }
 }

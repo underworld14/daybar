@@ -8,6 +8,8 @@ public enum PreferenceKeys {
     public static let longBreakMinutes = "pomodoro.longBreakMinutes"
     public static let cyclesBeforeLongBreak = "pomodoro.cyclesBeforeLongBreak"
     public static let autoStartNext = "pomodoro.autoStartNext"
+    public static let skipBreakWhenIdle = "pomodoro.skipBreakWhenIdle"
+    public static let idleSkipMinutes = "pomodoro.idleSkipMinutes"
     public static let soundEnabled = "sound.enabled"
     public static let soundName = "sound.name"
 
@@ -29,6 +31,11 @@ public enum PreferenceKeys {
     public static let remindersHabitsSyncEnabled = "reminders.habitsSyncEnabled"
     public static let selectedHabitReminderCalendarIDs = "reminders.selectedHabitCalendarIDs"
     public static let defaultHabitReminderCalendarID = "reminders.defaultHabitCalendarID"
+
+    public static let radioLastChannelID = "radio.lastChannelID"
+    public static let radioWasPlaying = "radio.wasPlaying"
+    public static let radioHasUserStarted = "radio.hasUserStarted"
+    public static let radioPauseOnFocusEnd = "radio.pauseOnFocusEnd"
 }
 
 /// Typed reads of the app preferences. Getters bake in the same defaults SettingsView
@@ -44,6 +51,10 @@ public enum Preferences {
     public static var longBreakMinutes: Int { intOr(PreferenceKeys.longBreakMinutes, 15) }
     public static var cyclesBeforeLongBreak: Int { intOr(PreferenceKeys.cyclesBeforeLongBreak, 4) }
     public static var autoStartNext: Bool { defaults.bool(forKey: PreferenceKeys.autoStartNext) }
+    public static var skipBreakWhenIdle: Bool {
+        defaults.object(forKey: PreferenceKeys.skipBreakWhenIdle) as? Bool ?? true
+    }
+    public static var idleSkipMinutes: Int { intOr(PreferenceKeys.idleSkipMinutes, 45) }
     public static var soundEnabled: Bool { defaults.object(forKey: PreferenceKeys.soundEnabled) as? Bool ?? true }
     public static var soundName: String { defaults.string(forKey: PreferenceKeys.soundName) ?? "Glass" }
 
@@ -108,6 +119,24 @@ public enum Preferences {
 
     public static var defaultHabitReminderCalendarID: String? {
         defaults.string(forKey: PreferenceKeys.defaultHabitReminderCalendarID)
+    }
+
+    // MARK: - Lofi Radio
+
+    public static var radioLastChannelID: String? {
+        defaults.string(forKey: PreferenceKeys.radioLastChannelID)
+    }
+
+    public static var radioWasPlaying: Bool {
+        defaults.bool(forKey: PreferenceKeys.radioWasPlaying)
+    }
+
+    public static var radioHasUserStarted: Bool {
+        defaults.bool(forKey: PreferenceKeys.radioHasUserStarted)
+    }
+
+    public static var radioPauseOnFocusEnd: Bool {
+        defaults.object(forKey: PreferenceKeys.radioPauseOnFocusEnd) as? Bool ?? true
     }
 
     /// Habit list selection, falling back to todo-selected lists when unset.

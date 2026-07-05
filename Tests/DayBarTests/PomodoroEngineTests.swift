@@ -8,7 +8,7 @@ final class PomodoroEngineTests: XCTestCase {
     func testNaturalCompletionReportsFullElapsed() {
         let engine = PomodoroEngine(config: PomodoroConfig(workDuration: 60))
         var captured: (PomodoroPhase, TimeInterval, Bool)?
-        engine.onPhaseEnd = { phase, elapsed, natural in captured = (phase, elapsed, natural) }
+        engine.onPhaseEnd = { phase, elapsed, natural, _ in captured = (phase, elapsed, natural) }
 
         engine.start(.work, now: t0)
         engine.tick(now: t0.addingTimeInterval(60)) // reach the end
@@ -21,7 +21,7 @@ final class PomodoroEngineTests: XCTestCase {
     func testSkipReportsPartialElapsedNotCompleted() {
         let engine = PomodoroEngine(config: PomodoroConfig(workDuration: 60))
         var captured: (PomodoroPhase, TimeInterval, Bool)?
-        engine.onPhaseEnd = { phase, elapsed, natural in captured = (phase, elapsed, natural) }
+        engine.onPhaseEnd = { phase, elapsed, natural, _ in captured = (phase, elapsed, natural) }
 
         engine.start(.work, now: t0)
         engine.skip(now: t0.addingTimeInterval(20)) // 20s in, 40s remaining
@@ -34,7 +34,7 @@ final class PomodoroEngineTests: XCTestCase {
     func testSkipWhilePausedExcludesPausedTime() {
         let engine = PomodoroEngine(config: PomodoroConfig(workDuration: 60))
         var captured: (PomodoroPhase, TimeInterval, Bool)?
-        engine.onPhaseEnd = { phase, elapsed, natural in captured = (phase, elapsed, natural) }
+        engine.onPhaseEnd = { phase, elapsed, natural, _ in captured = (phase, elapsed, natural) }
 
         engine.start(.work, now: t0)
         engine.pause(now: t0.addingTimeInterval(20))   // 20s focused, 40s remaining, endDate=nil
@@ -49,5 +49,14 @@ final class PomodoroEngineTests: XCTestCase {
         engine.start(.work, now: t0)
         engine.tick(now: t0.addingTimeInterval(60))
         XCTAssertTrue(engine.phase.isBreak)
+    }
+
+    func testSkipBreakAdvancesToWork() {
+        let engine = PomodoroEngine(config: PomodoroConfig(workDuration: 60, shortBreakDuration: 300, autoStartNext: false))
+        engine.start(.work, now: t0)
+        engine.tick(now: t0.addingTimeInterval(60))
+        XCTAssertTrue(engine.phase.isBreak)
+        engine.skip(now: t0.addingTimeInterval(120))
+        XCTAssertEqual(engine.phase, .work)
     }
 }

@@ -14,6 +14,8 @@ struct SettingsView: View {
     @AppStorage(PreferenceKeys.longBreakMinutes) private var longBreakMinutes = 15
     @AppStorage(PreferenceKeys.cyclesBeforeLongBreak) private var cycles = 4
     @AppStorage(PreferenceKeys.autoStartNext) private var autoStart = false
+    @AppStorage(PreferenceKeys.skipBreakWhenIdle) private var skipBreakWhenIdle = true
+    @AppStorage(PreferenceKeys.idleSkipMinutes) private var idleSkipMinutes = 45
     @AppStorage(PreferenceKeys.soundEnabled) private var soundEnabled = true
     @AppStorage(PreferenceKeys.soundName) private var soundName = "Glass"
 
@@ -26,6 +28,7 @@ struct SettingsView: View {
     @AppStorage(PreferenceKeys.phaseEndNotify) private var phaseEndNotify = true
     @AppStorage(PreferenceKeys.backlogNotify) private var backlogNotify = true
     @AppStorage(PreferenceKeys.habitNotifyEnabled) private var habitNotifyEnabled = true
+    @AppStorage(PreferenceKeys.radioPauseOnFocusEnd) private var radioPauseOnFocusEnd = true
 
     @State private var launchAtLogin = LaunchAtLogin.isEnabled
 
@@ -65,6 +68,13 @@ struct SettingsView: View {
                     Stepper("Long break: \(longBreakMinutes) min", value: $longBreakMinutes, in: 1...60)
                     Stepper("Long break every \(cycles) focus sessions", value: $cycles, in: 1...12)
                     Toggle("Auto-start the next phase", isOn: $autoStart)
+                    Toggle("Skip break when away", isOn: $skipBreakWhenIdle)
+                    if skipBreakWhenIdle {
+                        Stepper("Away threshold: \(idleSkipMinutes) min", value: $idleSkipMinutes, in: 30...60)
+                    }
+                    Text("If you forget to start a break and step away, DayBar assumes you rested and starts the next focus session.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
 
                 Section("Sound") {
@@ -92,6 +102,10 @@ struct SettingsView: View {
                 HabitsSettingsSection(appState: appState)
                 RemindersSettingsSection(appState: appState)
 
+                Section("Lofi Radio") {
+                    Toggle("Pause music when focus session ends", isOn: $radioPauseOnFocusEnd)
+                }
+
                 Section("Startup") {
                     Toggle("Launch DayBar at login", isOn: $launchAtLogin)
                     if LaunchAtLogin.requiresApproval {
@@ -105,7 +119,7 @@ struct SettingsView: View {
             }
             .formStyle(.grouped)
         }
-        .frame(width: 380, height: 640)
+        .frame(width: 380, height: 680)
         .onChange(of: pomodoroSnapshot) { _, _ in appState.applyPreferences() }
         .onChange(of: notifSnapshot) { _, _ in
             appState.invalidateHabitNotifications()

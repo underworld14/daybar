@@ -36,6 +36,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         appState.notifications.requestAuthorization()
         setupStatusItem()
         setupPanel()
+        Task { await appState.restoreRadioSession() }
         KeyboardShortcuts.onKeyDown(for: .quickAdd) { [weak self] in
             MainActor.assumeIsolated { self?.revealForQuickAdd() }
         }
@@ -61,7 +62,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         guard let button = statusItem.button else { return }
         let pomo = appState.pomodoro
 
-        let symbol = pomo.phase == .idle ? "checklist" : (pomo.phase.isBreak ? "cup.and.saucer.fill" : "timer")
+        let symbol: String
+        if pomo.isRunning {
+            symbol = pomo.phase.isBreak ? "cup.and.saucer.fill" : "timer"
+        } else if appState.radio.isPlaying {
+            symbol = "waveform"
+        } else {
+            symbol = "checklist"
+        }
         let image = NSImage(systemSymbolName: symbol, accessibilityDescription: "DayBar")
         image?.isTemplate = true
         button.image = image
@@ -70,6 +78,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             button.title = " " + pomo.remainingString
         } else if appState.overdueCount > 0 {
             button.title = " \(appState.overdueCount)"
+        } else if appState.radio.isPlaying {
+            button.title = " ♪"
         } else {
             button.title = ""
         }
@@ -83,6 +93,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             _ = appState.pomodoro.remaining
             _ = appState.pomodoro.isRunning
             _ = appState.overdueCount
+            _ = appState.radio.isPlaying
         } onChange: { [weak self] in
             Task { @MainActor in
                 self?.updateStatusItem()
@@ -154,7 +165,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// Panel height sized to the current habit/task counts so a handful of rows don't force a
     /// scroll; capped to 80% of the screen, then the list scrolls.
     private func desiredPanelHeight() -> CGFloat {
-        var chrome: CGFloat = 196   // header + quick-add + dividers + pomodoro + padding
+        var chrome: CGFloat = 248   // header + quick-add + dividers + radio + pomodoro + padding
         if appState.totalTodayCount > 0 { chrome += 28 } // stacked tasks progress bar + legend
         let rowHeight: CGFloat = 34   // habits may include a cue subtitle
         let sectionHeader: CGFloat = 24

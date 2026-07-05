@@ -53,8 +53,8 @@ public final class PomodoroEngine {
     public private(set) var completedWorkCount: Int = 0
     public var config: PomodoroConfig
 
-    /// Fired when a phase ends: `(finishedPhase, elapsedSeconds, completedNaturally)`.
-    public var onPhaseEnd: ((PomodoroPhase, TimeInterval, Bool) -> Void)?
+    /// Fired when a phase ends: `(finishedPhase, elapsedSeconds, completedNaturally, endedAt)`.
+    public var onPhaseEnd: ((PomodoroPhase, TimeInterval, Bool, Date) -> Void)?
 
     @ObservationIgnored private var timer: Timer?
     @ObservationIgnored private var activityToken: (any NSObjectProtocol)?
@@ -157,7 +157,7 @@ public final class PomodoroEngine {
         teardownTimer()
         endActivity()
         if finished == .work { completedWorkCount += 1 }
-        onPhaseEnd?(finished, elapsed, naturally)
+        onPhaseEnd?(finished, elapsed, naturally, now)
 
         let next = nextPhase(after: finished)
         if config.autoStartNext {

@@ -81,6 +81,22 @@ public final class DataStore {
         ))
     }
 
+    /// Completed, non-dropped todos whose `completedDate` falls in `[start, end)`.
+    public func completedTodos(in range: Range<Date>) throws -> [DailyTodo] {
+        let start = range.lowerBound, end = range.upperBound
+        let dropped = TodoStatus.dropped.rawValue
+        let predicate = #Predicate<DailyTodo> { todo in
+            todo.completedDate != nil && todo.statusRaw != dropped
+        }
+        let fetched = try context.fetch(FetchDescriptor(predicate: predicate))
+        return fetched
+            .filter { todo in
+                guard let completed = todo.completedDate else { return false }
+                return completed >= start && completed < end
+            }
+            .sorted { ($0.completedDate ?? .distantPast) > ($1.completedDate ?? .distantPast) }
+    }
+
     /// Past-due, not-completed, not-dropped todos before the given day — the carry-over backlog.
     public func overdueIncompleteTodos(before day: Date, calendar: Calendar = .current) throws -> [DailyTodo] {
         let start = calendar.startOfDay(for: day)

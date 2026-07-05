@@ -24,6 +24,7 @@ targets:
       - path: Sources/DayBarCore
     dependencies:
       - sdk: EventKit.framework
+      - sdk: AVFoundation.framework
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.yusrilizza.DayBarCore

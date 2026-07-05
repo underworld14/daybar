@@ -17,9 +17,12 @@ public final class AppState {
     public let notifications = NotificationScheduler()
     public let remindersSync: RemindersSyncEngine
     public let habitRemindersSync: HabitRemindersSyncEngine
+    public let radio: RadioPlayerManager
 
     @ObservationIgnored private let rollover: RolloverEngine
     @ObservationIgnored private let habitEngine: HabitEngine
+    @ObservationIgnored private let somaFM = SomaFMService()
+    @ObservationIgnored private let artworkCache = RadioArtworkCache()
     @ObservationIgnored private let calendar: Calendar
     @ObservationIgnored private var observers: [any NSObjectProtocol] = []
     @ObservationIgnored private var lastHabitNotifySignature: String?
@@ -28,12 +31,15 @@ public final class AppState {
     @ObservationIgnored private var remindersSyncTask: Task<Void, Never>?
     @ObservationIgnored private let schedulesRemindersSync: Bool
     @ObservationIgnored private let observeSystemEvents: Bool
+    @ObservationIgnored private var breakArmedAt: Date?
+    @ObservationIgnored private var idlePollTimer: Timer?
 
     public private(set) var remindersLastSyncedAt: Date?
     public private(set) var remindersLastSyncError: String?
     public private(set) var isRemindersSyncing = false
 
     public private(set) var todayTodos: [DailyTodo] = []
+    public private(set) var tomorrowTodos: [DailyTodo] = []
     public private(set) var carriedTodos: [DailyTodo] = []
     public private(set) var todayHabits: [TodayHabit] = []
     public private(set) var habitStreakEntries: [HabitStreakEntry] = []
@@ -43,6 +49,11 @@ public final class AppState {
     public var presentEndOfDayReview: Bool = false
     /// Bumped to ask the panel to focus the quick-add field (e.g. from the global hotkey).
     public var quickAddFocusSignal: Int = 0
+
+    public private(set) var radioChannels: [SomaFMChannel] = []
+    public private(set) var radioSkipChannels: [SomaFMChannel] = []
+    public private(set) var radioLoadError: String?
+    public private(set) var isRadioLoading = false
 
     public var thresholds: EscalationThresholds = .gentle
 
@@ -64,8 +75,9 @@ public final class AppState {
         self.habitRemindersSync = HabitRemindersSyncEngine(store: store, provider: provider, calendar: calendar)
         self.remindersLastSyncedAt = remindersSync.lastSyncedAt
         self.pomodoro = PomodoroEngine()
-        self.pomodoro.onPhaseEnd = { [weak self] phase, elapsed, natural in
-            self?.handlePhaseEnd(phase, elapsed: elapsed, completedNaturally: natural)
+        self.radio = RadioPlayerManager(service: somaFM)
+        self.pomodoro.onPhaseEnd = { [weak self] phase, elapsed, natural, endedAt in
+            self?.handlePhaseEnd(phase, elapsed: elapsed, completedNaturally: natural, endedAt: endedAt)
         }
         applyPreferences()
         refresh()
@@ -117,6 +129,8 @@ public final class AppState {
 
     private func reloadLists(now: Date) {
         todayTodos = (try? store.todos(on: now, calendar: calendar)) ?? []
+        let tomorrow = DayMath.nextDay(now, calendar: calendar)
+        tomorrowTodos = (try? store.todos(on: tomorrow, calendar: calendar)) ?? []
         carriedTodos = (try? store.overdueIncompleteTodos(before: now, calendar: calendar)) ?? []
     }
 
@@ -168,11 +182,22 @@ public final class AppState {
     // MARK: - Intents
 
     @discardableResult
-    public func addTodo(title: String, priority: Priority = .medium, now: Date = .now) -> DailyTodo? {
+    public func addTodo(
+        title: String,
+        priority: Priority = .medium,
+        plannedFor day: Date? = nil,
+        now: Date = .now
+    ) -> DailyTodo? {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
-        let day = DayMath.startOfDay(now, calendar: calendar)
-        let todo = DailyTodo(title: trimmed, plannedForDate: day, originalPlannedDate: day, status: .planned, priority: priority)
+        let planned = DayMath.startOfDay(day ?? now, calendar: calendar)
+        let todo = DailyTodo(
+            title: trimmed,
+            plannedForDate: planned,
+            originalPlannedDate: planned,
+            status: .planned,
+            priority: priority
+        )
         store.insert(todo)
         store.save()
         if Preferences.remindersPushNewTodos {
@@ -249,6 +274,7 @@ public final class AppState {
     public func reschedule(_ todo: DailyTodo, to day: Date = .now, now: Date = .now) {
         todo.plannedForDate = DayMath.startOfDay(day, calendar: calendar)
         todo.snoozedUntil = nil
+        todo.completedDate = nil
         todo.status = .planned
         markRemindersTodoLocallyModified(todo, now: now)
         remindersSync.enqueuePush(for: todo)
@@ -461,6 +487,76 @@ public final class AppState {
         }
     }
 
+    // MARK: - Lofi Radio
+
+    public func loadRadioChannels() async {
+        guard !isRadioLoading else { return }
+        isRadioLoading = true
+        radioLoadError = nil
+        defer { isRadioLoading = false }
+        do {
+            let all = try await somaFM.fetchCuratedChannels()
+            radioChannels = all
+            radioSkipChannels = SomaFMCuratedChannels.filterSkip(all)
+            radio.refreshNowPlaying(from: all)
+            await prefetchAdjacentPLS()
+        } catch {
+            radioLoadError = "Can't reach SomaFM. Check your connection."
+            print("DayBar: radio channel load failed: \(error)")
+        }
+    }
+
+    public func playRadio(_ channel: SomaFMChannel) async {
+        await radio.play(channel: channel)
+        await prefetchAdjacent(for: channel)
+    }
+
+    public func radioNextChannel() async {
+        await radio.playNextChannel(in: radioSkipChannels)
+        if let channel = radio.currentChannel {
+            await prefetchAdjacent(for: channel)
+        }
+    }
+
+    public func radioPreviousChannel() async {
+        await radio.playPreviousChannel(in: radioSkipChannels)
+        if let channel = radio.currentChannel {
+            await prefetchAdjacent(for: channel)
+        }
+    }
+
+    public func toggleRadio() async {
+        await radio.togglePlayPause()
+    }
+
+    public func restoreRadioSession() async {
+        await loadRadioChannels()
+        await radio.restoreSession(channels: radioChannels)
+    }
+
+    public func artworkData(for channel: SomaFMChannel) async -> Data? {
+        await artworkCache.imageData(for: channel)
+    }
+
+    private func prefetchAdjacentPLS() async {
+        let id = Preferences.radioLastChannelID ?? SomaFMCuratedChannels.curatedSkipIDs.first
+        let list = radioSkipChannels.isEmpty ? radioChannels : radioSkipChannels
+        guard let id, let channel = list.first(where: { $0.id == id }) ?? list.first else { return }
+        await prefetchAdjacent(for: channel)
+    }
+
+    private func prefetchAdjacent(for channel: SomaFMChannel) async {
+        let list = radioSkipChannels.isEmpty ? radioChannels : radioSkipChannels
+        var targets: [SomaFMChannel] = [channel]
+        if let next = SomaFMCuratedChannels.adjacentChannel(from: channel, in: list, direction: .next) {
+            targets.append(next)
+        }
+        if let prev = SomaFMCuratedChannels.adjacentChannel(from: channel, in: list, direction: .previous) {
+            targets.append(prev)
+        }
+        await somaFM.prefetchStreamURLs(for: targets)
+    }
+
     /// Rebuild the Pomodoro configuration from saved Preferences (call after a Settings change).
     public func applyPreferences() {
         pomodoro.config = Preferences.pomodoroConfig
@@ -473,6 +569,27 @@ public final class AppState {
         let todos = (try? store.todos(plannedIn: range)) ?? []
         let sessions = (try? store.focusSessions(in: range)) ?? []
         return Analytics.buckets(todos: todos, sessions: sessions, endingAt: now, count: count, granularity: granularity, calendar: calendar)
+    }
+
+    /// Completed tasks grouped by finish day, newest first.
+    public func completedHistory(days: Int = 30, now: Date = .now) -> [DayHistoryGroup] {
+        let dayCount = max(1, days)
+        let end = calendar.date(byAdding: .day, value: 1, to: DayMath.startOfDay(now, calendar: calendar)) ?? now
+        let start = calendar.date(byAdding: .day, value: -dayCount, to: DayMath.startOfDay(now, calendar: calendar)) ?? now
+        let todos = (try? store.completedTodos(in: start..<end)) ?? []
+        var groups: [Date: [DailyTodo]] = [:]
+        for todo in todos {
+            guard let completed = todo.completedDate else { continue }
+            let day = DayMath.startOfDay(completed, calendar: calendar)
+            groups[day, default: []].append(todo)
+        }
+        return groups
+            .map { DayHistoryGroup(date: $0.key, todos: $0.value) }
+            .sorted { $0.date > $1.date }
+    }
+
+    public var completedHistoryTotal: Int {
+        completedHistory().reduce(0) { $0 + $1.count }
     }
 
     // MARK: - End-of-day review
@@ -527,6 +644,36 @@ public final class AppState {
             }
         }
         observers.append(remindersChange)
+
+        let idlePoll = Timer(timeInterval: 30, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.evaluateIdleBreakSkip() }
+        }
+        idlePoll.tolerance = 5
+        RunLoop.main.add(idlePoll, forMode: .common)
+        idlePollTimer = idlePoll
+    }
+
+    /// When a break is armed or running and the user has been away long enough, skip the
+    /// break and start the next focus session.
+    func evaluateIdleBreakSkip(now: Date = .now) {
+        guard Preferences.skipBreakWhenIdle else { return }
+        guard pomodoro.phase.isBreak else {
+            breakArmedAt = nil
+            return
+        }
+        let threshold = TimeInterval(Preferences.idleSkipMinutes * 60)
+        let idleSinceInput = IdleMonitor.secondsSinceLastInput()
+        let sinceBreak = now.timeIntervalSince(breakArmedAt ?? now)
+        guard idleSinceInput >= threshold, sinceBreak >= threshold else { return }
+        skipBreakAndStartWork(now: now)
+    }
+
+    /// Skip the current break and immediately start the next focus session.
+    public func skipBreakAndStartWork(now: Date = .now) {
+        guard pomodoro.phase.isBreak else { return }
+        pomodoro.skip(now: now)
+        pomodoro.start(.work, now: now)
+        breakArmedAt = nil
     }
 
     private func handleWake() {
@@ -534,17 +681,24 @@ public final class AppState {
         refresh()
     }
 
-    private func handlePhaseEnd(_ phase: PomodoroPhase, elapsed: TimeInterval, completedNaturally: Bool) {
+    private func handlePhaseEnd(_ phase: PomodoroPhase, elapsed: TimeInterval, completedNaturally: Bool, endedAt: Date) {
         if phase == .work {
             let minutes = Int((elapsed / 60).rounded())
             if minutes > 0 {
-                store.insert(FocusSession(endedAt: .now, minutes: minutes, completed: completedNaturally))
+                store.insert(FocusSession(endedAt: endedAt, minutes: minutes, completed: completedNaturally))
                 store.save()
             }
+            breakArmedAt = endedAt
+        } else if phase.isBreak {
+            breakArmedAt = nil
         }
         #if canImport(AppKit)
         if Preferences.soundEnabled { AppKitBridge.playPhaseEndSound(named: Preferences.soundName) }
         #endif
         notifications.postPhaseEndBanner(finished: phase)
+        if phase == .work, radio.isPlaying, Preferences.radioPauseOnFocusEnd {
+            radio.pause()
+            habitMilestoneMessage = "Focus ended — music paused"
+        }
     }
 }
