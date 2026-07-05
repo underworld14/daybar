@@ -112,6 +112,88 @@ DayBar is an *accessory* app — look for its icon in the **menu bar**, not the 
 xcodebuild -project DayBar.xcodeproj -scheme DayBar -destination 'platform=macOS' test
 ```
 
+## Publishing a release
+
+Maintainers only. Releases are published to
+**[GitHub Releases](https://github.com/underworld14/daybar/releases)** as `DayBar-vX.Y.Z-macOS.zip`.
+
+You need the [GitHub CLI](https://cli.github.com/) (`brew install gh`) logged in (`gh auth login`).
+
+### 1. Bump the version
+
+Edit [`project.yml`](project.yml):
+
+```yaml
+MARKETING_VERSION: "0.3.0"   # user-facing semver → tag v0.3.0
+CURRENT_PROJECT_VERSION: "2" # optional build number bump
+```
+
+Commit and push to `main`:
+
+```sh
+git add project.yml
+git commit -m "chore: bump version to 0.3.0"
+git push origin main
+```
+
+### 2. Publish (pick one)
+
+#### Option A — Automatic via GitHub Actions (recommended)
+
+Push a version tag. The [Release workflow](.github/workflows/release.yml) builds a Release
+`.app`, zips it, and attaches it to the GitHub Release:
+
+```sh
+git tag v0.3.0
+git push origin v0.3.0
+```
+
+Watch progress: **Actions** tab on GitHub, or locally:
+
+```sh
+gh run list --workflow=Release
+gh run watch   # optional: follow the latest run
+```
+
+When it finishes, the release appears at `https://github.com/underworld14/daybar/releases/tag/v0.3.0`.
+
+To edit release notes after CI creates the draft assets:
+
+```sh
+gh release edit v0.3.0 --notes "What's new in 0.3.0 …"
+```
+
+#### Option B — Manual build + `gh release create`
+
+Useful if Actions is down or you want to ship from your Mac directly:
+
+```sh
+xcodegen generate
+
+xcodebuild -project DayBar.xcodeproj -scheme DayBar \
+  -configuration Release \
+  -destination 'platform=macOS' \
+  -derivedDataPath build/DerivedData \
+  build
+
+cd build/DerivedData/Build/Products/Release
+ditto -c -k --sequesterRsrc --keepParent DayBar.app DayBar-v0.3.0-macOS.zip
+
+gh release create v0.3.0 DayBar-v0.3.0-macOS.zip \
+  --title "DayBar 0.3.0" \
+  --notes "What's new in 0.3.0 …"
+```
+
+`gh release create` creates the tag on GitHub if it doesn't exist yet (no need for a separate
+`git tag` + push unless you want the tag locally too).
+
+### Checklist
+
+- [ ] Tests pass (`xcodebuild … test`)
+- [ ] `MARKETING_VERSION` in `project.yml` matches the tag (`v0.3.0` → `0.3.0`)
+- [ ] Release notes mention breaking changes / Gatekeeper (`xattr`) if needed
+- [ ] Download the zip from Releases and smoke-test on a clean Mac (install → menu bar icon → play radio)
+
 ## Architecture
 
 | Target | What |
