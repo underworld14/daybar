@@ -70,16 +70,16 @@ struct LofiRadioStrip: View {
                     Button {
                         Task { await appState.playRadio(channel) }
                     } label: {
-                        Label {
-                            Text("\(channel.title) · \(channel.genre)")
-                        } icon: {
-                            ChannelArtwork(appState: appState, channel: channel, size: 24)
+                        if radio.currentChannel?.id == channel.id {
+                            Label(channel.title, systemImage: "checkmark")
+                        } else {
+                            Text(channel.title)
                         }
                     }
                 }
             } label: {
                 HStack(spacing: 4) {
-                    Text(radio.currentChannel?.title ?? "Select station")
+                    Text(stationLabel)
                         .font(.subheadline)
                         .lineLimit(1)
                     Image(systemName: "chevron.down")
@@ -91,6 +91,11 @@ struct LofiRadioStrip: View {
             .menuIndicator(.hidden)
             .fixedSize(horizontal: false, vertical: true)
         }
+    }
+
+    private var stationLabel: String {
+        if let title = radio.currentChannel?.title { return title }
+        return "Lofi Radio"
     }
 
     private var transportControls: some View {
@@ -110,8 +115,8 @@ struct LofiRadioStrip: View {
                 Image(systemName: radio.isPlaying ? "pause.fill" : "play.fill")
             }
             .buttonStyle(.plain)
-            .disabled(appState.radioChannels.isEmpty && appState.radioLoadError != nil)
-            .help(radio.isPlaying ? "Pause" : "Play")
+            .disabled(appState.isRadioLoading && appState.radioChannels.isEmpty)
+            .help(radio.isPlaying ? "Pause" : "Play random station")
             .accessibilityLabel(radio.isPlaying ? "Pause radio" : "Play radio")
 
             Button {
@@ -160,32 +165,11 @@ struct LofiRadioStrip: View {
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
-        }
-    }
-}
-
-private struct ChannelArtwork: View {
-    var appState: AppState
-    let channel: SomaFMChannel
-    let size: CGFloat
-
-    @State private var imageData: Data?
-
-    var body: some View {
-        Group {
-            if let imageData, let nsImage = RadioArtworkCache.image(from: imageData) {
-                Image(nsImage: nsImage)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-            } else {
-                Image(systemName: "music.note")
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .frame(width: size, height: size)
-        .clipShape(RoundedRectangle(cornerRadius: 4))
-        .task(id: channel.id) {
-            imageData = await appState.artworkData(for: channel)
+        } else if radio.currentChannel == nil, !appState.radioChannels.isEmpty {
+            Text("Press ▶ to start a random station")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
         }
     }
 }

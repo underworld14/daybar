@@ -33,6 +33,7 @@ public final class AppState {
     @ObservationIgnored private let observeSystemEvents: Bool
     @ObservationIgnored private var breakArmedAt: Date?
     @ObservationIgnored private var idlePollTimer: Timer?
+    @ObservationIgnored private var suppressNextPhaseEndFeedback = false
 
     public private(set) var remindersLastSyncedAt: Date?
     public private(set) var remindersLastSyncError: String?
@@ -526,7 +527,16 @@ public final class AppState {
     }
 
     public func toggleRadio() async {
-        await radio.togglePlayPause()
+        if radio.isPlaying {
+            radio.pause()
+            return
+        }
+        if let channel = radio.currentChannel {
+            await playRadio(channel)
+            return
+        }
+        guard let channel = radioSkipChannels.randomElement() ?? radioChannels.randomElement() else { return }
+        await playRadio(channel)
     }
 
     public func restoreRadioSession() async {
@@ -584,12 +594,26 @@ public final class AppState {
             groups[day, default: []].append(todo)
         }
         return groups
-            .map { DayHistoryGroup(date: $0.key, todos: $0.value) }
+            .map { day, todos in
+                DayHistoryGroup(
+                    date: day,
+                    todos: todos.sorted {
+                        ($0.completedDate ?? .distantPast) > ($1.completedDate ?? .distantPast)
+                    }
+                )
+            }
             .sorted { $0.date > $1.date }
     }
 
-    public var completedHistoryTotal: Int {
-        completedHistory().reduce(0) { $0 + $1.count }
+    public static let completedHistoryDays = 30
+
+    public func completedHistoryTotal(days: Int = completedHistoryDays, now: Date = .now) -> Int {
+        completedHistory(days: days, now: now).reduce(0) { $0 + $1.count }
+    }
+
+    /// Average completions per calendar day across the window (not only days with activity).
+    public func completedHistoryAveragePerDay(days: Int = completedHistoryDays, now: Date = .now) -> Int {
+        completedHistoryTotal(days: days, now: now) / max(1, days)
     }
 
     // MARK: - End-of-day review
@@ -653,24 +677,27 @@ public final class AppState {
         idlePollTimer = idlePoll
     }
 
-    /// When a break is armed or running and the user has been away long enough, skip the
-    /// break and start the next focus session.
+    /// When a break is armed (waiting for play) and the user has been away long enough,
+    /// skip the break and start the next focus session.
     func evaluateIdleBreakSkip(now: Date = .now) {
         guard Preferences.skipBreakWhenIdle else { return }
         guard pomodoro.phase.isBreak else {
             breakArmedAt = nil
             return
         }
+        // Only auto-skip when the user forgot to press play — not during an active break.
+        guard !pomodoro.isRunning else { return }
         let threshold = TimeInterval(Preferences.idleSkipMinutes * 60)
         let idleSinceInput = IdleMonitor.secondsSinceLastInput()
         let sinceBreak = now.timeIntervalSince(breakArmedAt ?? now)
         guard idleSinceInput >= threshold, sinceBreak >= threshold else { return }
-        skipBreakAndStartWork(now: now)
+        skipBreakAndStartWork(now: now, silent: true)
     }
 
     /// Skip the current break and immediately start the next focus session.
-    public func skipBreakAndStartWork(now: Date = .now) {
+    public func skipBreakAndStartWork(now: Date = .now, silent: Bool = false) {
         guard pomodoro.phase.isBreak else { return }
+        if silent { suppressNextPhaseEndFeedback = true }
         pomodoro.skip(now: now)
         pomodoro.start(.work, now: now)
         breakArmedAt = nil
@@ -691,6 +718,10 @@ public final class AppState {
             breakArmedAt = endedAt
         } else if phase.isBreak {
             breakArmedAt = nil
+        }
+        guard !suppressNextPhaseEndFeedback else {
+            suppressNextPhaseEndFeedback = false
+            return
         }
         #if canImport(AppKit)
         if Preferences.soundEnabled { AppKitBridge.playPhaseEndSound(named: Preferences.soundName) }

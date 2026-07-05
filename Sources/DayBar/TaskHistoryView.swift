@@ -6,10 +6,11 @@ struct TaskHistoryView: View {
     var appState: AppState
     @Environment(\.dismiss) private var dismiss
 
-    private var groups: [DayHistoryGroup] { appState.completedHistory() }
-    private var total: Int { groups.reduce(0) { $0 + $1.count } }
-    private var dayCount: Int { max(1, groups.count) }
-    private var averagePerDay: Int { total / dayCount }
+    private let historyDays = AppState.completedHistoryDays
+
+    private var groups: [DayHistoryGroup] { appState.completedHistory(days: historyDays) }
+    private var total: Int { appState.completedHistoryTotal(days: historyDays) }
+    private var averagePerDay: Int { appState.completedHistoryAveragePerDay(days: historyDays) }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -41,8 +42,8 @@ struct TaskHistoryView: View {
     private var summary: some View {
         HStack(spacing: 16) {
             summaryItem(value: "\(total)", label: "completed")
-            summaryItem(value: "\(averagePerDay)", label: "avg / day")
-            summaryItem(value: "30", label: "days")
+            summaryItem(value: "\(averagePerDay)", label: "avg / \(historyDays) days")
+            summaryItem(value: "\(historyDays)", label: "day window")
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }

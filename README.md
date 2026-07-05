@@ -1,26 +1,42 @@
-# DayBar
+<p align="center">
+  <img src="DayBar/Assets.xcassets/AppIcon.appiconset/icon_256.png" alt="DayBar app icon" width="128" height="128">
+</p>
 
-A native macOS **menu-bar app to plan your day, focus with a Pomodoro, and actually finish
-what you planned** — with unfinished tasks carried into tomorrow under a *gentle*, escalating
-nudge instead of silently disappearing.
+<h1 align="center">DayBar</h1>
 
-![platform](https://img.shields.io/badge/platform-macOS%2015%2B-blue)
-![swift](https://img.shields.io/badge/Swift-5%20mode%20·%206%20toolchain-orange)
-![license](https://img.shields.io/badge/license-MIT-green)
+<p align="center">
+  A native macOS <strong>menu-bar app to plan your day, focus with a Pomodoro, and actually finish
+  what you planned</strong> — with unfinished tasks carried into tomorrow under a <em>gentle</em>, escalating
+  nudge instead of silently disappearing.
+</p>
 
-> Lives in your menu bar — no Dock icon. Plan in the morning, work through the day, and run a
-> quick end-of-day review before you sleep.
+<p align="center">
+  <img src="https://img.shields.io/badge/platform-macOS%2015%2B-blue" alt="macOS 15+">
+  <img src="https://img.shields.io/badge/Swift-5%20mode%20·%206%20toolchain-orange" alt="Swift">
+  <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT">
+</p>
+
+<p align="center">
+  Lives in your menu bar — no Dock icon. Plan in the morning, work through the day, and run a
+  quick end-of-day review before you sleep.
+</p>
 
 ## Features
 
 - **Daily habits** — recurring rituals (e.g. after morning coffee) on a schedule (every day, weekdays,
   weekends, or custom days); one-tap check-off, streak tracking with a gentle grace day, optional anchor
   reminders, and optional sync to Apple Reminders as recurring reminders.
-- **Daily todos** — capture today's plan; check off, delay, reschedule, or drop.
+- **Daily todos** — capture today's plan; check off, delay, reschedule, or drop. Quick-add for **today
+  or tomorrow** with a segmented picker.
 - **Gentle carry-over** — unfinished tasks roll to the next day and age (grey → amber pill +
   a quiet menu-bar count). Calm by default, never a wall of red.
 - **Pomodoro** — customizable focus/break durations, cycles, auto-start; a **live mm:ss
-  countdown right in the menu bar**; accurate across sleep/wake (wall-clock based).
+  countdown right in the menu bar**; accurate across sleep/wake (wall-clock based). Optionally
+  **skip a break** if you've stepped away long enough (assumes you already rested).
+- **Lofi Radio** — built-in **SomaFM** ambient/lofi stations in the panel footer; tap ▶ to start
+  (random station) or pick from a simple list; skip stations, now-playing label, offline channel cache;
+  menu-bar waveform while playing; **auto-pauses when a focus session ends**.
+- **Task history** — browse completed tasks grouped by day (last 30 days).
 - **Analytics (Swift Charts)** — tasks and habits tabs; daily / weekly / monthly trends,
   habit consistency heatmap (28 days), streak leaderboard, focus minutes, and Pomodoro sessions.
 - **Notifications** — morning planning + evening review reminders, a phase-end alert (shows
@@ -30,7 +46,8 @@ nudge instead of silently disappearing.
 - **Quick-add hotkey** — a global shortcut (default ⌥⌘D) opens the panel focused on the field.
 - **Apple Reminders sync** — optional two-way sync with selected Reminder lists (complete,
   delay, and reschedule flow back to Reminders). Habits can sync as recurring reminders on their schedule.
-- **Local & private** — stored on-device with SwiftData; no account, no cloud.
+- **Local & private** — stored on-device with SwiftData; no account, no cloud. Radio metadata and
+  artwork are cached locally; streams come from [SomaFM](https://somafm.com).
 
 ## Requirements
 
@@ -64,8 +81,8 @@ xcodebuild -project DayBar.xcodeproj -scheme DayBar -destination 'platform=macOS
 
 | Target | What |
 |---|---|
-| `DayBarCore` | Models (`@Model`), `DataStore` (SwiftData), `RolloverEngine`, `EscalationModel`, `PomodoroEngine`, `Analytics`, `NotificationScheduler`, `AppState`. UI-free, unit-tested. |
-| `DayBar` | SwiftUI + AppKit menu-bar UI: `NSStatusItem` + borderless `NSPanel` hosting `TodayView`, plus Settings / Analytics / Review sheets. |
+| `DayBarCore` | Models (`@Model`), `DataStore` (SwiftData), `RolloverEngine`, `EscalationModel`, `PomodoroEngine`, `SomaFMService` / `RadioPlayerManager`, `Analytics`, `NotificationScheduler`, `AppState`. UI-free, unit-tested. |
+| `DayBar` | SwiftUI + AppKit menu-bar UI: `NSStatusItem` + borderless `NSPanel` hosting `TodayView`, plus Settings / Analytics / Review / History sheets and the inline `LofiRadioStrip`. |
 | `DayBarTests` | XCTest. |
 
 A single `@Observable @MainActor AppState` is the source of truth (read via `@Environment`).

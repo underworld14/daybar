@@ -72,7 +72,7 @@ struct SettingsView: View {
                     if skipBreakWhenIdle {
                         Stepper("Away threshold: \(idleSkipMinutes) min", value: $idleSkipMinutes, in: 30...60)
                     }
-                    Text("If you forget to start a break and step away, DayBar assumes you rested and starts the next focus session.")
+                    Text("If you forget to start a break and step away, DayBar assumes you rested and starts the next focus session. Only applies when the break timer has not been started.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

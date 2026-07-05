@@ -65,4 +65,52 @@ final class CompletedHistoryTests: XCTestCase {
         XCTAssertEqual(groups[0].todos.first?.title, "C")
         XCTAssertEqual(groups[1].count, 2)
     }
+
+    func testCompletedHistoryAverageUsesCalendarDays() {
+        let today = cal.startOfDay(for: Date(timeIntervalSince1970: 2_000_000_000))
+
+        for offset in 0..<15 {
+            let day = cal.date(byAdding: .day, value: -offset, to: today)!
+            let todo = DailyTodo(title: "Task \(offset)", plannedForDate: day, status: .completed)
+            todo.completedDate = day.addingTimeInterval(3600)
+            store.insert(todo)
+        }
+        store.save()
+
+        XCTAssertEqual(state.completedHistoryTotal(days: 30, now: today), 15)
+        XCTAssertEqual(state.completedHistoryAveragePerDay(days: 30, now: today), 0)
+
+        for offset in 15..<30 {
+            let day = cal.date(byAdding: .day, value: -offset, to: today)!
+            let todo = DailyTodo(title: "Task \(offset)", plannedForDate: day, status: .completed)
+            todo.completedDate = day.addingTimeInterval(3600)
+            store.insert(todo)
+        }
+        store.save()
+
+        XCTAssertEqual(state.completedHistoryTotal(days: 30, now: today), 30)
+        XCTAssertEqual(state.completedHistoryAveragePerDay(days: 30, now: today), 1)
+    }
+
+    func testRescheduleCompletedHistoryItemBringsToToday() {
+        let today = cal.startOfDay(for: Date(timeIntervalSince1970: 2_000_000_000))
+        let yesterday = cal.date(byAdding: .day, value: -1, to: today)!
+
+        let done = DailyTodo(title: "Report", plannedForDate: yesterday, status: .completed)
+        done.completedDate = yesterday.addingTimeInterval(10_800)
+        store.insert(done)
+        store.save()
+
+        state.reschedule(done, to: today, now: today)
+
+        XCTAssertNil(done.completedDate)
+        XCTAssertEqual(done.status, .planned)
+        XCTAssertEqual(done.plannedForDate, today)
+        XCTAssertTrue(state.todayTodos.contains(where: { $0.id == done.id }))
+        XCTAssertFalse(
+            state.completedHistory(days: 30, now: today)
+                .flatMap(\.todos)
+                .contains(where: { $0.id == done.id })
+        )
+    }
 }

@@ -70,4 +70,38 @@ final class IdleBreakSkipTests: XCTestCase {
         XCTAssertEqual(state.pomodoro.phase, .work)
         XCTAssertTrue(state.pomodoro.isRunning)
     }
+
+    func testEvaluateIdleBreakSkipDoesNotFireWhenBreakIsRunning() {
+        UserDefaults.standard.set(30, forKey: PreferenceKeys.idleSkipMinutes)
+        state.pomodoro.config = PomodoroConfig(
+            workDuration: 60,
+            shortBreakDuration: 300,
+            autoStartNext: true
+        )
+        state.pomodoro.start(.work, now: t0)
+        state.pomodoro.tick(now: t0.addingTimeInterval(60))
+        XCTAssertTrue(state.pomodoro.phase.isBreak)
+        XCTAssertTrue(state.pomodoro.isRunning)
+
+        let away = t0.addingTimeInterval(60 + 31 * 60)
+        IdleMonitor.secondsSinceLastInput = { 31 * 60 }
+        state.evaluateIdleBreakSkip(now: away)
+
+        XCTAssertTrue(state.pomodoro.phase.isBreak)
+        XCTAssertTrue(state.pomodoro.isRunning)
+    }
+
+    func testEvaluateIdleBreakSkipRespectsPreferenceOff() {
+        UserDefaults.standard.set(false, forKey: PreferenceKeys.skipBreakWhenIdle)
+        state.pomodoro.config = PomodoroConfig(workDuration: 60, shortBreakDuration: 300, autoStartNext: false)
+        state.pomodoro.start(.work, now: t0)
+        state.pomodoro.tick(now: t0.addingTimeInterval(60))
+
+        let away = t0.addingTimeInterval(60 + 31 * 60)
+        IdleMonitor.secondsSinceLastInput = { 31 * 60 }
+        state.evaluateIdleBreakSkip(now: away)
+
+        XCTAssertTrue(state.pomodoro.phase.isBreak)
+        XCTAssertFalse(state.pomodoro.isRunning)
+    }
 }
