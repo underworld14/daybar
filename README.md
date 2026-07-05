@@ -12,6 +12,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/platform-macOS%2015%2B-blue" alt="macOS 15+">
+  <img src="https://img.shields.io/github/v/release/underworld14/daybar?label=release" alt="Release">
   <img src="https://img.shields.io/badge/Swift-5%20mode%20·%206%20toolchain-orange" alt="Swift">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT">
 </p>
@@ -48,6 +49,40 @@
   delay, and reschedule flow back to Reminders). Habits can sync as recurring reminders on their schedule.
 - **Local & private** — stored on-device with SwiftData; no account, no cloud. Radio metadata and
   artwork are cached locally; streams come from [SomaFM](https://somafm.com).
+
+## Download
+
+Pre-built releases for macOS 15+ are on **[GitHub Releases](https://github.com/underworld14/daybar/releases)**.
+
+### Install
+
+1. Download the latest `DayBar-vX.Y.Z-macOS.zip` from [Releases](https://github.com/underworld14/daybar/releases).
+2. Double-click the zip to extract `DayBar.app`.
+3. Drag **DayBar.app** into **Applications**.
+4. Open DayBar from Applications. The icon appears in the **menu bar** (there is no Dock icon).
+
+### First launch & Gatekeeper
+
+Release builds are ad-hoc signed. macOS may block the first open with *"DayBar can't be opened
+because Apple cannot check it for malicious software."* Use either method:
+
+**Option A — Right-click (easiest)**
+
+1. In Finder, **right-click** (or Control-click) `DayBar.app` in Applications.
+2. Choose **Open**.
+3. Click **Open** in the dialog. You only need to do this once.
+
+**Option B — Terminal (`xattr`)**
+
+Removes the quarantine flag macOS adds to downloaded files:
+
+```sh
+xattr -cr /Applications/DayBar.app
+open /Applications/DayBar.app
+```
+
+> **Notifications & launch at login:** For reliable permission prompts, build from source once in
+> Xcode with your Apple ID team, or wait for a future Developer ID–signed release.
 
 ## Requirements
 
