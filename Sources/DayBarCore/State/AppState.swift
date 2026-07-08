@@ -35,6 +35,7 @@ public final class AppState {
     @ObservationIgnored private var breakArmedAt: Date?
     @ObservationIgnored private var idlePollTimer: Timer?
     @ObservationIgnored private var suppressNextPhaseEndFeedback = false
+    @ObservationIgnored private var reviewSnoozedUntil: Date?
 
     public private(set) var remindersLastSyncedAt: Date?
     public private(set) var remindersLastSyncError: String?
@@ -83,6 +84,10 @@ public final class AppState {
         self.pomodoro.onPhaseEnd = { [weak self] phase, elapsed, natural, endedAt in
             self?.handlePhaseEnd(phase, elapsed: elapsed, completedNaturally: natural, endedAt: endedAt)
         }
+        self.pomodoro.onStateChange = { [weak self] in self?.syncTickingSound() }
+        // Any radio start (play/next/prev/retry/restore/reconnect) silences ticking — the
+        // reverse of `syncTickingSound` pausing radio when ticking starts.
+        self.radio.onPlaybackStarted = { TickingSoundPlayer.shared.stop() }
         applyPreferences()
         refresh()
         if observeSystemEvents { observeSystem() }
@@ -532,6 +537,9 @@ public final class AppState {
     public func toggleRadio() async {
         if radio.isPlaying {
             radio.pause()
+            // Radio stopping frees the "one audio at a time" slot: resume ticking if a
+            // focus session is still running and the user has it enabled.
+            syncTickingSound()
             return
         }
         if let channel = radio.currentChannel {
@@ -573,6 +581,26 @@ public final class AppState {
     /// Rebuild the Pomodoro configuration from saved Preferences (call after a Settings change).
     public func applyPreferences() {
         pomodoro.config = Preferences.pomodoroConfig
+        syncTickingSound()
+    }
+
+    // MARK: - Ticking sound
+
+    /// Keeps the ambient ticking sound in sync with the Pomodoro state and the user's
+    /// preference. Mutually exclusive with Lofi Radio: starting ticking pauses radio here,
+    /// and starting radio stops ticking via `radio.onPlaybackStarted` (wired in `init`).
+    public func syncTickingSound() {
+        let shouldTick = TickingSoundGate.shouldPlay(
+            preferenceEnabled: Preferences.tickingSoundEnabled,
+            isWorkPhase: pomodoro.phase == .work,
+            isRunning: pomodoro.isRunning
+        )
+        if shouldTick {
+            if radio.isPlaying { radio.pause() }
+            TickingSoundPlayer.shared.start()
+        } else {
+            TickingSoundPlayer.shared.stop()
+        }
     }
 
     // MARK: - Analytics
@@ -644,11 +672,29 @@ public final class AppState {
         presentEndOfDayReview = false
     }
 
-    private func maybePromptEndOfDayReview(now: Date = .now) {
-        guard !presentEndOfDayReview, !hasReviewedToday(now: now), totalTodayCount > 0 else { return }
-        if now >= Preferences.eveningTime(on: now, calendar: calendar) {
-            presentEndOfDayReview = true
-        }
+    /// Snoozes the auto-popup for an hour — used by the review sheet's "Not now" button.
+    /// Does not affect opening it manually via "Review day…".
+    public func snoozeEndOfDayReview(now: Date = .now) {
+        reviewSnoozedUntil = now.addingTimeInterval(3600)
+        presentEndOfDayReview = false
+    }
+
+    /// - Parameter focusSessionRunning: overrides the live engine check. Needed when called
+    ///   from `handlePhaseEnd`'s work-end path, which runs inside `onPhaseEnd` *before* the
+    ///   engine clears `endDate`/`phase` — so the live check would still report the just-ended
+    ///   session as running and wrongly suppress the retry.
+    private func maybePromptEndOfDayReview(now: Date = .now, focusSessionRunning: Bool? = nil) {
+        guard !presentEndOfDayReview else { return }
+        let running = focusSessionRunning ?? (pomodoro.phase == .work && pomodoro.isRunning)
+        let shouldPresent = EndOfDayReviewGate.shouldPresent(
+            hasReviewedToday: hasReviewedToday(now: now),
+            totalTodayCount: totalTodayCount,
+            now: now,
+            eveningTime: Preferences.eveningTime(on: now, calendar: calendar),
+            snoozedUntil: reviewSnoozedUntil,
+            isFocusSessionRunning: running
+        )
+        if shouldPresent { presentEndOfDayReview = true }
     }
 
     // MARK: - System wiring
@@ -727,6 +773,11 @@ public final class AppState {
                 store.save()
             }
             breakArmedAt = endedAt
+            // The recap sheet is held back while a focus session runs — retry immediately
+            // now that it just ended, instead of waiting for the next panel open. The engine
+            // hasn't cleared its "running" state yet at this point, so tell the gate the
+            // focus session is over explicitly.
+            maybePromptEndOfDayReview(now: endedAt, focusSessionRunning: false)
         } else if phase.isBreak {
             breakArmedAt = nil
         }
@@ -734,9 +785,7 @@ public final class AppState {
             suppressNextPhaseEndFeedback = false
             return
         }
-        #if canImport(AppKit)
-        if Preferences.soundEnabled { AppKitBridge.playPhaseEndSound(named: Preferences.soundName) }
-        #endif
+        if Preferences.soundEnabled { AlertSoundPlayer.shared.playPhaseEndRing() }
         notifications.postPhaseEndBanner(finished: phase)
         if phase == .work, radio.isPlaying, Preferences.radioPauseOnFocusEnd {
             radio.pause()

@@ -78,6 +78,11 @@ struct EndOfDayReviewView: View {
 
             Divider()
             HStack {
+                Button("Not now") {
+                    appState.snoozeEndOfDayReview()
+                    dismiss()
+                }
+                .foregroundStyle(.secondary)
                 Spacer()
                 Button("Finish review") {
                     appState.saveDayLog(reflection: reflection, moodTag: selectedMood, moodSource: moodSource)

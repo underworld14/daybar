@@ -26,19 +26,18 @@ public enum AppKitBridge {
         }
     }
 
-    public static func playPhaseEndSound(named name: String = "Glass") {
-        if let sound = NSSound(named: NSSound.Name(name)) {
-            sound.play()
-        } else {
-            NSSound.beep()
-        }
-    }
-
     /// Deep-links into System Settings > Apple Intelligence & Siri. Private pane
     /// identifier (no public API exists for this), so this is best-effort: if the URL
     /// scheme ever changes, it silently no-ops instead of crashing.
     public static func openAppleIntelligenceSettings() {
         guard let url = URL(string: "x-apple.systempreferences:com.apple.Siri-Settings.extension") else { return }
+        NSWorkspace.shared.open(url)
+    }
+
+    /// Deep-links into System Settings > Notifications > DayBar. Same private-pane caveat
+    /// as `openAppleIntelligenceSettings`: best-effort, no-ops if the scheme ever changes.
+    public static func openNotificationSettings() {
+        guard let url = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension") else { return }
         NSWorkspace.shared.open(url)
     }
 }

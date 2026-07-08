@@ -36,6 +36,18 @@ public final class NotificationScheduler {
         }
     }
 
+    /// Re-checks the live system permission (the user may have granted/revoked it in
+    /// System Settings after the initial prompt), so Settings can reflect reality rather
+    /// than a stale value captured only once at launch.
+    public func refreshAuthorizationStatus() {
+        guard let center else { return }
+        center.getNotificationSettings { [weak self] settings in
+            Task { @MainActor in
+                self?.authorized = settings.authorizationStatus == .authorized
+            }
+        }
+    }
+
     // MARK: - Repeating reminders
 
     public func rescheduleRepeating() {
@@ -65,7 +77,7 @@ public final class NotificationScheduler {
         center.add(UNNotificationRequest(identifier: id, content: content, trigger: trigger))
     }
 
-    // MARK: - Pomodoro phase end (silent banner; the chosen NSSound provides the audio)
+    // MARK: - Pomodoro phase end (silent banner; AlertSoundPlayer provides the audio)
 
     public func postPhaseEndBanner(finished: PomodoroPhase) {
         guard let center, authorized, Preferences.phaseEndNotify else { return }

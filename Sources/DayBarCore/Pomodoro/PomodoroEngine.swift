@@ -56,6 +56,11 @@ public final class PomodoroEngine {
     /// Fired when a phase ends: `(finishedPhase, elapsedSeconds, completedNaturally, endedAt)`.
     public var onPhaseEnd: ((PomodoroPhase, TimeInterval, Bool, Date) -> Void)?
 
+    /// Fired after any control that changes `phase`/`isRunning` (start, pause, resume, stop,
+    /// or a phase transition) — lets observers (e.g. the ticking sound) stay in sync without
+    /// polling.
+    public var onStateChange: (() -> Void)?
+
     @ObservationIgnored private var timer: Timer?
     @ObservationIgnored private var activityToken: (any NSObjectProtocol)?
 
@@ -92,6 +97,7 @@ public final class PomodoroEngine {
         remaining = dur
         beginActivityIfNeeded()
         scheduleTimer()
+        onStateChange?()
     }
 
     public func startWork(now: Date = .now) { start(.work, now: now) }
@@ -102,6 +108,7 @@ public final class PomodoroEngine {
         endDate = nil
         teardownTimer()
         endActivity()
+        onStateChange?()
     }
 
     public func resume(now: Date = .now) {
@@ -109,6 +116,7 @@ public final class PomodoroEngine {
         endDate = now.addingTimeInterval(remaining)
         beginActivityIfNeeded()
         scheduleTimer()
+        onStateChange?()
     }
 
     public func stop() {
@@ -117,6 +125,7 @@ public final class PomodoroEngine {
         remaining = 0
         teardownTimer()
         endActivity()
+        onStateChange?()
     }
 
     /// Skip to the next phase as though the current one just ended.
@@ -167,6 +176,7 @@ public final class PomodoroEngine {
             phase = next
             endDate = nil
             remaining = duration(for: next)
+            onStateChange?()
         }
     }
 

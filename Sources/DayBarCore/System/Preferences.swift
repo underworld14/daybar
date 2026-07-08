@@ -11,7 +11,7 @@ public enum PreferenceKeys {
     public static let skipBreakWhenIdle = "pomodoro.skipBreakWhenIdle"
     public static let idleSkipMinutes = "pomodoro.idleSkipMinutes"
     public static let soundEnabled = "sound.enabled"
-    public static let soundName = "sound.name"
+    public static let tickingSoundEnabled = "sound.tickingEnabled"
 
     public static let morningEnabled = "notify.morningEnabled"
     public static let morningHour = "notify.morningHour"
@@ -45,9 +45,6 @@ public enum PreferenceKeys {
 public enum Preferences {
     private static var defaults: UserDefaults { .standard }
 
-    /// Built-in macOS alert sounds offered in Settings (files under /System/Library/Sounds).
-    public static let availableSounds = ["Glass", "Ping", "Submarine", "Funk", "Hero", "Tink", "Pop"]
-
     public static var workMinutes: Int { intOr(PreferenceKeys.workMinutes, 25) }
     public static var shortBreakMinutes: Int { intOr(PreferenceKeys.shortBreakMinutes, 5) }
     public static var longBreakMinutes: Int { intOr(PreferenceKeys.longBreakMinutes, 15) }
@@ -58,7 +55,9 @@ public enum Preferences {
     }
     public static var idleSkipMinutes: Int { intOr(PreferenceKeys.idleSkipMinutes, 45) }
     public static var soundEnabled: Bool { defaults.object(forKey: PreferenceKeys.soundEnabled) as? Bool ?? true }
-    public static var soundName: String { defaults.string(forKey: PreferenceKeys.soundName) ?? "Glass" }
+    /// Ambient clock tick during an active focus session — off by default since it's a
+    /// polarizing preference, unlike the phase-end ring which everyone benefits from.
+    public static var tickingSoundEnabled: Bool { defaults.bool(forKey: PreferenceKeys.tickingSoundEnabled) }
 
     /// The current Pomodoro configuration assembled from the saved minute values.
     public static var pomodoroConfig: PomodoroConfig {

@@ -203,22 +203,33 @@ struct AnalyticsView: View {
     }
 
     private var moodTrendChart: some View {
-        Chart {
-            ForEach(moodBuckets) { b in
-                if let score = b.averageScore {
-                    LineMark(x: .value("Date", b.date, unit: xUnit), y: .value("Score", score))
-                        .interpolationMethod(.monotone)
-                        .foregroundStyle(Color.pink)
-                    PointMark(x: .value("Date", b.date, unit: xUnit), y: .value("Score", score))
-                        .foregroundStyle(Color.pink)
+        let scoredDates = moodBuckets.compactMap { $0.averageScore != nil ? $0.date : nil }
+        return HoverableChart(dates: scoredDates) { hovered in
+            Chart {
+                ForEach(moodBuckets) { b in
+                    if let score = b.averageScore {
+                        LineMark(x: .value("Date", b.date, unit: xUnit), y: .value("Score", score))
+                            .interpolationMethod(.monotone)
+                            .foregroundStyle(Color.pink)
+                        PointMark(x: .value("Date", b.date, unit: xUnit), y: .value("Score", score))
+                            .foregroundStyle(Color.pink)
+                    }
+                }
+                RuleMark(y: .value("Neutral", 0))
+                    .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
+                    .foregroundStyle(.secondary.opacity(0.5))
+                hoverRule(at: hovered)
+                if let hovered, let bucket = moodBuckets.first(where: { $0.date == hovered }), let score = bucket.averageScore {
+                    RuleMark(x: .value("Hover", hovered, unit: xUnit))
+                        .opacity(0)
+                        .annotation(position: .top) {
+                            ChartHoverTooltip(lines: [dateLabel(hovered), String(format: "Score %.1f", score)])
+                        }
                 }
             }
-            RuleMark(y: .value("Neutral", 0))
-                .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
-                .foregroundStyle(.secondary.opacity(0.5))
+            .chartYScale(domain: -2...2)
+            .chartXScale(domain: xDomain)
         }
-        .chartYScale(domain: -2...2)
-        .chartXScale(domain: xDomain)
     }
 
     // MARK: - Shared helpers
@@ -252,54 +263,111 @@ struct AnalyticsView: View {
         let count: Int
     }
 
+    private func dateLabel(_ date: Date) -> String {
+        switch granularity {
+        case .day, .week: return date.formatted(.dateTime.month(.abbreviated).day())
+        case .month: return date.formatted(.dateTime.month(.abbreviated).year())
+        }
+    }
+
+    @ChartContentBuilder
+    private func hoverRule(at hovered: Date?) -> some ChartContent {
+        if let hovered {
+            RuleMark(x: .value("Hover", hovered, unit: xUnit))
+                .lineStyle(StrokeStyle(lineWidth: 1))
+                .foregroundStyle(.secondary.opacity(0.4))
+        }
+    }
+
     private var plannedVsCompleted: some View {
         let points = buckets.flatMap {
             [Point(date: $0.date, type: "Planned", count: $0.planned),
              Point(date: $0.date, type: "Completed", count: $0.completed)]
         }
-        return Chart(points) { p in
-            BarMark(x: .value("Date", p.date, unit: xUnit), y: .value("Count", p.count))
-                .foregroundStyle(by: .value("Type", p.type))
-                .position(by: .value("Type", p.type))
+        return HoverableChart(dates: buckets.map(\.date)) { hovered in
+            Chart {
+                ForEach(points) { p in
+                    BarMark(x: .value("Date", p.date, unit: xUnit), y: .value("Count", p.count))
+                        .foregroundStyle(by: .value("Type", p.type))
+                        .position(by: .value("Type", p.type))
+                }
+                hoverRule(at: hovered)
+                if let hovered, let bucket = buckets.first(where: { $0.date == hovered }) {
+                    RuleMark(x: .value("Hover", hovered, unit: xUnit))
+                        .opacity(0)
+                        .annotation(position: .top) {
+                            ChartHoverTooltip(lines: [
+                                dateLabel(hovered),
+                                "Planned \(bucket.planned) · Completed \(bucket.completed)",
+                            ])
+                        }
+                }
+            }
+            .chartForegroundStyleScale(["Planned": Color.secondary.opacity(0.45), "Completed": Color.accentColor])
+            .chartXScale(domain: xDomain)
         }
-        .chartForegroundStyleScale(["Planned": Color.secondary.opacity(0.45), "Completed": Color.accentColor])
-        .chartXScale(domain: xDomain)
     }
 
     private var completionRate: some View {
-        Chart {
-            ForEach(buckets) { b in
-                LineMark(x: .value("Date", b.date, unit: xUnit), y: .value("Rate", b.completionRate))
-                    .interpolationMethod(.monotone)
-                    .foregroundStyle(Color.accentColor)
-                PointMark(x: .value("Date", b.date, unit: xUnit), y: .value("Rate", b.completionRate))
-                    .foregroundStyle(Color.accentColor)
+        HoverableChart(dates: buckets.map(\.date)) { hovered in
+            Chart {
+                ForEach(buckets) { b in
+                    LineMark(x: .value("Date", b.date, unit: xUnit), y: .value("Rate", b.completionRate))
+                        .interpolationMethod(.monotone)
+                        .foregroundStyle(Color.accentColor)
+                    PointMark(x: .value("Date", b.date, unit: xUnit), y: .value("Rate", b.completionRate))
+                        .foregroundStyle(Color.accentColor)
+                }
+                RuleMark(y: .value("Target", 0.8))
+                    .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
+                    .foregroundStyle(.green.opacity(0.5))
+                hoverRule(at: hovered)
+                if let hovered, let bucket = buckets.first(where: { $0.date == hovered }) {
+                    RuleMark(x: .value("Hover", hovered, unit: xUnit))
+                        .opacity(0)
+                        .annotation(position: .top) {
+                            ChartHoverTooltip(lines: [
+                                dateLabel(hovered),
+                                "\(Int((bucket.completionRate * 100).rounded()))% completion",
+                            ])
+                        }
+                }
             }
-            RuleMark(y: .value("Target", 0.8))
-                .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
-                .foregroundStyle(.green.opacity(0.5))
+            .chartYScale(domain: 0...1)
+            .chartYAxis { AxisMarks(format: FloatingPointFormatStyle<Double>.Percent()) }
+            .chartXScale(domain: xDomain)
         }
-        .chartYScale(domain: 0...1)
-        .chartYAxis { AxisMarks(format: FloatingPointFormatStyle<Double>.Percent()) }
-        .chartXScale(domain: xDomain)
     }
 
     private var habitCompletionRate: some View {
-        Chart {
-            ForEach(habitBuckets) { b in
-                LineMark(x: .value("Date", b.date, unit: xUnit), y: .value("Rate", b.completionRate))
-                    .interpolationMethod(.monotone)
-                    .foregroundStyle(Color.green)
-                PointMark(x: .value("Date", b.date, unit: xUnit), y: .value("Rate", b.completionRate))
-                    .foregroundStyle(Color.green)
+        HoverableChart(dates: habitBuckets.map(\.date)) { hovered in
+            Chart {
+                ForEach(habitBuckets) { b in
+                    LineMark(x: .value("Date", b.date, unit: xUnit), y: .value("Rate", b.completionRate))
+                        .interpolationMethod(.monotone)
+                        .foregroundStyle(Color.green)
+                    PointMark(x: .value("Date", b.date, unit: xUnit), y: .value("Rate", b.completionRate))
+                        .foregroundStyle(Color.green)
+                }
+                RuleMark(y: .value("Target", 0.8))
+                    .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
+                    .foregroundStyle(.green.opacity(0.5))
+                hoverRule(at: hovered)
+                if let hovered, let bucket = habitBuckets.first(where: { $0.date == hovered }) {
+                    RuleMark(x: .value("Hover", hovered, unit: xUnit))
+                        .opacity(0)
+                        .annotation(position: .top) {
+                            ChartHoverTooltip(lines: [
+                                dateLabel(hovered),
+                                "\(Int((bucket.completionRate * 100).rounded()))% habits",
+                            ])
+                        }
+                }
             }
-            RuleMark(y: .value("Target", 0.8))
-                .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
-                .foregroundStyle(.green.opacity(0.5))
+            .chartYScale(domain: 0...1)
+            .chartYAxis { AxisMarks(format: FloatingPointFormatStyle<Double>.Percent()) }
+            .chartXScale(domain: xDomain)
         }
-        .chartYScale(domain: 0...1)
-        .chartYAxis { AxisMarks(format: FloatingPointFormatStyle<Double>.Percent()) }
-        .chartXScale(domain: xDomain)
     }
 
     private var habitsDoneChart: some View {
@@ -307,28 +375,67 @@ struct AnalyticsView: View {
             [Point(date: $0.date, type: "Planned", count: $0.planned),
              Point(date: $0.date, type: "Done", count: $0.completed)]
         }
-        return Chart(points) { p in
-            BarMark(x: .value("Date", p.date, unit: xUnit), y: .value("Count", p.count))
-                .foregroundStyle(by: .value("Type", p.type))
-                .position(by: .value("Type", p.type))
+        return HoverableChart(dates: habitBuckets.map(\.date)) { hovered in
+            Chart {
+                ForEach(points) { p in
+                    BarMark(x: .value("Date", p.date, unit: xUnit), y: .value("Count", p.count))
+                        .foregroundStyle(by: .value("Type", p.type))
+                        .position(by: .value("Type", p.type))
+                }
+                hoverRule(at: hovered)
+                if let hovered, let bucket = habitBuckets.first(where: { $0.date == hovered }) {
+                    RuleMark(x: .value("Hover", hovered, unit: xUnit))
+                        .opacity(0)
+                        .annotation(position: .top) {
+                            ChartHoverTooltip(lines: [
+                                dateLabel(hovered),
+                                "Planned \(bucket.planned) · Done \(bucket.completed)",
+                            ])
+                        }
+                }
+            }
+            .chartForegroundStyleScale(["Planned": Color.secondary.opacity(0.45), "Done": Color.green])
+            .chartXScale(domain: xDomain)
         }
-        .chartForegroundStyleScale(["Planned": Color.secondary.opacity(0.45), "Done": Color.green])
-        .chartXScale(domain: xDomain)
     }
 
     private var focusMinutes: some View {
-        Chart(buckets) { b in
-            BarMark(x: .value("Date", b.date, unit: xUnit), y: .value("Minutes", b.focusMinutes))
-                .foregroundStyle(Color.orange.gradient)
+        HoverableChart(dates: buckets.map(\.date)) { hovered in
+            Chart {
+                ForEach(buckets) { b in
+                    BarMark(x: .value("Date", b.date, unit: xUnit), y: .value("Minutes", b.focusMinutes))
+                        .foregroundStyle(Color.orange.gradient)
+                }
+                hoverRule(at: hovered)
+                if let hovered, let bucket = buckets.first(where: { $0.date == hovered }) {
+                    RuleMark(x: .value("Hover", hovered, unit: xUnit))
+                        .opacity(0)
+                        .annotation(position: .top) {
+                            ChartHoverTooltip(lines: [dateLabel(hovered), "\(bucket.focusMinutes)m focus"])
+                        }
+                }
+            }
+            .chartXScale(domain: xDomain)
         }
-        .chartXScale(domain: xDomain)
     }
 
     private var sessionsChart: some View {
-        Chart(buckets) { b in
-            BarMark(x: .value("Date", b.date, unit: xUnit), y: .value("Sessions", b.sessions))
-                .foregroundStyle(Color.accentColor.gradient)
+        HoverableChart(dates: buckets.map(\.date)) { hovered in
+            Chart {
+                ForEach(buckets) { b in
+                    BarMark(x: .value("Date", b.date, unit: xUnit), y: .value("Sessions", b.sessions))
+                        .foregroundStyle(Color.accentColor.gradient)
+                }
+                hoverRule(at: hovered)
+                if let hovered, let bucket = buckets.first(where: { $0.date == hovered }) {
+                    RuleMark(x: .value("Hover", hovered, unit: xUnit))
+                        .opacity(0)
+                        .annotation(position: .top) {
+                            ChartHoverTooltip(lines: [dateLabel(hovered), "\(bucket.sessions) sessions"])
+                        }
+                }
+            }
+            .chartXScale(domain: xDomain)
         }
-        .chartXScale(domain: xDomain)
     }
 }

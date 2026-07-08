@@ -17,7 +17,7 @@ struct SettingsView: View {
     @AppStorage(PreferenceKeys.skipBreakWhenIdle) private var skipBreakWhenIdle = true
     @AppStorage(PreferenceKeys.idleSkipMinutes) private var idleSkipMinutes = 45
     @AppStorage(PreferenceKeys.soundEnabled) private var soundEnabled = true
-    @AppStorage(PreferenceKeys.soundName) private var soundName = "Glass"
+    @AppStorage(PreferenceKeys.tickingSoundEnabled) private var tickingSoundEnabled = false
 
     @AppStorage(PreferenceKeys.morningEnabled) private var morningEnabled = true
     @AppStorage(PreferenceKeys.morningHour) private var morningHour = 9
@@ -80,12 +80,9 @@ struct SettingsView: View {
 
                 Section("Sound") {
                     Toggle("Play a sound when a timer ends", isOn: $soundEnabled)
-                    Picker("Sound", selection: $soundName) {
-                        ForEach(Preferences.availableSounds, id: \.self) { Text($0).tag($0) }
-                    }
-                    .disabled(!soundEnabled)
-                    Button("Test sound") { AppKitBridge.playPhaseEndSound(named: soundName) }
+                    Button("Test sound") { AlertSoundPlayer.shared.playTestRing() }
                         .disabled(!soundEnabled)
+                    Toggle("Play ticking sound during focus", isOn: $tickingSoundEnabled)
                 }
 
                 Section("Notifications") {
@@ -98,6 +95,9 @@ struct SettingsView: View {
                     Toggle("Notify when a Pomodoro phase ends", isOn: $phaseEndNotify)
                     Toggle("Remind me about piled-up tasks", isOn: $backlogNotify)
                     Toggle("Habit anchor reminders", isOn: $habitNotifyEnabled)
+                    if !appState.notifications.authorized {
+                        notificationPermissionRow
+                    }
                 }
 
                 HabitsSettingsSection(appState: appState)
@@ -123,7 +123,9 @@ struct SettingsView: View {
             .formStyle(.grouped)
         }
         .frame(width: 380, height: 680)
+        .onAppear { appState.notifications.refreshAuthorizationStatus() }
         .onChange(of: pomodoroSnapshot) { _, _ in appState.applyPreferences() }
+        .onChange(of: tickingSoundEnabled) { _, _ in appState.syncTickingSound() }
         .onChange(of: notifSnapshot) { _, _ in
             appState.invalidateHabitNotifications()
             appState.notifications.rescheduleRepeating()
@@ -132,6 +134,16 @@ struct SettingsView: View {
         .onChange(of: launchAtLogin) { _, newValue in
             try? LaunchAtLogin.setEnabled(newValue)
             launchAtLogin = LaunchAtLogin.isEnabled
+        }
+    }
+
+    // MARK: - Notifications
+
+    private var notificationPermissionRow: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Notifications are turned off for DayBar, so reminders and phase-end banners won't appear.")
+                .font(.caption).foregroundStyle(.orange)
+            Button("Open System Settings") { AppKitBridge.openNotificationSettings() }
         }
     }
 

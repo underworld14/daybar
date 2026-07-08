@@ -13,6 +13,11 @@ public final class RadioPlayerManager {
     public private(set) var playbackError: String?
     public private(set) var nowPlaying: String?
 
+    /// Fired whenever playback actually begins (any entry point: play, next/prev, retry,
+    /// restore, reconnect). Lets a coordinator enforce mutual exclusion with other audio
+    /// (the focus ticking sound) without every call site having to remember to do so.
+    public var onPlaybackStarted: (() -> Void)?
+
     @ObservationIgnored private let service: SomaFMService
     @ObservationIgnored private var player: AVPlayer?
     @ObservationIgnored private var itemStatusObservation: NSKeyValueObservation?
@@ -136,6 +141,7 @@ public final class RadioPlayerManager {
             let streamURL = try await service.resolveStreamURL(for: channel)
             startPlayer(with: streamURL)
             isPlaying = true
+            onPlaybackStarted?()
             reconnectAttempt = 0
             isReconnecting = false
             beginActivity()

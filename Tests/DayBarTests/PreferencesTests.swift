@@ -5,7 +5,7 @@ final class PreferencesTests: XCTestCase {
     private let keys = [
         PreferenceKeys.workMinutes, PreferenceKeys.shortBreakMinutes,
         PreferenceKeys.longBreakMinutes, PreferenceKeys.cyclesBeforeLongBreak,
-        PreferenceKeys.autoStartNext, PreferenceKeys.soundEnabled, PreferenceKeys.soundName,
+        PreferenceKeys.autoStartNext, PreferenceKeys.soundEnabled,
     ]
 
     override func setUp() { keys.forEach { UserDefaults.standard.removeObject(forKey: $0) } }
@@ -16,7 +16,6 @@ final class PreferencesTests: XCTestCase {
         XCTAssertEqual(Preferences.shortBreakMinutes, 5)
         XCTAssertEqual(Preferences.cyclesBeforeLongBreak, 4)
         XCTAssertTrue(Preferences.soundEnabled)
-        XCTAssertEqual(Preferences.soundName, "Glass")
     }
 
     func testPomodoroConfigBuiltFromPrefs() {
