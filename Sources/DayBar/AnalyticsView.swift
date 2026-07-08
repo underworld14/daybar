@@ -5,6 +5,7 @@ import DayBarCore
 private enum StatsTab: String, CaseIterable {
     case tasks = "Tasks"
     case habits = "Habits"
+    case mood = "Mood"
 }
 
 /// Daily / weekly / monthly analytics for tasks and habits.
@@ -30,6 +31,10 @@ struct AnalyticsView: View {
         appState.habitStatBuckets(granularity: granularity, count: count(for: granularity))
     }
 
+    private var moodBuckets: [MoodStatBucket] {
+        appState.moodStatBuckets(granularity: granularity, count: count(for: granularity))
+    }
+
     private var xUnit: Calendar.Component {
         switch granularity {
         case .day: return .day
@@ -39,8 +44,13 @@ struct AnalyticsView: View {
     }
 
     private var xDomain: ClosedRange<Date> {
-        let source = tab == .tasks ? buckets.first?.date : habitBuckets.first?.date
-        let lastSource = tab == .tasks ? buckets.last?.date : habitBuckets.last?.date
+        let source: Date?
+        let lastSource: Date?
+        switch tab {
+        case .tasks: source = buckets.first?.date; lastSource = buckets.last?.date
+        case .habits: source = habitBuckets.first?.date; lastSource = habitBuckets.last?.date
+        case .mood: source = moodBuckets.first?.date; lastSource = moodBuckets.last?.date
+        }
         let first = source ?? Date.now
         let last = Analytics.advance(lastSource ?? Date.now, granularity, by: 1)
         return first...last
@@ -70,10 +80,10 @@ struct AnalyticsView: View {
                     }
                     .pickerStyle(.segmented)
 
-                    if tab == .tasks {
-                        tasksContent
-                    } else {
-                        habitsContent
+                    switch tab {
+                    case .tasks: tasksContent
+                    case .habits: habitsContent
+                    case .mood: moodContent
                     }
                 }
                 .padding()
@@ -173,6 +183,42 @@ struct AnalyticsView: View {
                 .font(.caption)
             }
         }
+    }
+
+    // MARK: - Mood
+
+    @ViewBuilder
+    private var moodContent: some View {
+        moodSummary
+        chartSection("Mood trend") { moodTrendChart }
+    }
+
+    private var moodSummary: some View {
+        let logged = moodBuckets.reduce(0) { $0 + $1.loggedDays }
+        let overallAverage = MoodAnalytics.overallAverageScore(moodBuckets)
+        return HStack(spacing: 16) {
+            stat(overallAverage.map { String(format: "%.1f", $0) } ?? "—", "avg score")
+            stat("\(logged)", "days logged")
+        }
+    }
+
+    private var moodTrendChart: some View {
+        Chart {
+            ForEach(moodBuckets) { b in
+                if let score = b.averageScore {
+                    LineMark(x: .value("Date", b.date, unit: xUnit), y: .value("Score", score))
+                        .interpolationMethod(.monotone)
+                        .foregroundStyle(Color.pink)
+                    PointMark(x: .value("Date", b.date, unit: xUnit), y: .value("Score", score))
+                        .foregroundStyle(Color.pink)
+                }
+            }
+            RuleMark(y: .value("Neutral", 0))
+                .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
+                .foregroundStyle(.secondary.opacity(0.5))
+        }
+        .chartYScale(domain: -2...2)
+        .chartXScale(domain: xDomain)
     }
 
     // MARK: - Shared helpers

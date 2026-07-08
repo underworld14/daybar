@@ -189,4 +189,43 @@ final class PersistenceTests: XCTestCase {
         XCTAssertEqual(log?.completedCount, 3)
         XCTAssertEqual(try store.context.fetch(FetchDescriptor<DayLog>()).count, 1)
     }
+
+    func testDayLogUpsertRoundTripsMood() throws {
+        let store = DataStore(inMemory: true)
+        let day = Calendar.current.startOfDay(for: now)
+        store.upsertDayLog(
+            day: day, reflection: "productive day", plannedCount: 3, completedCount: 3,
+            moodTag: .productive, moodSource: .ai
+        )
+        let log = try store.dayLog(for: day)
+        XCTAssertEqual(log?.moodTag, .productive)
+        XCTAssertEqual(log?.moodScore, 1)
+        XCTAssertEqual(log?.moodSource, .ai)
+
+        // A later upsert (e.g. user corrects the mood) overwrites in place.
+        store.upsertDayLog(
+            day: day, reflection: "productive day", plannedCount: 3, completedCount: 3,
+            moodTag: .tired, moodSource: .manual
+        )
+        let updated = try store.dayLog(for: day)
+        XCTAssertEqual(updated?.moodTag, .tired)
+        XCTAssertEqual(updated?.moodSource, .manual)
+        XCTAssertEqual(try store.context.fetch(FetchDescriptor<DayLog>()).count, 1)
+    }
+
+    func testDayLogsInRangeQuery() throws {
+        let store = DataStore(inMemory: true)
+        let cal = Calendar.current
+        let today = cal.startOfDay(for: now)
+        let yesterday = cal.date(byAdding: .day, value: -1, to: today)!
+        let lastWeek = cal.date(byAdding: .day, value: -8, to: today)!
+        store.upsertDayLog(day: today, reflection: "a", plannedCount: 1, completedCount: 1, moodTag: .happy, moodSource: .manual)
+        store.upsertDayLog(day: yesterday, reflection: "b", plannedCount: 1, completedCount: 0, moodTag: .tired, moodSource: .manual)
+        store.upsertDayLog(day: lastWeek, reflection: "c", plannedCount: 1, completedCount: 1, moodTag: .proud, moodSource: .manual)
+
+        let start = cal.date(byAdding: .day, value: -7, to: today)!
+        let logs = try store.dayLogs(in: start..<cal.date(byAdding: .day, value: 1, to: today)!)
+        XCTAssertEqual(logs.count, 2)
+        XCTAssertEqual(Set(logs.map(\.moodTag)), [.happy, .tired])
+    }
 }

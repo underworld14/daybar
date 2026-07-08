@@ -8,6 +8,11 @@ struct EndOfDayReviewView: View {
     var appState: AppState
     @Environment(\.dismiss) private var dismiss
     @State private var reflection = ""
+    @State private var selectedMood: MoodTag?
+    @State private var moodSource: MoodSource = .none
+    /// True when reopened (e.g. via "Review day…") after already finishing today's review —
+    /// gates out auto re-classification so a saved mood is never silently overwritten.
+    @State private var isExistingReview = false
 
     private var unfinished: [DailyTodo] {
         appState.todayTodos.filter { !$0.isCompleted } + appState.carriedTodos
@@ -65,6 +70,8 @@ struct EndOfDayReviewView: View {
                             .lineLimit(1...3)
                     }
                     .padding(.top, 4)
+
+                    moodSection
                 }
                 .padding()
             }
@@ -73,17 +80,95 @@ struct EndOfDayReviewView: View {
             HStack {
                 Spacer()
                 Button("Finish review") {
-                    appState.saveDayLog(reflection: reflection)
+                    appState.saveDayLog(reflection: reflection, moodTag: selectedMood, moodSource: moodSource)
                     dismiss()
                 }
                 .keyboardShortcut(.defaultAction)
             }
             .padding()
         }
-        .frame(width: 420, height: 520)
+        .frame(width: 420, height: 600)
         .onAppear {
-            reflection = ((try? appState.store.dayLog(for: .now)) ?? nil)?.reflection ?? ""
+            let existing = (try? appState.store.dayLog(for: .now)) ?? nil
+            reflection = existing?.reflection ?? ""
+            selectedMood = existing?.moodTag
+            moodSource = existing?.moodSource ?? .none
+            isExistingReview = existing != nil
         }
+        .task(id: reflection) {
+            await suggestMoodIfEligible()
+        }
+    }
+
+    // MARK: - Mood
+
+    private let moodColumns = Array(repeating: GridItem(.flexible()), count: 4)
+
+    @ViewBuilder
+    private var moodSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("MOOD").font(.caption2.weight(.semibold)).tracking(0.5).foregroundStyle(.secondary)
+            LazyVGrid(columns: moodColumns, spacing: 8) {
+                ForEach(MoodTag.allCases, id: \.self) { tag in
+                    moodButton(tag)
+                }
+            }
+            if selectedMood != nil, moodSource == .ai {
+                Text("Suggested by Apple Intelligence — tap to correct.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.top, 4)
+    }
+
+    private func moodButton(_ tag: MoodTag) -> some View {
+        let isSelected = selectedMood == tag
+        return Button {
+            selectedMood = tag
+            moodSource = .manual
+        } label: {
+            VStack(spacing: 2) {
+                Text(tag.emoji).font(.title2)
+                Text(tag.displayName).font(.caption2).lineLimit(1).minimumScaleFactor(0.8)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 6)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(isSelected ? Color.accentColor.opacity(0.18) : Color.clear)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .strokeBorder(isSelected ? Color.accentColor : Color.clear, lineWidth: 1.5)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// Debounced AI auto-suggest: `.task(id: reflection)` cancels the previous attempt
+    /// whenever the text changes, so this doubles as debouncing without a manual timer.
+    /// Never overrides a mood the user already picked by hand.
+    private func suggestMoodIfEligible() async {
+        // Snapshot once: `reflection` is a `@State` var, so re-reading it after the sleep
+        // below could race a newer keystroke that hasn't cancelled this task yet.
+        let text = reflection
+        guard MoodAIGate.shouldAttemptClassification(
+            availability: appState.moodChecker.availability,
+            aiEnabled: Preferences.moodAIEnabled,
+            reflection: text,
+            alreadyReviewed: isExistingReview
+        ) else { return }
+
+        try? await Task.sleep(for: .milliseconds(600))
+        guard !Task.isCancelled else { return }
+
+        guard #available(macOS 26.0, *) else { return }
+        guard let suggested = await classifyMoodWithTimeout(text) else { return }
+        guard MoodAIGate.shouldApplySuggestion(isCancelled: Task.isCancelled, currentSource: moodSource) else { return }
+
+        selectedMood = suggested
+        moodSource = .ai
     }
 
     private func reviewRow(_ todo: DailyTodo) -> some View {

@@ -35,3 +35,11 @@ public enum EscalationTier: Int, CaseIterable, Codable, Sendable, Comparable {
 
     public static func < (lhs: EscalationTier, rhs: EscalationTier) -> Bool { lhs.rawValue < rhs.rawValue }
 }
+
+/// How a `DayLog`'s mood was set — lets analytics/audits distinguish AI-classified from
+/// user-confirmed data without touching the score itself.
+public enum MoodSource: String, Codable, Sendable {
+    case ai
+    case manual
+    case none
+}

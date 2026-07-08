@@ -29,6 +29,7 @@ struct SettingsView: View {
     @AppStorage(PreferenceKeys.backlogNotify) private var backlogNotify = true
     @AppStorage(PreferenceKeys.habitNotifyEnabled) private var habitNotifyEnabled = true
     @AppStorage(PreferenceKeys.radioPauseOnFocusEnd) private var radioPauseOnFocusEnd = true
+    @AppStorage(PreferenceKeys.moodAIEnabled) private var moodAIEnabled = true
 
     @State private var launchAtLogin = LaunchAtLogin.isEnabled
 
@@ -106,6 +107,8 @@ struct SettingsView: View {
                     Toggle("Pause music when focus session ends", isOn: $radioPauseOnFocusEnd)
                 }
 
+                moodSection
+
                 Section("Startup") {
                     Toggle("Launch DayBar at login", isOn: $launchAtLogin)
                     if LaunchAtLogin.requiresApproval {
@@ -129,6 +132,45 @@ struct SettingsView: View {
         .onChange(of: launchAtLogin) { _, newValue in
             try? LaunchAtLogin.setEnabled(newValue)
             launchAtLogin = LaunchAtLogin.isEnabled
+        }
+    }
+
+    // MARK: - Mood
+
+    @ViewBuilder
+    private var moodSection: some View {
+        Section("Mood") {
+            Toggle("Suggest mood with Apple Intelligence", isOn: $moodAIEnabled)
+            Text("Off, unsupported, or unavailable always falls back to the manual emoji picker in the end-of-day review — mood tracking works fully either way.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            if moodAIEnabled {
+                moodAvailabilityRow
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var moodAvailabilityRow: some View {
+        switch appState.moodChecker.availability {
+        case .available:
+            EmptyView()
+        case .unavailable(.appleIntelligenceNotEnabled):
+            Text("Apple Intelligence is turned off.")
+                .font(.caption).foregroundStyle(.orange)
+            Button("Open System Settings") { AppKitBridge.openAppleIntelligenceSettings() }
+        case .unavailable(.deviceNotEligible):
+            Text("This Mac isn't eligible for Apple Intelligence. The emoji picker still works fully.")
+                .font(.caption).foregroundStyle(.secondary)
+        case .unavailable(.osTooOld):
+            Text("Requires macOS 26 or later. The emoji picker still works fully.")
+                .font(.caption).foregroundStyle(.secondary)
+        case .unavailable(.modelNotReady):
+            Text("The on-device model is still preparing — try again shortly.")
+                .font(.caption).foregroundStyle(.secondary)
+        case .unavailable(.other):
+            EmptyView()
         }
     }
 }

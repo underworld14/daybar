@@ -155,17 +155,39 @@ public final class DataStore {
         ((try? dayLog(for: day, calendar: calendar)) ?? nil) != nil
     }
 
+    /// Day logs whose `day` falls in `[range.lowerBound, range.upperBound)` — used by
+    /// the mood analytics buckets (no re-inference; scores are read straight off the
+    /// stored `moodTagRaw`).
+    public func dayLogs(in range: Range<Date>) throws -> [DayLog] {
+        let start = range.lowerBound, end = range.upperBound
+        let predicate = #Predicate<DayLog> { $0.day >= start && $0.day < end }
+        return try context.fetch(FetchDescriptor(predicate: predicate, sortBy: [SortDescriptor(\.day)]))
+    }
+
     @discardableResult
-    public func upsertDayLog(day: Date, reflection: String, plannedCount: Int, completedCount: Int, calendar: Calendar = .current) -> DayLog {
+    public func upsertDayLog(
+        day: Date,
+        reflection: String,
+        plannedCount: Int,
+        completedCount: Int,
+        moodTag: MoodTag? = nil,
+        moodSource: MoodSource = .none,
+        calendar: Calendar = .current
+    ) -> DayLog {
         let start = calendar.startOfDay(for: day)
         if let existing = (try? dayLog(for: start, calendar: calendar)) ?? nil {
             existing.reflection = reflection
             existing.plannedCount = plannedCount
             existing.completedCount = completedCount
+            existing.moodTag = moodTag
+            existing.moodSource = moodSource
             save()
             return existing
         }
-        let log = DayLog(day: start, reflection: reflection, plannedCount: plannedCount, completedCount: completedCount)
+        let log = DayLog(
+            day: start, reflection: reflection, plannedCount: plannedCount, completedCount: completedCount,
+            moodTag: moodTag, moodSource: moodSource
+        )
         context.insert(log)
         save()
         return log

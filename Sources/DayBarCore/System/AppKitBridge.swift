@@ -33,5 +33,13 @@ public enum AppKitBridge {
             NSSound.beep()
         }
     }
+
+    /// Deep-links into System Settings > Apple Intelligence & Siri. Private pane
+    /// identifier (no public API exists for this), so this is best-effort: if the URL
+    /// scheme ever changes, it silently no-ops instead of crashing.
+    public static func openAppleIntelligenceSettings() {
+        guard let url = URL(string: "x-apple.systempreferences:com.apple.Siri-Settings.extension") else { return }
+        NSWorkspace.shared.open(url)
+    }
 }
 #endif

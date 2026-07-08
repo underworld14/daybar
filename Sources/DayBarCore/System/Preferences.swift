@@ -36,6 +36,8 @@ public enum PreferenceKeys {
     public static let radioWasPlaying = "radio.wasPlaying"
     public static let radioHasUserStarted = "radio.hasUserStarted"
     public static let radioPauseOnFocusEnd = "radio.pauseOnFocusEnd"
+
+    public static let moodAIEnabled = "mood.aiEnabled"
 }
 
 /// Typed reads of the app preferences. Getters bake in the same defaults SettingsView
@@ -138,6 +140,12 @@ public enum Preferences {
     public static var radioPauseOnFocusEnd: Bool {
         defaults.object(forKey: PreferenceKeys.radioPauseOnFocusEnd) as? Bool ?? true
     }
+
+    // MARK: - Mood
+
+    /// User-level override, separate from device/OS eligibility: some users may have an
+    /// eligible device with Apple Intelligence on but still not want this feature to run.
+    public static var moodAIEnabled: Bool { boolOrTrue(PreferenceKeys.moodAIEnabled) }
 
     /// Habit list selection, falling back to todo-selected lists when unset.
     public static var effectiveHabitReminderCalendarIDs: [String] {

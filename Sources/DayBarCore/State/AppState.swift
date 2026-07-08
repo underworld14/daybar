@@ -18,6 +18,7 @@ public final class AppState {
     public let remindersSync: RemindersSyncEngine
     public let habitRemindersSync: HabitRemindersSyncEngine
     public let radio: RadioPlayerManager
+    public let moodChecker: MoodAIAvailabilityChecking
 
     @ObservationIgnored private let rollover: RolloverEngine
     @ObservationIgnored private let habitEngine: HabitEngine
@@ -62,11 +63,13 @@ public final class AppState {
         store: DataStore,
         calendar: Calendar = .current,
         remindersProvider: ExternalSourceProvider? = nil,
+        moodChecker: MoodAIAvailabilityChecking = LiveMoodAIChecker(),
         schedulesRemindersSync: Bool = true,
         observeSystemEvents: Bool = true
     ) {
         self.store = store
         self.calendar = calendar
+        self.moodChecker = moodChecker
         self.schedulesRemindersSync = schedulesRemindersSync
         self.observeSystemEvents = observeSystemEvents
         self.rollover = RolloverEngine(store: store, calendar: calendar)
@@ -581,6 +584,12 @@ public final class AppState {
         return Analytics.buckets(todos: todos, sessions: sessions, endingAt: now, count: count, granularity: granularity, calendar: calendar)
     }
 
+    public func moodStatBuckets(granularity: Granularity, count: Int, now: Date = .now) -> [MoodStatBucket] {
+        let range = Analytics.range(endingAt: now, count: count, granularity: granularity, calendar: calendar)
+        let dayLogs = (try? store.dayLogs(in: range)) ?? []
+        return MoodAnalytics.buckets(dayLogs: dayLogs, endingAt: now, count: count, granularity: granularity, calendar: calendar)
+    }
+
     /// Completed tasks grouped by finish day, newest first.
     public func completedHistory(days: Int = 30, now: Date = .now) -> [DayHistoryGroup] {
         let dayCount = max(1, days)
@@ -622,12 +631,14 @@ public final class AppState {
         store.hasDayLog(on: now, calendar: calendar)
     }
 
-    public func saveDayLog(reflection: String, now: Date = .now) {
+    public func saveDayLog(reflection: String, moodTag: MoodTag? = nil, moodSource: MoodSource = .none, now: Date = .now) {
         store.upsertDayLog(
             day: now,
             reflection: reflection,
             plannedCount: totalTodayCount,
             completedCount: completedTodayCount,
+            moodTag: moodTag,
+            moodSource: moodSource,
             calendar: calendar
         )
         presentEndOfDayReview = false
