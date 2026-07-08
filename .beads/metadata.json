@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "daybar",
+  "project_id": "07a4c3f9-5656-46b0-a75f-ca23b4bfb077"
+}
