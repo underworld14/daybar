@@ -5,7 +5,7 @@ guide gets you building and explains the conventions.
 
 ## Setup
 
-Requirements: **macOS 15+**, **Xcode 26+**, and [XcodeGen](https://github.com/yonaskolb/XcodeGen)
+Requirements: **macOS 14+**, **Xcode 26+**, and [XcodeGen](https://github.com/yonaskolb/XcodeGen)
 (`brew install xcodegen`).
 
 ```sh

@@ -9,7 +9,7 @@ DayBar supports a daily ritual: **plan today's tasks each morning, work through 
 A 6-agent research+critique workflow validated the macOS stack against Apple docs and community sources and corrected several first-draft traps (mixed observation systems, rollover key in UserDefaults, a contradictory AppKit badge, an unreliable closed-state live countdown, the brittle Settings activation dance, an over-loud escalation that could backfire).
 
 ### Locked decisions
-- **Native**, accessory menu bar app (no Dock icon). Target **macOS 15+**, develop on 26 (Tahoe).
+- **Native**, accessory menu bar app (no Dock icon). Target **macOS 14+**, develop on 26 (Tahoe).
 - **SwiftUI + SwiftData**, single local user.
 - **MVP-first**, phased (P1 → P2 → P3).
 - **Escalation:** gentle by default (grey→amber, no red alarm); intensity adjustable in Settings.

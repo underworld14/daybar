@@ -2,7 +2,7 @@ name: DayBar
 options:
   bundleIdPrefix: com.yusrilizza
   deploymentTarget:
-    macOS: "15.0"
+    macOS: "14.0"
   createIntermediateGroups: true
 settings:
   base:

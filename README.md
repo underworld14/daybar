@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/platform-macOS%2015%2B-blue" alt="macOS 15+">
+  <img src="https://img.shields.io/badge/platform-macOS%2014%2B-blue" alt="macOS 14+">
   <img src="https://img.shields.io/github/v/release/underworld14/daybar?label=release" alt="Release">
   <img src="https://img.shields.io/badge/Swift-5%20mode%20·%206%20toolchain-orange" alt="Swift">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT">
@@ -61,7 +61,7 @@
 
 ## Download
 
-Pre-built releases for macOS 15+ are on **[GitHub Releases](https://github.com/underworld14/daybar/releases)**.
+Pre-built releases for macOS 14+ are on **[GitHub Releases](https://github.com/underworld14/daybar/releases)**.
 
 ### Install
 
@@ -95,7 +95,7 @@ open /Applications/DayBar.app
 
 ## Requirements
 
-- macOS 15+ (developed on macOS 26 Tahoe)
+- macOS 14+ (developed on macOS 26 Tahoe)
 - Xcode 26+
 - [XcodeGen](https://github.com/yonaskolb/XcodeGen): `brew install xcodegen`
 - **Optional — AI mood suggestions:** macOS 26+ with Apple Intelligence enabled (uses the
