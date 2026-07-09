@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import KeyboardShortcuts
 import DayBarCore
 
@@ -8,6 +9,7 @@ import DayBarCore
 struct SettingsView: View {
     var appState: AppState
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
 
     @AppStorage(PreferenceKeys.workMinutes) private var workMinutes = 25
     @AppStorage(PreferenceKeys.shortBreakMinutes) private var shortBreakMinutes = 5
@@ -30,15 +32,27 @@ struct SettingsView: View {
     @AppStorage(PreferenceKeys.habitNotifyEnabled) private var habitNotifyEnabled = true
     @AppStorage(PreferenceKeys.radioPauseOnFocusEnd) private var radioPauseOnFocusEnd = true
     @AppStorage(PreferenceKeys.moodAIEnabled) private var moodAIEnabled = true
+    @AppStorage(PreferenceKeys.escalationIntensity) private var escalationIntensity = 0
+    @AppStorage(PreferenceKeys.quietHoursEnabled) private var quietHoursEnabled = false
+    @AppStorage(PreferenceKeys.quietHoursStartHour) private var quietHoursStartHour = 21
+    @AppStorage(PreferenceKeys.respectSystemFocus) private var respectSystemFocus = true
+    @AppStorage(PreferenceKeys.weeklyDigestEnabled) private var weeklyDigestEnabled = false
+    @State private var awayEnabled = Preferences.awayStartDate != nil
+    @State private var awayStart = Preferences.awayStartDate ?? Date()
+    @State private var awayEnd = Preferences.awayEndDate ?? Date()
 
     @State private var launchAtLogin = LaunchAtLogin.isEnabled
+    @State private var launchAtLoginMessage: String?
+    @State private var dataMessage: String?
+    @State private var pendingRestoreURL: URL?
+    @State private var showRestoreConfirmation = false
 
     private var pomodoroSnapshot: String {
         "\(workMinutes)-\(shortBreakMinutes)-\(longBreakMinutes)-\(cycles)-\(autoStart)"
     }
 
     private var notifSnapshot: String {
-        "\(morningEnabled):\(morningHour):\(morningMinute)-\(eveningEnabled):\(eveningHour):\(eveningMinute)-\(habitNotifyEnabled)"
+        "\(morningEnabled):\(morningHour):\(morningMinute)-\(eveningEnabled):\(eveningHour):\(eveningMinute)-\(phaseEndNotify)-\(backlogNotify)-\(habitNotifyEnabled)"
     }
 
     private func timeBinding(_ hour: Binding<Int>, _ minute: Binding<Int>) -> Binding<Date> {
@@ -109,10 +123,39 @@ struct SettingsView: View {
 
                 moodSection
 
+                Section("Calm & Away") {
+                    Picker("Nudge intensity", selection: $escalationIntensity) {
+                        Text("Gentle").tag(0)
+                        Text("Standard").tag(1)
+                    }
+                    .onChange(of: escalationIntensity) { _, _ in appState.applyPreferences() }
+                    Toggle("Quiet hours (soften sounds)", isOn: $quietHoursEnabled)
+                    if quietHoursEnabled {
+                        Stepper("Quiet from \(quietHoursStartHour):00", value: $quietHoursStartHour, in: 18...23)
+                    }
+                    Toggle("Respect system Focus / Do Not Disturb", isOn: $respectSystemFocus)
+                    Toggle("Weekly Sunday digest", isOn: $weeklyDigestEnabled)
+                    Toggle("Away mode", isOn: $awayEnabled)
+                    if awayEnabled {
+                        DatePicker("Away from", selection: $awayStart, displayedComponents: .date)
+                        DatePicker("Away until", selection: $awayEnd, displayedComponents: .date)
+                    }
+                    Text("Away days pause habit materialization and hide aging badges.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                dataSection
+
                 Section("Startup") {
                     Toggle("Launch DayBar at login", isOn: $launchAtLogin)
                     if LaunchAtLogin.requiresApproval {
                         Button("Open Login Items in System Settings") { LaunchAtLogin.openSystemSettings() }
+                    }
+                    if let launchAtLoginMessage {
+                        Text(launchAtLoginMessage)
+                            .font(.caption)
+                            .foregroundStyle(.orange)
                     }
                 }
 
@@ -122,8 +165,19 @@ struct SettingsView: View {
             }
             .formStyle(.grouped)
         }
-        .frame(width: 380, height: 680)
-        .onAppear { appState.notifications.refreshAuthorizationStatus() }
+        .frame(width: 380, height: 720)
+        .alert("Restore backup?", isPresented: $showRestoreConfirmation) {
+            Button("Cancel", role: .cancel) { pendingRestoreURL = nil }
+            Button("Restore", role: .destructive) {
+                if let pendingRestoreURL { restoreData(from: pendingRestoreURL) }
+                pendingRestoreURL = nil
+            }
+        } message: {
+            Text("This replaces the local DayBar data with the selected backup file.")
+        }
+        .onAppear {
+            refreshExternalStatus()
+        }
         .onChange(of: pomodoroSnapshot) { _, _ in appState.applyPreferences() }
         .onChange(of: tickingSoundEnabled) { _, _ in appState.syncTickingSound() }
         .onChange(of: notifSnapshot) { _, _ in
@@ -132,8 +186,36 @@ struct SettingsView: View {
             appState.refresh()
         }
         .onChange(of: launchAtLogin) { _, newValue in
-            try? LaunchAtLogin.setEnabled(newValue)
+            do {
+                try LaunchAtLogin.setEnabled(newValue)
+                launchAtLoginMessage = nil
+            } catch {
+                launchAtLoginMessage = error.localizedDescription
+            }
             launchAtLogin = LaunchAtLogin.isEnabled
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { refreshExternalStatus() }
+        }
+        .onChange(of: awayEnabled) { _, enabled in
+            if enabled {
+                Preferences.awayStartDate = Calendar.current.startOfDay(for: awayStart)
+                Preferences.awayEndDate = Calendar.current.startOfDay(for: awayEnd)
+            } else {
+                Preferences.awayStartDate = nil
+                Preferences.awayEndDate = nil
+            }
+            appState.refresh()
+        }
+        .onChange(of: awayStart) { _, value in
+            guard awayEnabled else { return }
+            Preferences.awayStartDate = Calendar.current.startOfDay(for: value)
+            appState.refresh()
+        }
+        .onChange(of: awayEnd) { _, value in
+            guard awayEnabled else { return }
+            Preferences.awayEndDate = Calendar.current.startOfDay(for: value)
+            appState.refresh()
         }
     }
 
@@ -144,6 +226,77 @@ struct SettingsView: View {
             Text("Notifications are turned off for DayBar, so reminders and phase-end banners won't appear.")
                 .font(.caption).foregroundStyle(.orange)
             Button("Open System Settings") { AppKitBridge.openNotificationSettings() }
+        }
+    }
+
+    // MARK: - Data
+
+    private var dataSection: some View {
+        Section("Data") {
+            HStack {
+                Button("Back Up…") { backUpData() }
+                Button("Restore…") { chooseRestoreFile() }
+            }
+            Text("Backs up tasks and habits (not focus history or mood reflections yet).")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            if let saved = appState.store.lastSuccessfulSaveAt {
+                Text("Local data last saved \(saved.formatted(date: .omitted, time: .shortened))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("Local data has not been saved this session.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            if let dataMessage {
+                Text(dataMessage)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func refreshExternalStatus() {
+        appState.notifications.refreshAuthorizationStatus()
+        launchAtLogin = LaunchAtLogin.isEnabled
+    }
+
+    private func backUpData() {
+        let panel = NSSavePanel()
+        panel.allowedFileTypes = ["json"]
+        panel.nameFieldStringValue = "daybar-backup.json"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            let data = try JSONStore.encode(appState.store.exportSnapshot())
+            try data.write(to: url, options: .atomic)
+            dataMessage = "Backup saved to \(url.lastPathComponent)."
+        } catch {
+            dataMessage = "Backup failed: \(error.localizedDescription)"
+        }
+    }
+
+    private func chooseRestoreFile() {
+        let panel = NSOpenPanel()
+        panel.allowedFileTypes = ["json"]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        pendingRestoreURL = url
+        showRestoreConfirmation = true
+    }
+
+    private func restoreData(from url: URL) {
+        do {
+            let snapshot = try JSONStore.decode(try Data(contentsOf: url))
+            if appState.store.importSnapshot(snapshot) {
+                appState.refresh()
+                dataMessage = "Restored \(url.lastPathComponent)."
+            } else {
+                dataMessage = appState.store.lastSaveError ?? "Restore failed."
+            }
+        } catch {
+            dataMessage = "Restore failed: \(error.localizedDescription)"
         }
     }
 

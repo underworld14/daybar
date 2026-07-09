@@ -20,11 +20,22 @@ struct TodayView: View {
             header
             quickAdd
             if appState.totalTodayCount > 0 { progressBar }
-            if let milestone = appState.habitMilestoneMessage {
-                Text(milestone)
-                    .font(.caption)
-                    .foregroundStyle(.tint)
-                    .padding(.vertical, 2)
+            if let banner = appState.ephemeralBanner {
+                HStack(spacing: 8) {
+                    Text(banner.message)
+                        .font(.caption)
+                        .foregroundStyle(.tint)
+                    if let label = banner.undoLabel, let token = banner.undoToken {
+                        Button(label) { appState.performUndo(token: token) }
+                            .font(.caption.weight(.semibold))
+                            .buttonStyle(.plain)
+                            .foregroundStyle(.tint)
+                            .accessibilityLabel(label)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(.vertical, 2)
+                .accessibilityElement(children: .combine)
             }
             Divider().padding(.top, 2)
             ScrollView {
@@ -49,12 +60,13 @@ struct TodayView: View {
             Task { await appState.loadRadioChannels() }
         }
         .onChange(of: appState.quickAddFocusSignal) { _, _ in addFocused = true }
-        .onChange(of: appState.habitMilestoneMessage) { _, message in
-            guard let message else { return }
+        .onChange(of: appState.ephemeralBanner?.id) { _, _ in
+            guard let banner = appState.ephemeralBanner else { return }
+            let id = banner.id
             Task {
-                try? await Task.sleep(for: .seconds(3))
-                if appState.habitMilestoneMessage == message {
-                    appState.habitMilestoneMessage = nil
+                try? await Task.sleep(for: .seconds(banner.undoToken == nil ? 3 : 5))
+                if appState.ephemeralBanner?.id == id {
+                    appState.dismissBanner()
                 }
             }
         }
@@ -67,6 +79,9 @@ struct TodayView: View {
         .sheet(isPresented: $showHistory) {
             TaskHistoryView(appState: appState)
         }
+        .onChange(of: showSettings) { _, open in appState.isPanelSheetPresented = open || showStats || showHistory }
+        .onChange(of: showStats) { _, open in appState.isPanelSheetPresented = open || showSettings || showHistory }
+        .onChange(of: showHistory) { _, open in appState.isPanelSheetPresented = open || showSettings || showStats }
         .sheet(isPresented: Binding(
             get: { appState.presentEndOfDayReview },
             set: { appState.presentEndOfDayReview = $0 }
@@ -97,6 +112,8 @@ struct TodayView: View {
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .fixedSize()
+            .accessibilityLabel("Menu")
+            .help("Settings and more")
         }
     }
 
@@ -243,10 +260,12 @@ struct HabitRow: View {
     var body: some View {
         HStack(spacing: 8) {
             Button { appState.toggleHabit(habit.log) } label: {
-                Image(systemName: habit.log.isCompleted ? "checkmark.circle.fill" : "circle")
-                    .foregroundStyle(habit.log.isCompleted ? .green : .secondary)
+                Image(systemName: habitStatusIcon)
+                    .foregroundStyle(habitStatusColor)
             }
             .buttonStyle(.plain)
+            .accessibilityLabel(habitAccessibilityLabel)
+            .help(habitAccessibilityLabel)
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(habit.template.title)
@@ -292,10 +311,30 @@ struct HabitRow: View {
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .fixedSize()
-            .opacity(hovering ? 1 : 0)
+            .opacity(hovering ? 1 : 0.35)
+            .accessibilityLabel("Habit actions")
+            .help("Habit actions")
         }
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
+    }
+
+    private var habitStatusIcon: String {
+        if habit.log.isCompleted { return "checkmark.circle.fill" }
+        if habit.log.status == .skipped { return "minus.circle" }
+        return "circle"
+    }
+
+    private var habitStatusColor: Color {
+        if habit.log.isCompleted { return .green }
+        if habit.log.status == .skipped { return .secondary.opacity(0.7) }
+        return .secondary
+    }
+
+    private var habitAccessibilityLabel: String {
+        if habit.log.isCompleted { return "Completed habit" }
+        if habit.log.status == .skipped { return "Skipped habit" }
+        return "Pending habit"
     }
 }
 
@@ -321,6 +360,8 @@ struct TodoRow: View {
             }
             .buttonStyle(.plain)
             .help("Tap: to-do → in progress → done")
+            .accessibilityLabel(todo.isCompleted ? "Completed" : (todo.isInProgress ? "In progress" : "To do"))
+            .accessibilityHint("Cycles status")
 
             if isEditing {
                 TextField("Task", text: $draft)
@@ -367,6 +408,12 @@ struct TodoRow: View {
                         Button("Start") { appState.advanceTodo(todo) }
                     }
                     Button("Edit", action: beginEdit)
+                    Menu("Priority") {
+                        Button("None") { appState.setPriority(todo, .none) }
+                        Button("Low") { appState.setPriority(todo, .low) }
+                        Button("Medium") { appState.setPriority(todo, .medium) }
+                        Button("High") { appState.setPriority(todo, .high) }
+                    }
                     if showReschedule { Button("Bring to today") { appState.reschedule(todo) } }
                     if !todo.isCompleted {
                         Button("Delay to tomorrow") { appState.delay(todo) }
@@ -378,11 +425,14 @@ struct TodoRow: View {
                 .menuStyle(.borderlessButton)
                 .menuIndicator(.hidden)
                 .fixedSize()
-                .opacity(hovering ? 1 : 0)
+                .opacity(hovering ? 1 : 0.35)
+                .accessibilityLabel("Task actions")
+                .help("Task actions")
             }
         }
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
+        .accessibilityElement(children: .contain)
     }
 
     private func beginEdit() {
@@ -471,12 +521,20 @@ struct AgePill: View {
     private var color: Color { tier >= .aging ? .orange : .secondary }
 
     var body: some View {
-        Text(text)
-            .font(.caption2.weight(.medium))
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(Capsule().fill(color.opacity(0.18)))
-            .foregroundStyle(color)
+        HStack(spacing: 2) {
+            if tier >= .aging {
+                Image(systemName: "clock.badge.exclamationmark")
+                    .font(.caption2)
+                    .accessibilityHidden(true)
+            }
+            Text(text)
+                .font(.caption2.weight(.medium))
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .background(Capsule().fill(color.opacity(0.18)))
+        .foregroundStyle(color)
+        .accessibilityLabel(tier >= .aging ? "Aging \(text)" : "Waiting \(text)")
     }
 }
 
@@ -507,12 +565,16 @@ struct PomodoroStrip: View {
                 Image(systemName: pomo.isRunning ? "pause.fill" : "play.fill")
             }
             .buttonStyle(.plain)
+            .help(pomo.isRunning ? "Pause" : "Start")
+            .accessibilityLabel(pomo.isRunning ? "Pause focus" : "Start focus")
 
-            Button { pomo.stop() } label: {
+            Button { appState.stopPomodoro() } label: {
                 Image(systemName: "stop.fill")
             }
             .buttonStyle(.plain)
             .foregroundStyle(.secondary)
+            .help("Stop session")
+            .accessibilityLabel("Stop focus session")
 
             if pomo.phase.isBreak {
                 Button { appState.skipBreakAndStartWork() } label: {
@@ -521,6 +583,7 @@ struct PomodoroStrip: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
                 .help("Skip break")
+                .accessibilityLabel("Skip break")
             }
         }
     }

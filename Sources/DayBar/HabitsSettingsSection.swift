@@ -5,6 +5,7 @@ import DayBarCore
 struct HabitsSettingsSection: View {
     var appState: AppState
     @State private var templates: [HabitTemplate] = []
+    @State private var archivedTemplates: [HabitTemplate] = []
     @State private var editing: HabitTemplate?
     @State private var showingAdd = false
 
@@ -50,6 +51,20 @@ struct HabitsSettingsSection: View {
                     .buttonStyle(.plain)
                 }
             }
+            if !archivedTemplates.isEmpty {
+                DisclosureGroup("Archived habits") {
+                    ForEach(archivedTemplates, id: \.id) { template in
+                        HStack {
+                            Label(template.title, systemImage: template.symbolName)
+                            Spacer()
+                            Button("Restore") {
+                                appState.unarchiveHabitTemplate(template)
+                                reload()
+                            }
+                        }
+                    }
+                }
+            }
             Button("Add habit…") { showingAdd = true }
         }
         .onAppear { reload() }
@@ -66,7 +81,9 @@ struct HabitsSettingsSection: View {
     }
 
     private func reload() {
-        templates = (try? appState.store.allHabitTemplates().filter(\.isActive)) ?? []
+        let all = (try? appState.store.allHabitTemplates()) ?? []
+        templates = all.filter(\.isActive)
+        archivedTemplates = all.filter { !$0.isActive }
     }
 }
 
@@ -94,6 +111,7 @@ private struct HabitEditorSheet: View {
     ]
 
     private static let weekdayLabels = ["S", "M", "T", "W", "T", "F", "S"]
+    private static let weekdayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
 
     var body: some View {
         VStack(spacing: 0) {
@@ -133,6 +151,8 @@ private struct HabitEditorSheet: View {
                             }
                             .buttonStyle(.bordered)
                             .tint(selected ? .accentColor : .secondary)
+                            .accessibilityLabel(Self.weekdayNames[index])
+                            .accessibilityValue(selected ? "Selected" : "Not selected")
                         }
                     }
                 }

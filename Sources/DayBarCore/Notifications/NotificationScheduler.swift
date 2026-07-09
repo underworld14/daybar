@@ -1,10 +1,51 @@
 import Foundation
+import Observation
 import UserNotifications
+
+/// Pure scheduling decisions shared by notification code and unit tests.
+public enum NotificationScheduling {
+    public static func backlogFireDate(
+        agingCount: Int,
+        now: Date = .now,
+        calendar: Calendar = .current
+    ) -> Date? {
+        guard agingCount > 0 else { return nil }
+        return calendar.date(bySettingHour: 14, minute: 0, second: 0, of: now)
+    }
+
+    public static func backlogDeliveryInterval(
+        agingCount: Int,
+        now: Date = .now,
+        calendar: Calendar = .current
+    ) -> TimeInterval? {
+        guard let fireDate = backlogFireDate(agingCount: agingCount, now: now, calendar: calendar) else { return nil }
+        return max(1, fireDate.timeIntervalSince(now))
+    }
+
+    public static func habitAnchorTemplates(
+        templates: [HabitTemplate],
+        todayLogs: [HabitLog],
+        now: Date = .now,
+        calendar: Calendar = .current
+    ) -> [HabitTemplate] {
+        let completed = Set(todayLogs.filter { $0.isCompleted || $0.status == .skipped }.map(\.templateId))
+        let today = calendar.startOfDay(for: now)
+        return templates.filter { template in
+            template.notifyEnabled
+                && template.isActive
+                && template.isScheduled(on: today, calendar: calendar)
+                && !completed.contains(template.id)
+                && template.anchorHour != nil
+                && template.anchorMinute != nil
+        }
+    }
+}
 
 /// Wraps `UNUserNotificationCenter`: morning/evening reminders, the Pomodoro phase-end banner,
 /// and a once-daily backlog nudge. Scheduling is gated by `authorized`, so everything degrades
 /// gracefully when notification permission is denied.
 @MainActor
+@Observable
 public final class NotificationScheduler {
     private var center: UNUserNotificationCenter? {
         guard ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil else { return nil }
@@ -12,16 +53,18 @@ public final class NotificationScheduler {
     }
 
     public private(set) var authorized = false
+    public var onAuthorizationGranted: (() -> Void)?
 
     public init() {}
 
     /// Identifiers (stable so they can be removed/replaced).
-    private enum ID {
-        static let morning = "morning.plan"
-        static let evening = "evening.review"
-        static let phaseEnd = "pomodoro.phaseEnd"
-        static let backlog = "backlog.nudge"
-        static let habitPrefix = "habit.anchor."
+    public enum ID {
+        public static let morning = "morning.plan"
+        public static let evening = "evening.review"
+        public static let phaseEnd = "pomodoro.phaseEnd"
+        public static let backlog = "backlog.nudge"
+        public static let habitPrefix = "habit.anchor."
+        public static let weeklyDigest = "weekly.digest"
     }
 
     // MARK: - Authorization
@@ -31,7 +74,10 @@ public final class NotificationScheduler {
         center.requestAuthorization(options: [.alert, .sound, .badge]) { [weak self] granted, _ in
             Task { @MainActor in
                 self?.authorized = granted
-                if granted { self?.rescheduleRepeating() }
+                if granted {
+                    self?.rescheduleRepeating()
+                    self?.onAuthorizationGranted?()
+                }
             }
         }
     }
@@ -95,26 +141,36 @@ public final class NotificationScheduler {
 
     // MARK: - Habit anchor reminders (per-template, skipped when already completed today)
 
-    public func rescheduleHabitAnchors(templates: [HabitTemplate], todayLogs: [HabitLog]) {
+    public func rescheduleHabitAnchors(
+        templates: [HabitTemplate],
+        todayLogs: [HabitLog],
+        now: Date = .now,
+        calendar: Calendar = .current
+    ) {
         guard let center else { return }
         center.getPendingNotificationRequests { [weak self] requests in
             let habitIDs = requests.map(\.identifier).filter { $0.hasPrefix(ID.habitPrefix) }
             Task { @MainActor in
                 self?.center?.removePendingNotificationRequests(withIdentifiers: habitIDs)
-                self?.scheduleHabitAnchors(templates: templates, todayLogs: todayLogs)
+                self?.scheduleHabitAnchors(templates: templates, todayLogs: todayLogs, now: now, calendar: calendar)
             }
         }
     }
 
-    private func scheduleHabitAnchors(templates: [HabitTemplate], todayLogs: [HabitLog]) {
+    private func scheduleHabitAnchors(
+        templates: [HabitTemplate],
+        todayLogs: [HabitLog],
+        now: Date,
+        calendar: Calendar
+    ) {
         guard authorized, Preferences.habitNotifyEnabled else { return }
-        let completed = Set(todayLogs.filter(\.isCompleted).map(\.templateId))
-        let today = Calendar.current.startOfDay(for: Date())
-        for template in templates where template.notifyEnabled && template.isActive {
-            guard template.isScheduled(on: today),
-                  !completed.contains(template.id),
-                  let hour = template.anchorHour,
-                  let minute = template.anchorMinute else { continue }
+        for template in NotificationScheduling.habitAnchorTemplates(
+            templates: templates,
+            todayLogs: todayLogs,
+            now: now,
+            calendar: calendar
+        ) {
+            guard let hour = template.anchorHour, let minute = template.anchorMinute else { continue }
             let body: String
             if template.cueText.isEmpty {
                 body = "Time for: \(template.title)"
@@ -136,8 +192,12 @@ public final class NotificationScheduler {
     public func updateBacklogNudge(agingCount: Int, now: Date = .now, calendar: Calendar = .current) {
         guard let center else { return }
         center.removePendingNotificationRequests(withIdentifiers: [ID.backlog])
-        guard authorized, Preferences.backlogNotify, agingCount > 0 else { return }
-        guard let fireDate = calendar.date(bySettingHour: 14, minute: 0, second: 0, of: now), fireDate > now else { return }
+        guard authorized, Preferences.backlogNotify else { return }
+        guard let deliveryInterval = NotificationScheduling.backlogDeliveryInterval(
+            agingCount: agingCount,
+            now: now,
+            calendar: calendar
+        ) else { return }
 
         let content = UNMutableNotificationContent()
         content.title = "Tasks piling up"
@@ -145,7 +205,23 @@ public final class NotificationScheduler {
             ? "1 task has been waiting a few days — reschedule or drop it?"
             : "\(agingCount) tasks have been waiting a few days — reschedule or drop them?"
         content.sound = .default
-        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: max(1, fireDate.timeIntervalSince(now)), repeats: false)
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: deliveryInterval, repeats: false)
         center.add(UNNotificationRequest(identifier: ID.backlog, content: content, trigger: trigger))
+    }
+
+    // MARK: - Weekly digest
+
+    public func postWeeklyDigest(
+        tasksCompleted: Int,
+        habitsCompleted: Int,
+        focusSessions: Int,
+        agingTasks: Int
+    ) {
+        guard let center, authorized else { return }
+        let content = UNMutableNotificationContent()
+        content.title = "Your week in DayBar"
+        content.body = "\(tasksCompleted) tasks · \(habitsCompleted) habits · \(focusSessions) focus · \(agingTasks) aging"
+        content.sound = Preferences.shouldPlayAudibleAlerts() ? .default : nil
+        center.add(UNNotificationRequest(identifier: ID.weeklyDigest, content: content, trigger: nil))
     }
 }

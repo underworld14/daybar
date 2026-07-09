@@ -24,8 +24,9 @@ public final class AppState {
     @ObservationIgnored private let habitEngine: HabitEngine
     @ObservationIgnored private let somaFM = SomaFMService()
     @ObservationIgnored private let artworkCache = RadioArtworkCache()
-    @ObservationIgnored private let calendar: Calendar
+    @ObservationIgnored private var calendar: Calendar
     @ObservationIgnored private var observers: [any NSObjectProtocol] = []
+    @ObservationIgnored private var pendingUndo: PendingUndo?
     @ObservationIgnored private var lastHabitNotifySignature: String?
     @ObservationIgnored private var forceRemindersSync = false
     @ObservationIgnored private var pendingRemindersSync = false
@@ -46,10 +47,24 @@ public final class AppState {
     public private(set) var carriedTodos: [DailyTodo] = []
     public private(set) var todayHabits: [TodayHabit] = []
     public private(set) var habitStreakEntries: [HabitStreakEntry] = []
-    /// Ephemeral banner after hitting a streak milestone (7/30/100 days).
-    public var habitMilestoneMessage: String?
-    public var isPanelPresented: Bool = false
+    /// Ephemeral banner (milestones, quiet acknowledgments, undo).
+    public var ephemeralBanner: EphemeralBanner?
+    /// Backward-compatible alias used by older call sites / tests.
+    public var habitMilestoneMessage: String? {
+        get { ephemeralBanner?.message }
+        set {
+            if let newValue {
+                showBanner(newValue)
+            } else if ephemeralBanner?.undoToken == nil {
+                ephemeralBanner = nil
+            }
+        }
+    }
+    public private(set) var lastSaveError: String?
+    public private(set) var lastSuccessfulSaveAt: Date?
     public var presentEndOfDayReview: Bool = false
+    /// True while Settings/Stats/History (or similar) sheet is open from the panel.
+    public var isPanelSheetPresented: Bool = false
     /// Bumped to ask the panel to focus the quick-add field (e.g. from the global hotkey).
     public var quickAddFocusSignal: Int = 0
 
@@ -79,6 +94,8 @@ public final class AppState {
         self.remindersSync = RemindersSyncEngine(store: store, provider: provider, calendar: calendar)
         self.habitRemindersSync = HabitRemindersSyncEngine(store: store, provider: provider, calendar: calendar)
         self.remindersLastSyncedAt = remindersSync.lastSyncedAt
+        self.remindersSync.loadPersistedPushQueue()
+        self.habitRemindersSync.loadPersistedPushQueue()
         self.pomodoro = PomodoroEngine()
         self.radio = RadioPlayerManager(service: somaFM)
         self.pomodoro.onPhaseEnd = { [weak self] phase, elapsed, natural, endedAt in
@@ -88,15 +105,73 @@ public final class AppState {
         // Any radio start (play/next/prev/retry/restore/reconnect) silences ticking — the
         // reverse of `syncTickingSound` pausing radio when ticking starts.
         self.radio.onPlaybackStarted = { TickingSoundPlayer.shared.stop() }
+        self.notifications.onAuthorizationGranted = { [weak self] in self?.refresh() }
         applyPreferences()
         refresh()
         if observeSystemEvents { observeSystem() }
     }
 
+
+    private struct PendingUndo {
+        enum Kind {
+            case undropTodo(UUID)
+            case unarchiveHabit(UUID)
+            case undoFocusSession(UUID)
+        }
+        let kind: Kind
+    }
+
+    public func showBanner(_ message: String, undoLabel: String? = nil, undoToken: String? = nil) {
+        ephemeralBanner = EphemeralBanner(message: message, undoLabel: undoLabel, undoToken: undoToken)
+    }
+
+    public func dismissBanner() {
+        ephemeralBanner = nil
+        pendingUndo = nil
+    }
+
+    public func performUndo(token: String) {
+        guard let pending = pendingUndo, ephemeralBanner?.undoToken == token else { return }
+        switch pending.kind {
+        case .undropTodo(let id):
+            if let todo = (try? store.allTodos())?.first(where: { $0.id == id }) {
+                todo.status = todo.plannedForDate < DayMath.startOfDay(Date(), calendar: calendar) ? .carriedOver : .planned
+                commitSave()
+                refresh()
+            }
+        case .unarchiveHabit(let id):
+            if let template = try? store.habitTemplate(id: id) {
+                template.isActive = true
+                commitSave()
+                invalidateHabitNotifications()
+                refresh()
+            }
+        case .undoFocusSession(let id):
+            if let sessions = try? store.focusSessions(in: Date.distantPast..<Date.distantFuture),
+               let session = sessions.first(where: { $0.id == id }) {
+                store.context.delete(session)
+                commitSave()
+            }
+        }
+        dismissBanner()
+    }
+
+    @discardableResult
+    private func commitSave() -> Bool {
+        let ok = store.save()
+        lastSaveError = store.lastSaveError
+        lastSuccessfulSaveAt = store.lastSuccessfulSaveAt
+        if !ok {
+            showBanner("Changes may not be saved")
+        }
+        return ok
+    }
+
     // MARK: - Derived
 
     public var overdueCount: Int {
-        carriedTodos.filter {
+        if Preferences.isAway(on: Date(), calendar: calendar) { return 0 }
+        return carriedTodos.filter {
             EscalationModel.countsTowardBadge($0.escalationTier(thresholds: thresholds, calendar: calendar))
         }.count
     }
@@ -124,6 +199,7 @@ public final class AppState {
         rescheduleHabitNotificationsIfNeeded(now: now)
         maybePromptEndOfDayReview(now: now)
         scheduleRemindersSync(now: now)
+        maybePostWeeklyDigest(now: now)
     }
 
     public func invalidateRemindersSync() {
@@ -132,7 +208,8 @@ public final class AppState {
 
     private func markRemindersTodoLocallyModified(_ todo: DailyTodo, now: Date) {
         guard todo.source == .reminders else { return }
-        todo.externalModifiedAt = now
+        // Do not stamp externalModifiedAt until the push succeeds — otherwise a quit
+        // before drain permanently suppresses the corrective pull.
         invalidateRemindersSync()
     }
 
@@ -208,7 +285,7 @@ public final class AppState {
             priority: priority
         )
         store.insert(todo)
-        store.save()
+        commitSave()
         if Preferences.remindersPushNewTodos {
             Task { await remindersSync.createReminderForNewTodo(todo, now: now) }
         }
@@ -226,6 +303,10 @@ public final class AppState {
         case .inProgress:
             todo.completedDate = now
             todo.status = .completed
+            // Keep completed carried-over tasks visible in today's list.
+            if todo.plannedForDate < today {
+                todo.plannedForDate = today
+            }
         case .planned, .carriedOver, .snoozed:
             todo.completedDate = nil
             todo.status = .inProgress
@@ -234,7 +315,7 @@ public final class AppState {
         }
         markRemindersTodoLocallyModified(todo, now: now)
         remindersSync.enqueuePush(for: todo)
-        store.save()
+        commitSave()
         refresh(now: now)
     }
 
@@ -246,7 +327,7 @@ public final class AppState {
         todo.status = todo.plannedForDate < today ? .carriedOver : .planned
         markRemindersTodoLocallyModified(todo, now: now)
         remindersSync.enqueuePush(for: todo)
-        store.save()
+        commitSave()
         refresh(now: now)
     }
 
@@ -259,10 +340,14 @@ public final class AppState {
         } else {
             todo.completedDate = now
             todo.status = .completed
+            let today = DayMath.startOfDay(now, calendar: calendar)
+            if todo.plannedForDate < today {
+                todo.plannedForDate = today
+            }
         }
         markRemindersTodoLocallyModified(todo, now: now)
         remindersSync.enqueuePush(for: todo)
-        store.save()
+        commitSave()
         refresh(now: now)
     }
 
@@ -275,7 +360,7 @@ public final class AppState {
         todo.status = .snoozed
         markRemindersTodoLocallyModified(todo, now: now)
         remindersSync.enqueuePush(for: todo)
-        store.save()
+        commitSave()
         refresh(now: now)
     }
 
@@ -287,7 +372,7 @@ public final class AppState {
         todo.status = .planned
         markRemindersTodoLocallyModified(todo, now: now)
         remindersSync.enqueuePush(for: todo)
-        store.save()
+        commitSave()
         refresh(now: now)
     }
 
@@ -295,7 +380,19 @@ public final class AppState {
         todo.status = .dropped
         markRemindersTodoLocallyModified(todo, now: now)
         remindersSync.enqueuePush(for: todo)
-        store.save()
+        commitSave()
+        refresh(now: now)
+        let token = todo.id.uuidString
+        pendingUndo = PendingUndo(kind: .undropTodo(todo.id))
+        showBanner("Task dropped", undoLabel: "Undo", undoToken: token)
+    }
+
+    public func setPriority(_ todo: DailyTodo, _ priority: Priority, now: Date = .now) {
+        guard todo.priority != priority else { return }
+        todo.priority = priority
+        markRemindersTodoLocallyModified(todo, now: now)
+        remindersSync.enqueuePush(for: todo)
+        commitSave()
         refresh(now: now)
     }
 
@@ -306,7 +403,7 @@ public final class AppState {
         todo.title = trimmed
         markRemindersTodoLocallyModified(todo, now: now)
         remindersSync.enqueuePush(for: todo)
-        store.save()
+        commitSave()
         refresh(now: now)
     }
 
@@ -341,7 +438,7 @@ public final class AppState {
             remindersSyncEnabled: remindersSyncEnabled
         )
         store.insert(template)
-        store.save()
+        commitSave()
         if remindersSyncEnabled {
             markHabitLocallyModified(template, now: now)
             habitRemindersSync.enqueuePush(for: template)
@@ -355,8 +452,13 @@ public final class AppState {
         if template.remindersSyncEnabled {
             markHabitLocallyModified(template, now: now)
             habitRemindersSync.enqueuePush(for: template)
+        } else if template.externalReminderIdentifier != nil {
+            // Opting out must clear the link so remote edits cannot overwrite local state.
+            template.externalReminderIdentifier = nil
+            template.remindersCalendarIdentifier = nil
+            template.externalModifiedAt = nil
         }
-        store.save()
+        commitSave()
         invalidateHabitNotifications()
         refresh(now: now)
     }
@@ -367,8 +469,28 @@ public final class AppState {
             markHabitLocallyModified(template, now: now)
             habitRemindersSync.enqueuePush(for: template)
         }
-        store.save()
+        commitSave()
         invalidateHabitNotifications()
+        refresh(now: now)
+        let token = template.id.uuidString
+        pendingUndo = PendingUndo(kind: .unarchiveHabit(template.id))
+        showBanner("Habit archived", undoLabel: "Undo", undoToken: token)
+    }
+
+    public func unarchiveHabitTemplate(_ template: HabitTemplate, now: Date = .now) {
+        template.isActive = true
+        commitSave()
+        invalidateHabitNotifications()
+        refresh(now: now)
+    }
+
+    /// Disable Reminders sync for a habit and clear the external link so pulls cannot overwrite it.
+    public func disableHabitRemindersSync(_ template: HabitTemplate, now: Date = .now) {
+        template.remindersSyncEnabled = false
+        template.externalReminderIdentifier = nil
+        template.remindersCalendarIdentifier = nil
+        template.externalModifiedAt = nil
+        commitSave()
         refresh(now: now)
     }
 
@@ -377,34 +499,35 @@ public final class AppState {
         if log.isCompleted {
             log.completedAt = nil
             log.status = .pending
-            habitMilestoneMessage = nil
+            ephemeralBanner = nil
         } else if log.status == .skipped {
-            log.completedAt = now
-            log.status = .completed
+            // "Mark incomplete" on a skipped habit returns it to pending — never completes it.
+            log.completedAt = nil
+            log.status = .pending
         } else {
             log.completedAt = now
             log.status = .completed
             let newStreak = priorStreak + 1
             if HabitAnalytics.isMilestone(newStreak), newStreak > priorStreak,
                let title = todayHabits.first(where: { $0.log.id == log.id })?.template.title {
-                habitMilestoneMessage = "\(newStreak) days of “\(title)” — keep going."
+                showBanner("\(newStreak) days of “\(title)” — keep going.")
             }
         }
-        store.save()
+        commitSave()
         if let template = try? store.habitTemplate(id: log.templateId), template.remindersSyncEnabled {
             markHabitLocallyModified(template, now: now)
             habitRemindersSync.enqueuePush(for: template)
             invalidateRemindersSync()
         }
-        reloadLists(now: now)
-        let rawHabits = (try? store.todayHabits(on: now, calendar: calendar)) ?? []
-        rebuildHabitCaches(rawHabits: rawHabits, now: now)
+        invalidateHabitNotifications()
+        refresh(now: now)
     }
 
     public func skipHabit(_ log: HabitLog, now: Date = .now) {
         log.completedAt = nil
         log.status = .skipped
-        store.save()
+        commitSave()
+        invalidateHabitNotifications()
         refresh(now: now)
     }
 
@@ -468,7 +591,9 @@ public final class AppState {
     }
 
     private func markHabitLocallyModified(_ template: HabitTemplate, now: Date) {
-        template.externalModifiedAt = now
+        // Stamp only after successful push (HabitRemindersSyncEngine).
+        _ = now
+        _ = template
     }
 
     private func rescheduleHabitNotificationsIfNeeded(now: Date = .now) {
@@ -482,7 +607,26 @@ public final class AppState {
         )
         guard signature != lastHabitNotifySignature else { return }
         lastHabitNotifySignature = signature
-        notifications.rescheduleHabitAnchors(templates: templates, todayLogs: logs)
+        notifications.rescheduleHabitAnchors(templates: templates, todayLogs: logs, now: now, calendar: calendar)
+    }
+
+    /// Stop the current Pomodoro session (records elapsed focus time via onPhaseEnd).
+    public func stopPomodoro(now: Date = .now) {
+        guard pomodoro.phase != .idle else { return }
+        let wasWork = pomodoro.phase == .work
+        pomodoro.stop(now: now)
+        if wasWork {
+            // handlePhaseEnd already inserted FocusSession; offer undo for a few seconds.
+            if let session = (try? store.focusSessions(
+                in: now.addingTimeInterval(-2)..<now.addingTimeInterval(2)
+            ))?.last {
+                let token = session.id.uuidString
+                pendingUndo = PendingUndo(kind: .undoFocusSession(session.id))
+                showBanner("Focus session stopped", undoLabel: "Undo", undoToken: token)
+                return
+            }
+        }
+        showBanner("Focus session stopped")
     }
 
     /// One-button Pomodoro control: start when idle, pause when running, resume when paused.
@@ -581,6 +725,7 @@ public final class AppState {
     /// Rebuild the Pomodoro configuration from saved Preferences (call after a Settings change).
     public func applyPreferences() {
         pomodoro.config = Preferences.pomodoroConfig
+        thresholds = Preferences.escalationThresholds
         syncTickingSound()
     }
 
@@ -644,12 +789,12 @@ public final class AppState {
 
     public static let completedHistoryDays = 30
 
-    public func completedHistoryTotal(days: Int = completedHistoryDays, now: Date = .now) -> Int {
+    public func completedHistoryTotal(days: Int = 30, now: Date = .now) -> Int {
         completedHistory(days: days, now: now).reduce(0) { $0 + $1.count }
     }
 
     /// Average completions per calendar day across the window (not only days with activity).
-    public func completedHistoryAveragePerDay(days: Int = completedHistoryDays, now: Date = .now) -> Int {
+    public func completedHistoryAveragePerDay(days: Int = 30, now: Date = .now) -> Int {
         completedHistoryTotal(days: days, now: now) / max(1, days)
     }
 
@@ -697,6 +842,29 @@ public final class AppState {
         if shouldPresent { presentEndOfDayReview = true }
     }
 
+    private func maybePostWeeklyDigest(now: Date) {
+        guard Preferences.weeklyDigestEnabled else { return }
+        let weekday = calendar.component(.weekday, from: now) // 1 = Sunday
+        guard weekday == 1 else { return }
+        let today = DayMath.startOfDay(now, calendar: calendar)
+        if let last = Preferences.weeklyDigestLastFiredDay, calendar.isDate(last, inSameDayAs: today) {
+            return
+        }
+        let weekStart = calendar.date(byAdding: .day, value: -6, to: today) ?? today
+        let nextDay = calendar.date(byAdding: .day, value: 1, to: today) ?? now
+        let completed = (try? store.completedTodos(in: weekStart..<nextDay))?.count ?? 0
+        let habitLogs = (try? store.habitLogs(in: weekStart..<nextDay)) ?? []
+        let habitsDone = habitLogs.filter(\.isCompleted).count
+        let focus = (try? store.focusSessions(in: weekStart..<nextDay))?.count ?? 0
+        notifications.postWeeklyDigest(
+            tasksCompleted: completed,
+            habitsCompleted: habitsDone,
+            focusSessions: focus,
+            agingTasks: overdueCount
+        )
+        Preferences.weeklyDigestLastFiredDay = today
+    }
+
     // MARK: - System wiring
 
     private func observeSystem() {
@@ -715,6 +883,23 @@ public final class AppState {
             MainActor.assumeIsolated { self?.refresh() }
         }
         observers.append(dayChange)
+
+        let tzChange = NotificationCenter.default.addObserver(
+            forName: NSNotification.Name.NSSystemTimeZoneDidChange, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.calendar = .current
+                self.rollover.calendar = self.calendar
+                self.habitEngine.calendar = self.calendar
+                self.refresh()
+            }
+        }
+        observers.append(tzChange)
+
+        notifications.onAuthorizationGranted = { [weak self] in
+            self?.refresh()
+        }
 
         let remindersChange = NotificationCenter.default.addObserver(
             forName: .EKEventStoreChanged, object: nil, queue: .main
@@ -749,6 +934,7 @@ public final class AppState {
         let sinceBreak = now.timeIntervalSince(breakArmedAt ?? now)
         guard idleSinceInput >= threshold, sinceBreak >= threshold else { return }
         skipBreakAndStartWork(now: now, silent: true)
+        showBanner("You were away — started your next focus session")
     }
 
     /// Skip the current break and immediately start the next focus session.
@@ -770,7 +956,7 @@ public final class AppState {
             let minutes = Int((elapsed / 60).rounded())
             if minutes > 0 {
                 store.insert(FocusSession(endedAt: endedAt, minutes: minutes, completed: completedNaturally))
-                store.save()
+                commitSave()
             }
             breakArmedAt = endedAt
             // The recap sheet is held back while a focus session runs — retry immediately
@@ -785,11 +971,13 @@ public final class AppState {
             suppressNextPhaseEndFeedback = false
             return
         }
-        if Preferences.soundEnabled { AlertSoundPlayer.shared.playPhaseEndRing() }
+        if Preferences.soundEnabled, Preferences.shouldPlayAudibleAlerts(now: endedAt, calendar: calendar) {
+            AlertSoundPlayer.shared.playPhaseEndRing()
+        }
         notifications.postPhaseEndBanner(finished: phase)
         if phase == .work, radio.isPlaying, Preferences.radioPauseOnFocusEnd {
             radio.pause()
-            habitMilestoneMessage = "Focus ended — music paused"
+            showBanner("Focus ended — music paused")
         }
     }
 }

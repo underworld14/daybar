@@ -13,6 +13,7 @@ public enum TodoStatus: String, CaseIterable, Codable, Sendable {
 
 /// Task priority. Backed by an `Int` rawValue so SwiftData can sort on it.
 public enum Priority: Int, CaseIterable, Codable, Sendable, Comparable {
+    case none = -1
     case low = 0
     case medium = 1
     case high = 2

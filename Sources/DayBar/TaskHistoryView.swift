@@ -111,6 +111,7 @@ private struct HistoryTodoRow: View {
         case .high: return .orange
         case .medium: return .secondary.opacity(0.5)
         case .low: return .secondary.opacity(0.3)
+        case .none: return .clear
         }
     }
 }

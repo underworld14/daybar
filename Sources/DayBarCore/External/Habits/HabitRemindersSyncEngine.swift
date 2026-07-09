@@ -24,9 +24,21 @@ public final class HabitRemindersSyncEngine {
 
     public var accessStatus: RemindersAccessStatus { provider.accessStatus }
 
+    public func loadPersistedPushQueue() {
+        guard let meta = try? store.appMeta() else { return }
+        pushQueue = Set(meta.pendingRemindersHabitPushIDs
+            .split(separator: ",")
+            .compactMap { UUID(uuidString: String($0)) })
+    }
+
     public func enqueuePush(for template: HabitTemplate) {
         guard template.remindersSyncEnabled else { return }
         pushQueue.insert(template.id)
+        persistPushQueue(save: true)
+    }
+
+    public func hasPendingPush(for templateID: UUID) -> Bool {
+        pushQueue.contains(templateID)
     }
 
     @discardableResult
@@ -67,12 +79,14 @@ public final class HabitRemindersSyncEngine {
     private func processPushQueue(now: Date, calendarIDs: [String]) async -> PushResult {
         var changed = false
         var allSucceeded = true
-        let ids = pushQueue
-        pushQueue.removeAll()
-
+        let ids = Array(pushQueue)
         let templates = (try? store.allHabitTemplates()) ?? []
-        for template in templates where ids.contains(template.id) {
-            guard template.remindersSyncEnabled, template.isActive else { continue }
+        for template in templates where ids.contains(template.id) && template.isActive {
+            guard template.remindersSyncEnabled else {
+                pushQueue.remove(template.id)
+                persistPushQueue(save: true)
+                continue
+            }
             do {
                 if let externalId = template.externalReminderIdentifier {
                     var dto = HabitReminderMapping.dto(from: template, calendar: calendar, referenceDay: now)
@@ -84,6 +98,8 @@ public final class HabitRemindersSyncEngine {
                     }
                     let updated = try await provider.applyHabitReminder(dto)
                     template.externalModifiedAt = updated.modifiedAt ?? now
+                    pushQueue.remove(template.id)
+                    persistPushQueue(save: true)
                     changed = true
                 } else {
                     let listID = template.remindersCalendarIdentifier
@@ -91,21 +107,32 @@ public final class HabitRemindersSyncEngine {
                         ?? calendarIDs.first
                     guard let listID else { continue }
                     var dto = HabitReminderMapping.dto(from: template, calendar: calendar, referenceDay: now)
+                    if let log = try? store.habitLogs(on: now, calendar: calendar)
+                        .first(where: { $0.templateId == template.id }) {
+                        dto.isCompleted = log.isCompleted
+                        dto.completionDate = log.completedAt
+                    }
                     let created = try await provider.createHabitReminder(dto, calendarIdentifier: listID)
                     template.externalReminderIdentifier = created.externalIdentifier
                     template.externalModifiedAt = created.modifiedAt ?? now
                     template.remindersCalendarIdentifier = created.calendarIdentifier
+                    pushQueue.remove(template.id)
+                    persistPushQueue(save: true)
                     changed = true
                 }
             } catch {
                 lastSyncError = error.localizedDescription
-                pushQueue.insert(template.id)
+                persistPushQueue(save: true)
                 allSucceeded = false
             }
         }
 
         for template in templates where ids.contains(template.id) && !template.isActive {
-            guard let externalId = template.externalReminderIdentifier else { continue }
+            guard let externalId = template.externalReminderIdentifier else {
+                pushQueue.remove(template.id)
+                persistPushQueue(save: true)
+                continue
+            }
             do {
                 if var remote = try await provider.fetchHabitReminder(externalIdentifier: externalId) {
                     remote.isCompleted = true
@@ -115,6 +142,8 @@ public final class HabitRemindersSyncEngine {
                 }
                 template.externalReminderIdentifier = nil
                 template.remindersSyncEnabled = false
+                pushQueue.remove(template.id)
+                persistPushQueue(save: true)
                 changed = true
             } catch {
                 lastSyncError = error.localizedDescription
@@ -122,8 +151,19 @@ public final class HabitRemindersSyncEngine {
             }
         }
 
-        store.save()
+        persistPushQueue(save: true)
         return PushResult(changed: changed, allSucceeded: allSucceeded && pushQueue.isEmpty)
+    }
+
+    private func persistPushQueue(save: Bool = false) {
+        guard let meta = try? store.appMeta() else {
+            lastSyncError = "Couldn't persist habit Reminders push queue"
+            return
+        }
+        meta.pendingRemindersHabitPushIDs = pushQueue.map(\.uuidString).sorted().joined(separator: ",")
+        if save, !store.save() {
+            lastSyncError = store.lastSaveError ?? "Couldn't save habit Reminders push queue"
+        }
     }
 
     @discardableResult
@@ -146,11 +186,13 @@ public final class HabitRemindersSyncEngine {
                 }
 
                 if let template {
+                    // Opted-out habits keep their local state; never re-link or overwrite.
+                    guard template.remindersSyncEnabled else { continue }
+                    if pushQueue.contains(template.id) { continue }
                     if HabitReminderMapping.shouldApplyRemote(dto, over: template) {
                         HabitReminderMapping.applyMetadata(dto, to: template)
                         if template.externalReminderIdentifier == nil {
                             template.externalReminderIdentifier = dto.externalIdentifier
-                            template.remindersSyncEnabled = true
                         }
                         changed = true
                     }
@@ -193,7 +235,7 @@ public final class HabitRemindersSyncEngine {
                     changed = true
                     continue
                 }
-                if HabitReminderMapping.shouldApplyRemote(remote, over: template) {
+                if !pushQueue.contains(template.id), HabitReminderMapping.shouldApplyRemote(remote, over: template) {
                     HabitReminderMapping.applyMetadata(remote, to: template)
                     if let log = try? store.habitLogs(on: today, calendar: calendar)
                         .first(where: { $0.templateId == template.id }) {

@@ -35,8 +35,33 @@ struct HabitHeatmapRow: View {
                     RoundedRectangle(cornerRadius: 2)
                         .fill(color(for: cell))
                         .frame(width: cellSize, height: cellSize)
+                        .overlay {
+                            if cell.status == .skipped {
+                                Image(systemName: "minus")
+                                    .font(.system(size: 5, weight: .bold))
+                                    .foregroundStyle(.secondary)
+                            } else if cell.usedGrace, cell.status == .pending {
+                                Image(systemName: "circle.fill")
+                                    .font(.system(size: 3))
+                                    .foregroundStyle(.green.opacity(0.9))
+                            }
+                        }
+                        .accessibilityLabel(accessibilityLabel(for: cell))
                 }
             }
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("28-day habit consistency for \(title)")
+        }
+    }
+
+    private func accessibilityLabel(for cell: HabitHeatmapCell) -> String {
+        let day = cell.date.formatted(date: .abbreviated, time: .omitted)
+        guard let status = cell.status else { return "\(day), not scheduled" }
+        switch status {
+        case .completed: return "\(day), completed"
+        case .skipped: return "\(day), skipped"
+        case .pending:
+            return cell.usedGrace ? "\(day), grace used" : "\(day), missed"
         }
     }
 

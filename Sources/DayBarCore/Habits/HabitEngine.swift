@@ -5,7 +5,7 @@ import Foundation
 @MainActor
 public final class HabitEngine {
     private let store: DataStore
-    private let calendar: Calendar
+    public var calendar: Calendar
 
     public init(store: DataStore, calendar: Calendar = .current) {
         self.store = store
@@ -65,6 +65,8 @@ public final class HabitEngine {
 
     private func materializeDay(_ day: Date, templates: [HabitTemplate]) -> Bool {
         let normalizedDay = calendar.startOfDay(for: day)
+        // Away mode: do not create pending logs that would break streaks.
+        if Preferences.isAway(on: normalizedDay, calendar: calendar) { return false }
         let existingTemplateIds = Set(
             (try? store.habitLogs(on: normalizedDay, calendar: calendar))?.map(\.templateId) ?? []
         )

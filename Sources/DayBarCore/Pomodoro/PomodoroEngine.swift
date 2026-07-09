@@ -119,12 +119,25 @@ public final class PomodoroEngine {
         onStateChange?()
     }
 
-    public func stop() {
+    /// Stops the session and reports elapsed time via `onPhaseEnd` (so Analytics can record it).
+    public func stop(now: Date = .now) {
+        guard phase != .idle else {
+            endDate = nil
+            remaining = 0
+            teardownTimer()
+            endActivity()
+            onStateChange?()
+            return
+        }
+        let remainingAtEnd = max(0, endDate?.timeIntervalSince(now) ?? remaining)
+        let elapsed = max(0, duration(for: phase) - remainingAtEnd)
+        let finished = phase
+        teardownTimer()
+        endActivity()
+        onPhaseEnd?(finished, elapsed, false, now)
         phase = .idle
         endDate = nil
         remaining = 0
-        teardownTimer()
-        endActivity()
         onStateChange?()
     }
 

@@ -46,6 +46,29 @@ final class AppStateHabitTests: XCTestCase {
         XCTAssertEqual(log.status, .skipped)
     }
 
+    func testToggleSkippedHabitReturnsToPending() throws {
+        let store = DataStore(inMemory: true)
+        let template = HabitTemplate(title: "Stretch", createdDate: now)
+        store.insert(template)
+        store.save()
+        let state = AppState(
+            store: store,
+            calendar: cal,
+            remindersProvider: MockRemindersProvider(),
+            schedulesRemindersSync: false,
+            observeSystemEvents: false
+        )
+        let habit = try XCTUnwrap(state.todayHabits.first)
+
+        state.skipHabit(habit.log, now: now)
+        XCTAssertEqual(habit.log.status, .skipped)
+
+        state.toggleHabit(habit.log, now: now)
+
+        XCTAssertEqual(habit.log.status, .pending)
+        XCTAssertNil(habit.log.completedAt)
+    }
+
     func testHeatmapCachedShape() throws {
         let store = DataStore(inMemory: true)
         let template = HabitTemplate(title: "Meditate", createdDate: now)

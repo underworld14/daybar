@@ -7,7 +7,7 @@ import Foundation
 @MainActor
 public final class RolloverEngine {
     private let store: DataStore
-    private let calendar: Calendar
+    public var calendar: Calendar
 
     public init(store: DataStore, calendar: Calendar = .current) {
         self.store = store
@@ -31,7 +31,6 @@ public final class RolloverEngine {
         }
 
         meta.lastProcessedDay = today
-        store.save()
-        return true
+        return store.save()
     }
 }

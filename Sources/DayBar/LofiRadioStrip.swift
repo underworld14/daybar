@@ -10,6 +10,13 @@ struct LofiRadioStrip: View {
         radio.isBuffering || radio.isReconnecting || appState.isRadioLoading
     }
 
+    private var volumeBinding: Binding<Double> {
+        Binding(
+            get: { Double(radio.volume) },
+            set: { radio.volume = Float($0) }
+        )
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("LOFI RADIO")
@@ -28,6 +35,14 @@ struct LofiRadioStrip: View {
             }
 
             subtitleLine
+
+            if radio.currentChannel != nil {
+                Slider(value: volumeBinding, in: 0...1) {
+                    Text("Radio volume")
+                }
+                .controlSize(.mini)
+                .accessibilityLabel("Radio volume")
+            }
 
             Link("SomaFM", destination: URL(string: "https://somafm.com")!)
                 .font(.caption2)
@@ -108,6 +123,7 @@ struct LofiRadioStrip: View {
             .buttonStyle(.plain)
             .disabled(controlsDisabled || appState.radioSkipChannels.isEmpty)
             .help("Previous station")
+            .accessibilityLabel("Previous radio station")
 
             Button {
                 Task { await appState.toggleRadio() }
@@ -127,6 +143,7 @@ struct LofiRadioStrip: View {
             .buttonStyle(.plain)
             .disabled(controlsDisabled || appState.radioSkipChannels.isEmpty)
             .help("Next station")
+            .accessibilityLabel("Next radio station")
         }
         .foregroundStyle(.primary)
     }
@@ -146,6 +163,7 @@ struct LofiRadioStrip: View {
         .buttonStyle(.plain)
         .foregroundStyle(.secondary)
         .help("Retry")
+        .accessibilityLabel("Retry radio")
     }
 
     @ViewBuilder

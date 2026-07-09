@@ -12,6 +12,7 @@ public struct EscalationThresholds: Sendable, Equatable {
     }
 
     public static let gentle = EscalationThresholds(slippedMinDays: 1, agingMinDays: 3)
+    public static let standard = EscalationThresholds(slippedMinDays: 1, agingMinDays: 2)
 }
 
 /// Pure mapping from a task's age (in days) to its escalation tier and visual hints.

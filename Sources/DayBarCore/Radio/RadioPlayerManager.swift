@@ -12,6 +12,14 @@ public final class RadioPlayerManager {
     public private(set) var isReconnecting = false
     public private(set) var playbackError: String?
     public private(set) var nowPlaying: String?
+    public var volume: Float {
+        get { player?.volume ?? Preferences.radioVolume }
+        set {
+            let clamped = min(max(newValue, 0), 1)
+            player?.volume = clamped
+            Preferences.radioVolume = clamped
+        }
+    }
 
     /// Fired whenever playback actually begins (any entry point: play, next/prev, retry,
     /// restore, reconnect). Lets a coordinator enforce mutual exclusion with other audio
@@ -40,6 +48,7 @@ public final class RadioPlayerManager {
 
     public func play(channel: SomaFMChannel) async {
         reconnectTask?.cancel()
+        reconnectTask = nil
         reconnectAttempt = 0
         isReconnecting = false
         await startPlayback(channel: channel, markUserStarted: true, userFacingErrors: true)
@@ -51,6 +60,7 @@ public final class RadioPlayerManager {
         isBuffering = false
         isReconnecting = false
         reconnectTask?.cancel()
+        reconnectTask = nil
         reconnectAttempt = 0
         endActivity()
         stopNowPlayingRefresh()
@@ -140,6 +150,7 @@ public final class RadioPlayerManager {
         do {
             let streamURL = try await service.resolveStreamURL(for: channel)
             startPlayer(with: streamURL)
+            player?.volume = Preferences.radioVolume
             isPlaying = true
             onPlaybackStarted?()
             reconnectAttempt = 0
@@ -248,6 +259,7 @@ public final class RadioPlayerManager {
 
     private func scheduleReconnect() {
         guard isPlaying, let channel = currentChannel else { return }
+        guard reconnectTask == nil else { return }
         guard reconnectAttempt < maxReconnectAttempts else {
             isReconnecting = false
             isBuffering = false
@@ -264,6 +276,7 @@ public final class RadioPlayerManager {
         reconnectTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(delay))
             guard let self, !Task.isCancelled, self.isPlaying else { return }
+            self.reconnectTask = nil
             await self.reconnectPlay(channel: channel)
         }
     }
@@ -283,6 +296,7 @@ public final class RadioPlayerManager {
 
     private func teardownPlayer() {
         reconnectTask?.cancel()
+        reconnectTask = nil
         player?.pause()
         teardownPlayerObservers()
         player = nil

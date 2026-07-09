@@ -18,10 +18,26 @@ public enum MoodAIGate {
     ) -> Bool {
         guard aiEnabled, !alreadyReviewed else { return false }
         guard availability == .available else { return false }
-        let wordCount = reflection
-            .split(whereSeparator: { $0.isWhitespace || $0.isNewline })
-            .count
-        return wordCount >= minimumWordCount
+        return meaningfulUnitCount(in: reflection) >= minimumWordCount
+    }
+
+    private static func meaningfulUnitCount(in reflection: String) -> Int {
+        let words = reflection.split(whereSeparator: { $0.isWhitespace || $0.isNewline })
+        if words.count > 1 { return words.count }
+        let trimmed = reflection.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard containsCJK(trimmed) else { return words.count }
+        return trimmed.count
+    }
+
+    private static func containsCJK(_ text: String) -> Bool {
+        text.unicodeScalars.contains { scalar in
+            switch scalar.value {
+            case 0x3040...0x30FF, 0x3400...0x4DBF, 0x4E00...0x9FFF, 0xAC00...0xD7AF:
+                return true
+            default:
+                return false
+            }
+        }
     }
 
     /// A late AI suggestion must never clobber a mood the user already picked by hand

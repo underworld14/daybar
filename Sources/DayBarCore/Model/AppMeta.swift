@@ -12,16 +12,24 @@ public final class AppMeta {
     /// Last successful Apple Reminders pull.
     public var remindersLastSyncedAt: Date?
     public var didImportLegacyJSON: Bool = false
+    /// Comma-separated todo UUIDs awaiting a Reminders push (survives quit).
+    public var pendingRemindersTodoPushIDs: String = ""
+    /// Comma-separated habit template UUIDs awaiting a Reminders push (survives quit).
+    public var pendingRemindersHabitPushIDs: String = ""
 
     public init(
         lastProcessedDay: Date? = nil,
         lastHabitMaterializedDay: Date? = nil,
         remindersLastSyncedAt: Date? = nil,
-        didImportLegacyJSON: Bool = false
+        didImportLegacyJSON: Bool = false,
+        pendingRemindersTodoPushIDs: String = "",
+        pendingRemindersHabitPushIDs: String = ""
     ) {
         self.lastProcessedDay = lastProcessedDay
         self.lastHabitMaterializedDay = lastHabitMaterializedDay
         self.remindersLastSyncedAt = remindersLastSyncedAt
         self.didImportLegacyJSON = didImportLegacyJSON
+        self.pendingRemindersTodoPushIDs = pendingRemindersTodoPushIDs
+        self.pendingRemindersHabitPushIDs = pendingRemindersHabitPushIDs
     }
 }

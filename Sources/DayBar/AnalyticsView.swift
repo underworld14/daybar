@@ -35,6 +35,18 @@ struct AnalyticsView: View {
         appState.moodStatBuckets(granularity: granularity, count: count(for: granularity))
     }
 
+    private var hasTaskData: Bool {
+        buckets.contains { $0.planned > 0 || $0.completed > 0 || $0.focusMinutes > 0 || $0.sessions > 0 }
+    }
+
+    private var hasHabitData: Bool {
+        habitBuckets.contains { $0.planned > 0 || $0.completed > 0 }
+    }
+
+    private var hasMoodData: Bool {
+        moodBuckets.contains { $0.loggedDays > 0 }
+    }
+
     private var xUnit: Calendar.Component {
         switch granularity {
         case .day: return .day
@@ -97,10 +109,14 @@ struct AnalyticsView: View {
     @ViewBuilder
     private var tasksContent: some View {
         tasksSummary
-        chartSection("Planned vs completed") { plannedVsCompleted }
-        chartSection("Completion rate") { completionRate }
-        chartSection("Focus minutes") { focusMinutes }
-        chartSection("Pomodoro sessions") { sessionsChart }
+        if hasTaskData {
+            chartSection("Planned vs completed") { plannedVsCompleted }
+            chartSection("Completion rate") { completionRate }
+            chartSection("Focus minutes") { focusMinutes }
+            chartSection("Pomodoro sessions") { sessionsChart }
+        } else {
+            emptyState("No task data yet. Complete tasks or finish a focus session to populate these charts.")
+        }
     }
 
     private var tasksSummary: some View {
@@ -124,22 +140,27 @@ struct AnalyticsView: View {
     @ViewBuilder
     private var habitsContent: some View {
         habitsSummary
-        chartSection("Habit completion rate") { habitCompletionRate }
-        chartSection("Habits done") { habitsDoneChart }
-        consistencySection
-        streakSection
+        if hasHabitData {
+            chartSection("Habit completion rate") { habitCompletionRate }
+            chartSection("Habits done") { habitsDoneChart }
+            consistencySection
+            streakSection
+        } else {
+            emptyState("No habit data yet. Complete a habit to start building trends.")
+        }
     }
 
     private var habitsSummary: some View {
         let planned = habitBuckets.reduce(0) { $0 + $1.planned }
         let completed = habitBuckets.reduce(0) { $0 + $1.completed }
         let rate = planned == 0 ? 0 : Int((Double(completed) / Double(planned) * 100).rounded())
-        let dayCount = max(1, habitBuckets.filter { $0.planned > 0 }.count)
-        let avgPerDay = completed / dayCount
+        let dayCount = max(1, habitBuckets.reduce(0) { $0 + calendarDayCount(in: $1.date) })
+        let avgPerDay = Double(completed) / Double(dayCount)
+        let avgLabel = avgPerDay == floor(avgPerDay) ? "\(Int(avgPerDay))" : String(format: "%.1f", avgPerDay)
         let longest = appState.habitStreaks().map(\.streak.current).max() ?? 0
         return HStack(spacing: 16) {
             stat("\(rate)%", "habits")
-            stat("\(avgPerDay)", "avg/day")
+            stat(avgLabel, "avg/day")
             stat("\(longest)d", "longest")
         }
     }
@@ -190,7 +211,11 @@ struct AnalyticsView: View {
     @ViewBuilder
     private var moodContent: some View {
         moodSummary
-        chartSection("Mood trend") { moodTrendChart }
+        if hasMoodData {
+            chartSection("Mood trend") { moodTrendChart }
+        } else {
+            emptyState("No mood entries yet. Finish an end-of-day review to see your trend.")
+        }
     }
 
     private var moodSummary: some View {
@@ -252,8 +277,25 @@ struct AnalyticsView: View {
     private func chartSection<Content: View>(_ title: String, @ViewBuilder _ content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title.uppercased()).font(.caption2.weight(.semibold)).tracking(0.5).foregroundStyle(.secondary)
-            content().frame(height: 150)
+            content()
+                .frame(height: 150)
+                .accessibilityElement(children: .contain)
+                .accessibilityLabel(title)
         }
+    }
+
+    private func emptyState(_ message: String) -> some View {
+        Text(message)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 16)
+    }
+
+    private func calendarDayCount(in bucketStart: Date) -> Int {
+        let calendar = Calendar.current
+        let bucketEnd = Analytics.advance(bucketStart, granularity, by: 1, calendar: calendar)
+        return max(1, calendar.dateComponents([.day], from: bucketStart, to: bucketEnd).day ?? 1)
     }
 
     private struct Point: Identifiable {

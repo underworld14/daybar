@@ -32,6 +32,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         appState = AppState(store: DataStore())
+        appState.notifications.onAuthorizationGranted = { [weak self] in self?.appState.refresh() }
         UNUserNotificationCenter.current().delegate = self
         appState.notifications.requestAuthorization()
         setupStatusItem()
@@ -40,6 +41,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         KeyboardShortcuts.onKeyDown(for: .quickAdd) { [weak self] in
             MainActor.assumeIsolated { self?.revealForQuickAdd() }
         }
+    }
+
+    func applicationDidResignActive(_ notification: Notification) {
+        // Keep the panel up while a sheet (Settings/Stats/History/Review) is presented —
+        // resigning for the sheet would otherwise tear it down mid-edit.
+        guard !appState.isPanelSheetPresented, !appState.presentEndOfDayReview else { return }
+        hidePanel()
     }
 
     // MARK: - Status item
@@ -65,6 +73,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let symbol: String
         if pomo.isRunning {
             symbol = pomo.phase.isBreak ? "cup.and.saucer.fill" : "timer"
+        } else if pomo.phase.isBreak {
+            // Armed break waiting for play — distinct from fully idle.
+            symbol = "cup.and.saucer"
         } else if appState.radio.isPlaying {
             symbol = "waveform"
         } else {
@@ -76,6 +87,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
         if pomo.isRunning {
             button.title = " " + pomo.remainingString
+        } else if pomo.phase.isBreak {
+            button.title = " break"
         } else if appState.overdueCount > 0 {
             button.title = " \(appState.overdueCount)"
         } else if appState.radio.isPlaying {
@@ -176,6 +189,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             rows += sectionHeader + rowHeight // empty-state line
         }
         rows += sectionHeader + CGFloat(max(appState.totalTodayCount, 1)) * rowHeight
+        if !appState.tomorrowTodos.isEmpty {
+            rows += sectionHeader + CGFloat(appState.tomorrowTodos.count) * rowHeight
+        }
         if !appState.carriedTodos.isEmpty {
             rows += sectionHeader + CGFloat(appState.carriedTodos.count) * rowHeight
         }
@@ -200,10 +216,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     private func showPanel() {
         appState.refresh()
+        appState.quickAddFocusSignal += 1
         panel.setContentSize(NSSize(width: panelWidth, height: desiredPanelHeight()))
         positionPanel()
         NSApp.activate(ignoringOtherApps: true)
         panel.makeKeyAndOrderFront(nil)
+        if let monitor = outsideClickMonitor {
+            NSEvent.removeMonitor(monitor)
+            outsideClickMonitor = nil
+        }
         outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
             self?.hidePanel()
         }
@@ -250,7 +271,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let id = response.notification.request.identifier
         Task { @MainActor in
             self.showPanel()
-            if id == "evening.review" { self.appState.presentEndOfDayReview = true }
+            if id == NotificationScheduler.ID.evening { self.appState.presentEndOfDayReview = true }
             completionHandler()
         }
     }

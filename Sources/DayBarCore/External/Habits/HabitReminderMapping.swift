@@ -80,7 +80,10 @@ public enum HabitReminderMapping {
     }
 
     public static func applyMetadata(_ dto: HabitReminderDTO, to template: HabitTemplate) {
-        template.title = dto.title
+        let trimmed = dto.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty {
+            template.title = trimmed
+        }
         template.externalModifiedAt = dto.modifiedAt
         template.remindersCalendarIdentifier = dto.calendarIdentifier.isEmpty
             ? template.remindersCalendarIdentifier

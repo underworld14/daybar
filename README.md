@@ -43,12 +43,21 @@
 - **Notifications** — morning planning + evening review reminders, a phase-end alert (shows
   even when the panel is closed), and a once-daily nudge when tasks pile up.
 - **End-of-day review** — "Did you finish what you planned?" — triage what's left and jot a
-  one-line reflection.
+  one-line reflection; optional mood tagging with analytics.
+- **On-device AI mood suggestions** — when Apple Intelligence is available (macOS 26+), DayBar
+  uses Apple's **[Foundation Models](https://developer.apple.com/documentation/foundationmodels)**
+  (`SystemLanguageModel`) to suggest a mood tag from your reflection. Classification runs
+  entirely on-device — no cloud LLM, no account, no data leaves the Mac. Falls back to a
+  manual picker when the model is unavailable or you turn the feature off.
 - **Quick-add hotkey** — a global shortcut (default ⌥⌘D) opens the panel focused on the field.
 - **Apple Reminders sync** — optional two-way sync with selected Reminder lists (complete,
   delay, and reschedule flow back to Reminders). Habits can sync as recurring reminders on their schedule.
+- **Backup & restore** — export/import a local JSON snapshot of tasks and habits from Settings.
+- **Calm controls** — undo for drop/archive/stop, Away mode, quiet hours, optional weekly digest,
+  and nudge intensity (Gentle / Standard).
 - **Local & private** — stored on-device with SwiftData; no account, no cloud. Radio metadata and
-  artwork are cached locally; streams come from [SomaFM](https://somafm.com).
+  artwork are cached locally; streams come from [SomaFM](https://somafm.com). AI mood uses
+  on-device Foundation Models only when enabled.
 
 ## Download
 
@@ -89,6 +98,9 @@ open /Applications/DayBar.app
 - macOS 15+ (developed on macOS 26 Tahoe)
 - Xcode 26+
 - [XcodeGen](https://github.com/yonaskolb/XcodeGen): `brew install xcodegen`
+- **Optional — AI mood suggestions:** macOS 26+ with Apple Intelligence enabled (uses the
+  on-device [Foundation Models](https://developer.apple.com/documentation/foundationmodels)
+  framework). The rest of DayBar works without it.
 
 ## Build & run
 
@@ -198,7 +210,7 @@ gh release create v0.3.0 DayBar-v0.3.0-macOS.zip \
 
 | Target | What |
 |---|---|
-| `DayBarCore` | Models (`@Model`), `DataStore` (SwiftData), `RolloverEngine`, `EscalationModel`, `PomodoroEngine`, `SomaFMService` / `RadioPlayerManager`, `Analytics`, `NotificationScheduler`, `AppState`. UI-free, unit-tested. |
+| `DayBarCore` | Models (`@Model`), `DataStore` (SwiftData), `RolloverEngine`, `EscalationModel`, `PomodoroEngine`, `SomaFMService` / `RadioPlayerManager`, `Analytics`, `NotificationScheduler`, on-device mood AI (`FoundationModels` / `MoodClassifier`), `AppState`. UI-free, unit-tested. |
 | `DayBar` | SwiftUI + AppKit menu-bar UI: `NSStatusItem` + borderless `NSPanel` hosting `TodayView`, plus Settings / Analytics / Review / History sheets and the inline `LofiRadioStrip`. |
 | `DayBarTests` | XCTest. |
 

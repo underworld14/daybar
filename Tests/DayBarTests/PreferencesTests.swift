@@ -6,6 +6,10 @@ final class PreferencesTests: XCTestCase {
         PreferenceKeys.workMinutes, PreferenceKeys.shortBreakMinutes,
         PreferenceKeys.longBreakMinutes, PreferenceKeys.cyclesBeforeLongBreak,
         PreferenceKeys.autoStartNext, PreferenceKeys.soundEnabled,
+        PreferenceKeys.tickingSoundEnabled, PreferenceKeys.moodAIEnabled,
+        PreferenceKeys.escalationIntensity, PreferenceKeys.quietHoursEnabled,
+        PreferenceKeys.weeklyDigestEnabled, PreferenceKeys.selectedReminderCalendarIDs,
+        PreferenceKeys.selectedHabitReminderCalendarIDs,
     ]
 
     override func setUp() { keys.forEach { UserDefaults.standard.removeObject(forKey: $0) } }
@@ -34,5 +38,37 @@ final class PreferencesTests: XCTestCase {
     func testSoundCanBeDisabled() {
         UserDefaults.standard.set(false, forKey: PreferenceKeys.soundEnabled)
         XCTAssertFalse(Preferences.soundEnabled)
+    }
+
+    func testAdditionalDefaultsWhenUnset() {
+        XCTAssertFalse(Preferences.tickingSoundEnabled)
+        XCTAssertTrue(Preferences.moodAIEnabled)
+        XCTAssertEqual(Preferences.escalationIntensity, 0)
+        XCTAssertFalse(Preferences.quietHoursEnabled)
+        XCTAssertFalse(Preferences.weeklyDigestEnabled)
+        XCTAssertEqual(Preferences.effectiveHabitReminderCalendarIDs, [])
+    }
+
+    func testAdditionalPreferencesReadStoredValues() {
+        UserDefaults.standard.set(true, forKey: PreferenceKeys.tickingSoundEnabled)
+        UserDefaults.standard.set(false, forKey: PreferenceKeys.moodAIEnabled)
+        Preferences.escalationIntensity = 1
+        Preferences.quietHoursEnabled = true
+        Preferences.weeklyDigestEnabled = true
+
+        XCTAssertTrue(Preferences.tickingSoundEnabled)
+        XCTAssertFalse(Preferences.moodAIEnabled)
+        XCTAssertEqual(Preferences.escalationIntensity, 1)
+        XCTAssertEqual(Preferences.escalationThresholds, .standard)
+        XCTAssertTrue(Preferences.quietHoursEnabled)
+        XCTAssertTrue(Preferences.weeklyDigestEnabled)
+    }
+
+    func testEffectiveHabitReminderCalendarIDsFallbackAndOverride() {
+        UserDefaults.standard.set(["todo-list"], forKey: PreferenceKeys.selectedReminderCalendarIDs)
+        XCTAssertEqual(Preferences.effectiveHabitReminderCalendarIDs, ["todo-list"])
+
+        UserDefaults.standard.set(["habit-list"], forKey: PreferenceKeys.selectedHabitReminderCalendarIDs)
+        XCTAssertEqual(Preferences.effectiveHabitReminderCalendarIDs, ["habit-list"])
     }
 }

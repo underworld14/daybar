@@ -29,13 +29,25 @@ public final class DataStore {
         }
     }
 
+    /// Last error from `save()`, if any. Cleared on the next successful save.
+    public private(set) var lastSaveError: String?
+    /// Wall-clock time of the most recent successful save (nil until first success).
+    public private(set) var lastSuccessfulSaveAt: Date?
+
     /// Explicit save — SwiftData autosave can fail silently, so mutations call this.
-    public func save() {
-        guard context.hasChanges else { return }
+    /// Returns `true` when there was nothing to save or the save succeeded.
+    @discardableResult
+    public func save() -> Bool {
+        guard context.hasChanges else { return true }
         do {
             try context.save()
+            lastSaveError = nil
+            lastSuccessfulSaveAt = Date()
+            return true
         } catch {
+            lastSaveError = error.localizedDescription
             print("DayBar: save error: \(error)")
+            return false
         }
     }
 
@@ -300,14 +312,15 @@ public final class DataStore {
         )
     }
 
-    /// Replace ALL todos with the snapshot's contents (used by Settings "Import"). Destructive
-    /// by design — the caller should confirm with the user first. Deletes are committed before
-    /// the re-inserts so preserved ids can't collide with the `@Attribute(.unique)` index.
-    public func importSnapshot(_ snapshot: StoreSnapshotDTO) {
+    /// Replace ALL todos/habits with the snapshot's contents (used by Settings "Import").
+    /// Destructive by design — the caller should confirm with the user first.
+    /// Deletes and re-inserts are committed in a **single** save so a crash mid-import
+    /// leaves the previous on-disk store intact (SwiftData only persists on `save()`).
+    @discardableResult
+    public func importSnapshot(_ snapshot: StoreSnapshotDTO) -> Bool {
         for existing in (try? allTodos()) ?? [] { context.delete(existing) }
         for existing in (try? allHabitTemplates()) ?? [] { context.delete(existing) }
         for existing in (try? allHabitLogs()) ?? [] { context.delete(existing) }
-        save()
         for dto in snapshot.todos { context.insert(dto.makeModel()) }
         for dto in snapshot.habitTemplates { context.insert(dto.makeModel()) }
         for dto in snapshot.habitLogs { context.insert(dto.makeModel()) }
@@ -315,7 +328,7 @@ public final class DataStore {
             meta.lastProcessedDay = snapshot.meta?.lastProcessedDay
             meta.lastHabitMaterializedDay = snapshot.meta?.lastHabitMaterializedDay
         }
-        save()
+        return save()
     }
 
     /// One-time migration of the Phase-1 JSON store into SwiftData. Idempotent (guarded by

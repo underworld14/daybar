@@ -36,8 +36,17 @@ public enum PreferenceKeys {
     public static let radioWasPlaying = "radio.wasPlaying"
     public static let radioHasUserStarted = "radio.hasUserStarted"
     public static let radioPauseOnFocusEnd = "radio.pauseOnFocusEnd"
+    public static let radioVolume = "radio.volume"
 
     public static let moodAIEnabled = "mood.aiEnabled"
+    public static let escalationIntensity = "escalation.intensity" // 0=gentle, 1=standard
+    public static let quietHoursEnabled = "notify.quietHoursEnabled"
+    public static let quietHoursStartHour = "notify.quietHoursStartHour"
+    public static let respectSystemFocus = "notify.respectSystemFocus"
+    public static let awayStartDate = "away.startDate"
+    public static let awayEndDate = "away.endDate"
+    public static let weeklyDigestEnabled = "notify.weeklyDigestEnabled"
+    public static let weeklyDigestLastFiredDay = "notify.weeklyDigestLastFiredDay"
 }
 
 /// Typed reads of the app preferences. Getters bake in the same defaults SettingsView
@@ -140,6 +149,14 @@ public enum Preferences {
         defaults.object(forKey: PreferenceKeys.radioPauseOnFocusEnd) as? Bool ?? true
     }
 
+    public static var radioVolume: Float {
+        get {
+            guard defaults.object(forKey: PreferenceKeys.radioVolume) != nil else { return 0.6 }
+            return defaults.float(forKey: PreferenceKeys.radioVolume)
+        }
+        set { defaults.set(newValue, forKey: PreferenceKeys.radioVolume) }
+    }
+
     // MARK: - Mood
 
     /// User-level override, separate from device/OS eligibility: some users may have an
@@ -164,5 +181,74 @@ public enum Preferences {
     /// Like `intOr`, but treats an explicitly-set 0 (midnight / minute 0) as valid.
     private static func intOrSet(_ key: String, _ fallback: Int) -> Int {
         defaults.object(forKey: key) == nil ? fallback : defaults.integer(forKey: key)
+    }
+
+    public static var escalationIntensity: Int {
+        get { defaults.object(forKey: PreferenceKeys.escalationIntensity) as? Int ?? 0 }
+        set { defaults.set(newValue, forKey: PreferenceKeys.escalationIntensity) }
+    }
+
+    public static var escalationThresholds: EscalationThresholds {
+        escalationIntensity >= 1
+            ? EscalationThresholds.standard
+            : .gentle
+    }
+
+    public static var quietHoursEnabled: Bool {
+        get { defaults.object(forKey: PreferenceKeys.quietHoursEnabled) as? Bool ?? false }
+        set { defaults.set(newValue, forKey: PreferenceKeys.quietHoursEnabled) }
+    }
+
+    public static var quietHoursStartHour: Int {
+        get { intOrSet(PreferenceKeys.quietHoursStartHour, 21) }
+        set { defaults.set(newValue, forKey: PreferenceKeys.quietHoursStartHour) }
+    }
+
+    public static var respectSystemFocus: Bool {
+        get { defaults.object(forKey: PreferenceKeys.respectSystemFocus) as? Bool ?? true }
+        set { defaults.set(newValue, forKey: PreferenceKeys.respectSystemFocus) }
+    }
+
+    public static var awayStartDate: Date? {
+        get { defaults.object(forKey: PreferenceKeys.awayStartDate) as? Date }
+        set { defaults.set(newValue, forKey: PreferenceKeys.awayStartDate) }
+    }
+
+    public static var awayEndDate: Date? {
+        get { defaults.object(forKey: PreferenceKeys.awayEndDate) as? Date }
+        set { defaults.set(newValue, forKey: PreferenceKeys.awayEndDate) }
+    }
+
+    /// True when `day` falls in the user-marked away range (inclusive start, exclusive end+1day).
+    public static func isAway(on day: Date, calendar: Calendar = .current) -> Bool {
+        guard let start = awayStartDate, let end = awayEndDate else { return false }
+        let d = calendar.startOfDay(for: day)
+        let s = calendar.startOfDay(for: start)
+        let e = calendar.startOfDay(for: end)
+        return d >= s && d <= e
+    }
+
+    public static var weeklyDigestEnabled: Bool {
+        get { defaults.object(forKey: PreferenceKeys.weeklyDigestEnabled) as? Bool ?? false }
+        set { defaults.set(newValue, forKey: PreferenceKeys.weeklyDigestEnabled) }
+    }
+
+    public static var weeklyDigestLastFiredDay: Date? {
+        get { defaults.object(forKey: PreferenceKeys.weeklyDigestLastFiredDay) as? Date }
+        set { defaults.set(newValue, forKey: PreferenceKeys.weeklyDigestLastFiredDay) }
+    }
+
+    /// Soften audible feedback when quiet hours apply (and optionally when Focus/DND is on).
+    public static func shouldPlayAudibleAlerts(now: Date = .now, calendar: Calendar = .current) -> Bool {
+        if quietHoursEnabled {
+            let hour = calendar.component(.hour, from: now)
+            if hour >= quietHoursStartHour || hour < 6 { return false }
+        }
+        if respectSystemFocus {
+            // Best-effort: macOS Focus / Do Not Disturb preference (may be absent on some OS versions).
+            let dnd = UserDefaults(suiteName: "com.apple.ncprefs")?.dictionary(forKey: "dnd_prefs")
+            if let enabled = dnd?["dndEnabled"] as? Bool, enabled { return false }
+        }
+        return true
     }
 }

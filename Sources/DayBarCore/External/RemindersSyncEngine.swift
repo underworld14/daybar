@@ -28,6 +28,13 @@ public final class RemindersSyncEngine {
 
     public var accessStatus: RemindersAccessStatus { provider.accessStatus }
 
+    public func loadPersistedPushQueue() {
+        guard let meta = try? store.appMeta() else { return }
+        pushQueue = Set(meta.pendingRemindersTodoPushIDs
+            .split(separator: ",")
+            .compactMap { UUID(uuidString: String($0)) })
+    }
+
     public func requestAccess() async -> Bool {
         do {
             return try await provider.requestAccess()
@@ -50,6 +57,11 @@ public final class RemindersSyncEngine {
     public func enqueuePush(for todo: DailyTodo) {
         guard todo.source == .reminders, todo.externalIdentifier != nil else { return }
         pushQueue.insert(todo.id)
+        persistPushQueue(save: true)
+    }
+
+    public func hasPendingPush(for todoID: UUID) -> Bool {
+        pushQueue.contains(todoID)
     }
 
     /// Returns whether local todo data changed (push applied or pull updated mirrors).
@@ -120,13 +132,18 @@ public final class RemindersSyncEngine {
 
     private func processPushQueue(now: Date) async -> PushResult {
         guard !pushQueue.isEmpty else { return PushResult(changed: false, allSucceeded: true) }
-        let ids = pushQueue
-        pushQueue.removeAll()
+        // Snapshot IDs but keep them durable until each push succeeds — a quit mid-flight
+        // must still retry on next launch.
+        let ids = Array(pushQueue)
         let all = (try? store.allTodos()) ?? []
         var changed = false
         var allSucceeded = true
         for todo in all where ids.contains(todo.id) {
-            guard var dto = ReminderMapping.dto(from: todo) else { continue }
+            guard var dto = ReminderMapping.dto(from: todo) else {
+                pushQueue.remove(todo.id)
+                persistPushQueue(save: true)
+                continue
+            }
             if todo.status == .dropped {
                 dto.isCompleted = true
                 dto.completionDate = now
@@ -134,15 +151,32 @@ public final class RemindersSyncEngine {
             do {
                 let updated = try await provider.apply(dto)
                 todo.externalModifiedAt = updated.modifiedAt ?? now
+                pushQueue.remove(todo.id)
+                persistPushQueue(save: true)
                 changed = true
             } catch {
                 lastSyncError = error.localizedDescription
-                pushQueue.insert(todo.id)
+                persistPushQueue(save: true)
                 allSucceeded = false
             }
         }
-        store.save()
+        // Drop IDs whose todos vanished.
+        for id in ids where !all.contains(where: { $0.id == id }) {
+            pushQueue.remove(id)
+        }
+        persistPushQueue(save: true)
         return PushResult(changed: changed, allSucceeded: allSucceeded && pushQueue.isEmpty)
+    }
+
+    private func persistPushQueue(save: Bool = false) {
+        guard let meta = try? store.appMeta() else {
+            lastSyncError = "Couldn't persist Reminders push queue"
+            return
+        }
+        meta.pendingRemindersTodoPushIDs = pushQueue.map(\.uuidString).sorted().joined(separator: ",")
+        if save, !store.save() {
+            lastSyncError = store.lastSaveError ?? "Couldn't save Reminders push queue"
+        }
     }
 
     @discardableResult
@@ -179,6 +213,8 @@ public final class RemindersSyncEngine {
     }
 
     private func shouldApplyRemote(_ dto: ReminderDTO, over todo: DailyTodo) -> Bool {
+        // Local edits awaiting push must win over a stale pull.
+        if pushQueue.contains(todo.id) { return false }
         guard let remote = dto.modifiedAt, let local = todo.externalModifiedAt else { return true }
         return remote >= local
     }

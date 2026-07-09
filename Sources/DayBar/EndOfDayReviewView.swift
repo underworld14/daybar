@@ -50,6 +50,7 @@ struct EndOfDayReviewView: View {
                                     Image(systemName: "circle").foregroundStyle(.secondary)
                                 }
                                 .buttonStyle(.plain)
+                                .accessibilityLabel("Mark \(habit.template.title) complete")
                                 Text(habit.template.title).lineLimit(1)
                                 Spacer()
                             }
@@ -130,8 +131,13 @@ struct EndOfDayReviewView: View {
     private func moodButton(_ tag: MoodTag) -> some View {
         let isSelected = selectedMood == tag
         return Button {
-            selectedMood = tag
-            moodSource = .manual
+            if isSelected {
+                selectedMood = nil
+                moodSource = .none
+            } else {
+                selectedMood = tag
+                moodSource = .manual
+            }
         } label: {
             VStack(spacing: 2) {
                 Text(tag.emoji).font(.title2)
@@ -149,6 +155,7 @@ struct EndOfDayReviewView: View {
             )
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(isSelected ? "Clear mood selection" : "Select \(tag.displayName) mood")
     }
 
     /// Debounced AI auto-suggest: `.task(id: reflection)` cancels the previous attempt
@@ -183,6 +190,7 @@ struct EndOfDayReviewView: View {
                     .foregroundStyle(todo.isCompleted ? .green : .secondary)
             }
             .buttonStyle(.plain)
+            .accessibilityLabel(todo.isCompleted ? "Mark \(todo.title) incomplete" : "Mark \(todo.title) complete")
 
             Text(todo.title).lineLimit(1)
 
@@ -194,8 +202,10 @@ struct EndOfDayReviewView: View {
 
             Button("Tomorrow") { appState.delay(todo) }
                 .buttonStyle(.bordered).controlSize(.small)
+                .accessibilityLabel("Move \(todo.title) to tomorrow")
             Button("Drop", role: .destructive) { appState.drop(todo) }
                 .buttonStyle(.bordered).controlSize(.small)
+                .accessibilityLabel("Drop \(todo.title)")
         }
     }
 }

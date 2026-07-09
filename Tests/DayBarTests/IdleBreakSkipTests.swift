@@ -18,6 +18,7 @@ final class IdleBreakSkipTests: XCTestCase {
     override func tearDown() {
         UserDefaults.standard.removeObject(forKey: PreferenceKeys.skipBreakWhenIdle)
         UserDefaults.standard.removeObject(forKey: PreferenceKeys.idleSkipMinutes)
+        UserDefaults.standard.removeObject(forKey: PreferenceKeys.soundEnabled)
         IdleMonitor.secondsSinceLastInput = {
             CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: .null)
         }
@@ -45,6 +46,22 @@ final class IdleBreakSkipTests: XCTestCase {
 
         XCTAssertEqual(state.pomodoro.phase, .work)
         XCTAssertTrue(state.pomodoro.isRunning)
+    }
+
+    func testStopPomodoroRecordsFocusSession() throws {
+        UserDefaults.standard.set(false, forKey: PreferenceKeys.soundEnabled)
+        state.pomodoro.config = PomodoroConfig(workDuration: 25 * 60, shortBreakDuration: 300)
+        state.pomodoro.start(.work, now: t0)
+
+        let stoppedAt = t0.addingTimeInterval(10 * 60)
+        state.stopPomodoro(now: stoppedAt)
+
+        let sessions = try store.focusSessions(in: t0..<stoppedAt.addingTimeInterval(1))
+        let session = try XCTUnwrap(sessions.first)
+        XCTAssertEqual(sessions.count, 1)
+        XCTAssertEqual(session.minutes, 10)
+        XCTAssertEqual(session.endedAt, stoppedAt)
+        XCTAssertFalse(session.completed)
     }
 
     func testEvaluateIdleBreakSkipDoesNotFireBeforeThreshold() {

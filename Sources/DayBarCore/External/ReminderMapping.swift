@@ -12,14 +12,16 @@ public enum ReminderMapping {
     public static func apply(_ dto: ReminderDTO, to todo: DailyTodo, today: Date, calendar: Calendar) {
         // Locally dropped items stay dropped until push completes; don't reopen from stale remote.
         if todo.status == .dropped, !dto.isCompleted {
-            todo.title = dto.title
+            let trimmed = dto.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty { todo.title = trimmed }
             todo.notes = dto.notes
             todo.externalModifiedAt = dto.modifiedAt
             return
         }
 
         let planned = plannedDay(for: dto, today: today, calendar: calendar)
-        todo.title = dto.title
+        let trimmedTitle = dto.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedTitle.isEmpty { todo.title = trimmedTitle }
         todo.notes = dto.notes
         todo.dueDate = dto.dueDate
         todo.plannedForDate = planned
@@ -88,14 +90,17 @@ public enum ReminderMapping {
     /// Maps EventKit priority (0 = none, 1–4 low, 5 med, 6–9 high) to DayBar priority.
     public static func priority(fromEventKit raw: Int) -> Priority {
         switch raw {
+        case 0: return .none
         case 6...9: return .high
         case 1...4: return .low
+        case 5: return .medium
         default: return .medium
         }
     }
 
     public static func eventKitPriority(from priority: Priority) -> Int {
         switch priority {
+        case .none: return 0
         case .low: return 1
         case .medium: return 5
         case .high: return 9

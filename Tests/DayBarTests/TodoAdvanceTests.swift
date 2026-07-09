@@ -40,6 +40,27 @@ final class TodoAdvanceTests: XCTestCase {
         XCTAssertFalse(todo.isCompleted)
     }
 
+    func testCompletingCarriedOverTodoAdvancesPlannedDateToToday() throws {
+        let store = DataStore(inMemory: true)
+        let appState = AppState(
+            store: store,
+            calendar: cal,
+            remindersProvider: MockRemindersProvider(),
+            schedulesRemindersSync: false,
+            observeSystemEvents: false
+        )
+        let yesterday = cal.date(byAdding: .day, value: -1, to: now)!
+        let today = DayMath.startOfDay(now, calendar: cal)
+        let todo = try XCTUnwrap(appState.addTodo(title: "Carry me", plannedFor: yesterday, now: now))
+
+        appState.advanceTodo(todo, now: now)
+        XCTAssertEqual(todo.status, .inProgress)
+        appState.advanceTodo(todo, now: now)
+
+        XCTAssertEqual(todo.status, .completed)
+        XCTAssertEqual(todo.plannedForDate, today)
+    }
+
     func testResetTodoFromInProgress() throws {
         let store = DataStore(inMemory: true)
         let appState = AppState(store: store, calendar: cal, remindersProvider: MockRemindersProvider())
