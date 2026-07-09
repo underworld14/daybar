@@ -1,9 +1,16 @@
 import Foundation
+#if canImport(FoundationModels)
 import FoundationModels
+#endif
+
+#if canImport(FoundationModels)
 
 /// On-device classification of a reflection into one `MoodTag`. The AI never produces the
 /// score — it only ever picks a `rawValue` from the closed list, and `MoodTag.score` is the
 /// single source of truth for the numeric value (see `MoodTag`).
+///
+/// Uses Apple's [Foundation Models](https://developer.apple.com/documentation/foundationmodels)
+/// framework (`SystemLanguageModel`) — entirely on-device when Apple Intelligence is available.
 @available(macOS 26.0, *)
 public struct MoodClassifier: Sendable {
     public init() {}
@@ -44,3 +51,20 @@ public func classifyMoodWithTimeout(_ text: String, seconds: Double = 3) async -
         return try await group.next() ?? nil
     }.flatMap { $0 }
 }
+
+#else
+
+/// Stub when the SDK has no Foundation Models (CI / older Xcode). Runtime never reaches
+/// classification without `canImport(FoundationModels)` + Apple Intelligence.
+@available(macOS 26.0, *)
+public struct MoodClassifier: Sendable {
+    public init() {}
+    public func classify(reflection text: String) async throws -> MoodTag { .neutral }
+}
+
+@available(macOS 26.0, *)
+public func classifyMoodWithTimeout(_ text: String, seconds: Double = 3) async -> MoodTag? {
+    nil
+}
+
+#endif
