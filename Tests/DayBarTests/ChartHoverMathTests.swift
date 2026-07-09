@@ -27,4 +27,19 @@ final class ChartHoverMathTests: XCTestCase {
     func testReturnsNilForEmptyCandidates() {
         XCTAssertNil(ChartHoverMath.nearestDate(to: Date(), in: []))
     }
+
+    func testClampsTooltipCenterXInsidePlot() {
+        let plot = CGRect(x: 0, y: 0, width: 200, height: 100)
+        XCTAssertEqual(ChartHoverMath.clampedTooltipCenterX(100, in: plot), 100, accuracy: 0.001)
+    }
+
+    func testClampsTooltipCenterXAtLeftEdge() {
+        let plot = CGRect(x: 0, y: 0, width: 200, height: 100)
+        XCTAssertEqual(ChartHoverMath.clampedTooltipCenterX(10, in: plot), 40, accuracy: 0.001)
+    }
+
+    func testClampsTooltipCenterXAtRightEdge() {
+        let plot = CGRect(x: 0, y: 0, width: 200, height: 100)
+        XCTAssertEqual(ChartHoverMath.clampedTooltipCenterX(190, in: plot), 160, accuracy: 0.001)
+    }
 }
