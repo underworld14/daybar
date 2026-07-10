@@ -139,6 +139,19 @@ DayBar is an *accessory* app — look for its icon in the **menu bar**, not the 
 xcodebuild -project DayBar.xcodeproj -scheme DayBar -destination 'platform=macOS' test
 ```
 
+
+### GitHub Pages (product site)
+
+The landing page lives in [`site/`](site/) and deploys via [`.github/workflows/pages.yml`](.github/workflows/pages.yml)
+to the `gh-pages` branch on every push to `main` that touches `site/**`.
+
+**One-time repo setting:** GitHub → **Settings** → **Pages** → **Build and deployment** → Source:
+**Deploy from a branch** → branch `gh-pages` / `/ (root)`.
+
+After deploy, verify:
+- [https://underworld14.github.io/daybar/](https://underworld14.github.io/daybar/)
+- [https://underworld14.github.io/daybar/appcast.xml](https://underworld14.github.io/daybar/appcast.xml)
+
 ## Publishing a release
 
 Maintainers only. Releases are published to
