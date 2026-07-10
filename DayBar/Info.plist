@@ -28,5 +28,13 @@
     <string>NSApplication</string>
     <key>NSRemindersFullAccessUsageDescription</key>
     <string>DayBar reads and updates your Apple Reminders so tasks stay in sync between the menu bar and Reminders.</string>
+    <key>SUFeedURL</key>
+    <string>https://underworld14.github.io/daybar/appcast.xml</string>
+    <key>SUPublicEDKey</key>
+    <string>FWM3YG5Y2jQoI2Kv3Dqc6L4W9acrPkEXGqOKkMv+4gU=</string>
+    <key>SUEnableAutomaticChecks</key>
+    <true/>
+    <key>SUScheduledCheckInterval</key>
+    <integer>86400</integer>
 </dict>
 </plist>

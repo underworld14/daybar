@@ -159,6 +159,16 @@ struct SettingsView: View {
                     }
                 }
 
+                Section("Updates") {
+                    Button("Check for Updates…") {
+                        UpdateController.shared.checkForUpdates()
+                    }
+                    .disabled(!UpdateController.shared.canCheckForUpdates)
+                    Text("DayBar checks for updates daily and asks before installing.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
                 Section("Shortcut") {
                     KeyboardShortcuts.Recorder("Quick-add task", name: .quickAdd)
                 }

@@ -14,6 +14,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Install XcodeGen
         run: brew install xcodegen
@@ -45,3 +47,46 @@ jobs:
         with:
           files: DayBar-v${{ steps.version.outputs.tag }}-macOS.zip
           generate_release_notes: true
+
+      - name: Install Sparkle tools
+        run: |
+          curl -fsSL -o /tmp/Sparkle.tar.xz \
+            "https://github.com/sparkle-project/Sparkle/releases/download/2.6.4/Sparkle-2.6.4.tar.xz"
+          tar -xf /tmp/Sparkle.tar.xz -C /tmp
+
+      - name: Generate signed appcast
+        env:
+          SPARKLE_EDDSA_PRIVATE_KEY: ${{ secrets.SPARKLE_EDDSA_PRIVATE_KEY }}
+        run: |
+          if [ -z "$SPARKLE_EDDSA_PRIVATE_KEY" ]; then
+            echo "::error::SPARKLE_EDDSA_PRIVATE_KEY secret is not set. Run Sparkle generate_keys -x locally and add the output as a repository secret."
+            exit 1
+          fi
+          VERSION="${{ steps.version.outputs.tag }}"
+          TAG="${{ github.ref_name }}"
+          mkdir -p releases
+          if [ -f site/appcast.xml ]; then
+            cp site/appcast.xml releases/appcast.xml
+          fi
+          cp "DayBar-v${VERSION}-macOS.zip" releases/
+          echo "$SPARKLE_EDDSA_PRIVATE_KEY" | /tmp/bin/generate_appcast \
+            --ed-key-file - \
+            --download-url-prefix "https://github.com/underworld14/daybar/releases/download/${TAG}/" \
+            --link "https://underworld14.github.io/daybar/" \
+            releases/
+          cp releases/appcast.xml site/appcast.xml
+
+      - name: Commit appcast to main
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          git checkout main
+          git pull --rebase origin main
+          git add site/appcast.xml
+          if git diff --staged --quiet; then
+            echo "Appcast unchanged"
+          else
+            git commit -m "chore: update appcast for ${{ github.ref_name }}"
+            git push origin main
+          fi

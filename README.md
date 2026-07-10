@@ -61,6 +61,8 @@
 
 ## Download
 
+Product page: **[underworld14.github.io/daybar](https://underworld14.github.io/daybar/)**.
+
 Pre-built releases for macOS 14+ are on **[GitHub Releases](https://github.com/underworld14/daybar/releases)**.
 
 ### Install
@@ -92,6 +94,19 @@ open /Applications/DayBar.app
 
 > **Notifications & launch at login:** For reliable permission prompts, build from source once in
 > Xcode with your Apple ID team, or wait for a future Developer ID–signed release.
+
+### Automatic updates
+
+DayBar checks **[GitHub Releases](https://github.com/underworld14/daybar/releases)** daily via
+[Sparkle](https://sparkle-project.org). When a newer version is available, you'll see a standard
+**Install & Relaunch** prompt — nothing installs without your approval.
+
+- **Manual check:** Settings → **Check for Updates…**
+- **Feed:** `https://underworld14.github.io/daybar/appcast.xml`
+
+Ad-hoc signed builds still require the one-time Gatekeeper approval above on **first install**.
+Sparkle clears quarantine on downloaded updates where macOS allows it, but cannot fully bypass
+Gatekeeper for unsigned apps.
 
 ## Requirements
 
@@ -128,6 +143,22 @@ xcodebuild -project DayBar.xcodeproj -scheme DayBar -destination 'platform=macOS
 
 Maintainers only. Releases are published to
 **[GitHub Releases](https://github.com/underworld14/daybar/releases)** as `DayBar-vX.Y.Z-macOS.zip`.
+
+
+### 0. One-time Sparkle signing setup
+
+The Release workflow signs update archives with an EdDSA key. Generate keys once (Sparkle 2.6.4):
+
+```sh
+curl -fsSL -o /tmp/Sparkle.tar.xz \
+  "https://github.com/sparkle-project/Sparkle/releases/download/2.6.4/Sparkle-2.6.4.tar.xz"
+tar -xf /tmp/Sparkle.tar.xz -C /tmp
+/tmp/bin/generate_keys          # stores private key in Keychain; prints SUPublicEDKey for Info.plist
+/tmp/bin/generate_keys -x sparkle-private-key.txt  # add file contents to GitHub secret SPARKLE_EDDSA_PRIVATE_KEY
+```
+
+The public key in [`DayBar/Info.plist`](DayBar/Info.plist) must match the private key in the secret.
+After each tagged release, CI updates [`site/appcast.xml`](site/appcast.xml) and deploys it to GitHub Pages.
 
 You need the [GitHub CLI](https://cli.github.com/) (`brew install gh`) logged in (`gh auth login`).
 

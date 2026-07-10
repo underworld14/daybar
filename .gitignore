@@ -22,3 +22,5 @@ dist/
 .dolt/
 *.db
 .beads-credential-key
+releases/
+sparkle-private-key.txt

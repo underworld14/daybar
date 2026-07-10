@@ -41,6 +41,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         KeyboardShortcuts.onKeyDown(for: .quickAdd) { [weak self] in
             MainActor.assumeIsolated { self?.revealForQuickAdd() }
         }
+        UpdateController.shared.start()
     }
 
     func applicationDidResignActive(_ notification: Notification) {
