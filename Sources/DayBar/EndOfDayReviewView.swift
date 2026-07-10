@@ -10,9 +10,18 @@ struct EndOfDayReviewView: View {
     @State private var reflection = ""
     @State private var selectedMood: MoodTag?
     @State private var moodSource: MoodSource = .none
-    /// True when reopened (e.g. via "Review day…") after already finishing today's review —
-    /// gates out auto re-classification so a saved mood is never silently overwritten.
+    /// Reflection text when the user last tapped a mood chip — manual picks only stick for
+    /// that exact text; editing the reflection allows a fresh AI suggestion.
+    @State private var reflectionAtManualPick: String?
+    /// True when reopened (e.g. via "Review day…") after already finishing today's review.
     @State private var isExistingReview = false
+    /// Reflection loaded on appear — used to allow auto re-classify when the user edits it.
+    @State private var savedReflectionOnOpen = ""
+    /// Bumps to re-run classification on demand (reopened reviews).
+    @State private var forceSuggestToken = 0
+    @State private var isAnalyzingMood = false
+    /// Bumps on each classification attempt so stale tasks cannot clear the spinner.
+    @State private var moodAnalysisGeneration = 0
 
     private var unfinished: [DailyTodo] {
         appState.todayTodos.filter { !$0.isCompleted } + appState.carriedTodos
@@ -20,6 +29,14 @@ struct EndOfDayReviewView: View {
 
     private var openHabits: [TodayHabit] {
         appState.todayHabits.filter { !$0.log.isCompleted }
+    }
+
+    private var moodSuggestionTaskID: String {
+        "\(reflection)#\(forceSuggestToken)"
+    }
+
+    private var canSuggestMoodWithAI: Bool {
+        Preferences.moodAIEnabled && appState.moodChecker.availability == .available
     }
 
     var body: some View {
@@ -97,12 +114,19 @@ struct EndOfDayReviewView: View {
         .onAppear {
             let existing = (try? appState.store.dayLog(for: .now)) ?? nil
             reflection = existing?.reflection ?? ""
+            savedReflectionOnOpen = reflection
             selectedMood = existing?.moodTag
             moodSource = existing?.moodSource ?? .none
             isExistingReview = existing != nil
+            if existing?.moodSource == .manual {
+                reflectionAtManualPick = existing?.reflection
+            }
         }
-        .task(id: reflection) {
-            await suggestMoodIfEligible()
+        .task(id: moodSuggestionTaskID) {
+            let explicit = forceSuggestToken > 0
+            moodAnalysisGeneration += 1
+            let generation = moodAnalysisGeneration
+            await suggestMoodIfEligible(explicitRequest: explicit, generation: generation)
         }
     }
 
@@ -119,13 +143,55 @@ struct EndOfDayReviewView: View {
                     moodButton(tag)
                 }
             }
-            if selectedMood != nil, moodSource == .ai {
-                Text("Suggested by Apple Intelligence — tap to correct.")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
+            moodFooter
         }
         .padding(.top, 4)
+    }
+
+    @ViewBuilder
+    private var moodFooter: some View {
+        if isAnalyzingMood {
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.small)
+                Text("Analyzing your reflection…")
+            }
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Analyzing your reflection for a mood suggestion")
+        } else if selectedMood != nil, moodSource == .ai {
+            Text("Suggested by Apple Intelligence — tap to correct.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        } else if selectedMood != nil, moodSource == .manual {
+            Text(manualMoodFooterText)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+
+        if canShowResuggestButton {
+            Button("Suggest mood again") {
+                reflectionAtManualPick = nil
+                forceSuggestToken += 1
+            }
+                .font(.caption)
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .disabled(isAnalyzingMood)
+        }
+    }
+
+    private var canShowResuggestButton: Bool {
+        canSuggestMoodWithAI
+            && isExistingReview
+            && MoodAIGate.hasEnoughTextForClassification(reflection)
+    }
+
+    private var manualMoodFooterText: String {
+        if canShowResuggestButton {
+            return "You picked this mood — tap Suggest mood again or edit your reflection."
+        }
+        return "You picked this mood — edit your reflection for a new suggestion."
     }
 
     private func moodButton(_ tag: MoodTag) -> some View {
@@ -134,9 +200,11 @@ struct EndOfDayReviewView: View {
             if isSelected {
                 selectedMood = nil
                 moodSource = .none
+                reflectionAtManualPick = nil
             } else {
                 selectedMood = tag
                 moodSource = .manual
+                reflectionAtManualPick = reflection
             }
         } label: {
             VStack(spacing: 2) {
@@ -158,29 +226,55 @@ struct EndOfDayReviewView: View {
         .accessibilityLabel(isSelected ? "Clear mood selection" : "Select \(tag.displayName) mood")
     }
 
-    /// Debounced AI auto-suggest: `.task(id: reflection)` cancels the previous attempt
-    /// whenever the text changes, so this doubles as debouncing without a manual timer.
-    /// Never overrides a mood the user already picked by hand.
-    private func suggestMoodIfEligible() async {
-        // Snapshot once: `reflection` is a `@State` var, so re-reading it after the sleep
-        // below could race a newer keystroke that hasn't cancelled this task yet.
+    /// Debounced AI auto-suggest: `.task(id:)` cancels the previous attempt whenever the
+    /// reflection changes (or the user taps "Suggest mood again").
+    private func suggestMoodIfEligible(explicitRequest: Bool = false, generation: Int) async {
         let text = reflection
-        guard MoodAIGate.shouldAttemptClassification(
+        let eligible = MoodAIGate.shouldAttemptClassification(
             availability: appState.moodChecker.availability,
             aiEnabled: Preferences.moodAIEnabled,
             reflection: text,
-            alreadyReviewed: isExistingReview
-        ) else { return }
+            alreadyReviewed: isExistingReview,
+            savedReflection: savedReflectionOnOpen,
+            explicitRequest: explicitRequest
+        )
+        guard eligible else {
+            setAnalyzingMood(false, generation: generation)
+            return
+        }
 
+        setAnalyzingMood(true, generation: generation)
         try? await Task.sleep(for: .milliseconds(600))
         guard !Task.isCancelled else { return }
 
-        guard #available(macOS 26.0, *) else { return }
-        guard let suggested = await classifyMoodWithTimeout(text) else { return }
-        guard MoodAIGate.shouldApplySuggestion(isCancelled: Task.isCancelled, currentSource: moodSource) else { return }
+        guard #available(macOS 26.0, *) else {
+            setAnalyzingMood(false, generation: generation)
+            return
+        }
+        guard let suggested = await classifyMoodWithTimeout(text) else {
+            setAnalyzingMood(false, generation: generation)
+            return
+        }
+        guard MoodAIGate.shouldApplySuggestion(
+            isCancelled: Task.isCancelled,
+            currentSource: moodSource,
+            reflectionAtManualPick: reflectionAtManualPick,
+            classifiedReflection: text,
+            explicitRequest: explicitRequest
+        ) else {
+            setAnalyzingMood(false, generation: generation)
+            return
+        }
 
         selectedMood = suggested
         moodSource = .ai
+        reflectionAtManualPick = nil
+        setAnalyzingMood(false, generation: generation)
+    }
+
+    private func setAnalyzingMood(_ value: Bool, generation: Int) {
+        guard generation == moodAnalysisGeneration else { return }
+        isAnalyzingMood = value
     }
 
     private func reviewRow(_ todo: DailyTodo) -> some View {
