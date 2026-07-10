@@ -7,18 +7,30 @@ public enum MoodAIGate {
     public static let minimumWordCount = 3
 
     /// - Parameter alreadyReviewed: true when a `DayLog` already exists for today (e.g. the
-    ///   user reopened the sheet via "Review day…" after finishing it once). Consistent with
-    ///   "1 entry = 1 day, immutable": a saved mood is never silently reclassified — the user
-    ///   would have to change the reflection text and re-trigger manually in a future release.
+    ///   user reopened the sheet via "Review day…" after finishing it once). Auto
+    ///   re-classification is skipped unless `explicitRequest` is true or the reflection
+    ///   text has changed from what was saved.
+    /// - Parameter explicitRequest: true when the user tapped "Suggest mood again".
     public static func shouldAttemptClassification(
         availability: MoodAIAvailability,
         aiEnabled: Bool,
         reflection: String,
-        alreadyReviewed: Bool = false
+        alreadyReviewed: Bool = false,
+        savedReflection: String? = nil,
+        explicitRequest: Bool = false
     ) -> Bool {
-        guard aiEnabled, !alreadyReviewed else { return false }
+        guard aiEnabled else { return false }
+        if alreadyReviewed {
+            let reflectionUnchanged = savedReflection.map { $0 == reflection } ?? true
+            guard explicitRequest || !reflectionUnchanged else { return false }
+        }
         guard availability == .available else { return false }
         return meaningfulUnitCount(in: reflection) >= minimumWordCount
+    }
+
+    /// Whether `reflection` is long enough for the AI to attempt a suggestion.
+    public static func hasEnoughTextForClassification(_ reflection: String) -> Bool {
+        meaningfulUnitCount(in: reflection) >= minimumWordCount
     }
 
     private static func meaningfulUnitCount(in reflection: String) -> Int {
@@ -41,9 +53,22 @@ public enum MoodAIGate {
     }
 
     /// A late AI suggestion must never clobber a mood the user already picked by hand
-    /// while it was in flight, nor apply after the surrounding task was cancelled
-    /// (e.g. the reflection text changed again before this suggestion arrived).
-    public static func shouldApplySuggestion(isCancelled: Bool, currentSource: MoodSource) -> Bool {
-        !isCancelled && currentSource != .manual
+    /// for the *same* reflection text, nor apply after the surrounding task was cancelled
+    /// (e.g. the reflection text changed again before this suggestion arrived). Editing
+    /// the reflection clears the manual lock so a new suggestion can land.
+    /// - Parameter explicitRequest: true when the user tapped "Suggest mood again" —
+    ///   allows replacing a manual pick for the same reflection text.
+    public static func shouldApplySuggestion(
+        isCancelled: Bool,
+        currentSource: MoodSource,
+        reflectionAtManualPick: String? = nil,
+        classifiedReflection: String,
+        explicitRequest: Bool = false
+    ) -> Bool {
+        guard !isCancelled else { return false }
+        guard currentSource == .manual else { return true }
+        if explicitRequest { return true }
+        guard let locked = reflectionAtManualPick else { return true }
+        return locked != classifiedReflection
     }
 }

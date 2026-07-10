@@ -63,9 +63,24 @@ final class MoodAvailabilityTests: XCTestCase {
 
     // MARK: - "1 entry = 1 day, immutable"
 
-    func testReopeningAlreadyReviewedDayNeverReclassifies() {
+    func testReopeningAlreadyReviewedDayNeverReclassifiesWhenUnchanged() {
         XCTAssertFalse(MoodAIGate.shouldAttemptClassification(
-            availability: .available, aiEnabled: true, reflection: longReflection, alreadyReviewed: true
+            availability: .available, aiEnabled: true, reflection: longReflection,
+            alreadyReviewed: true, savedReflection: longReflection
+        ))
+    }
+
+    func testReopeningAlreadyReviewedDayReclassifiesWhenReflectionEdited() {
+        XCTAssertTrue(MoodAIGate.shouldAttemptClassification(
+            availability: .available, aiEnabled: true, reflection: longReflection + " and more",
+            alreadyReviewed: true, savedReflection: longReflection
+        ))
+    }
+
+    func testReopeningAlreadyReviewedDayReclassifiesOnExplicitRequest() {
+        XCTAssertTrue(MoodAIGate.shouldAttemptClassification(
+            availability: .available, aiEnabled: true, reflection: longReflection,
+            alreadyReviewed: true, savedReflection: longReflection, explicitRequest: true
         ))
     }
 
@@ -78,19 +93,64 @@ final class MoodAvailabilityTests: XCTestCase {
     // MARK: - Applying a late AI suggestion
 
     func testSuggestionAppliesWhenNotCancelledAndNoManualPick() {
-        XCTAssertTrue(MoodAIGate.shouldApplySuggestion(isCancelled: false, currentSource: .none))
+        XCTAssertTrue(MoodAIGate.shouldApplySuggestion(
+            isCancelled: false, currentSource: .none, classifiedReflection: longReflection
+        ))
     }
 
     func testSuggestionAppliesOverAPriorAISuggestion() {
         // A newer AI suggestion is allowed to replace an older one.
-        XCTAssertTrue(MoodAIGate.shouldApplySuggestion(isCancelled: false, currentSource: .ai))
+        XCTAssertTrue(MoodAIGate.shouldApplySuggestion(
+            isCancelled: false, currentSource: .ai, classifiedReflection: longReflection
+        ))
     }
 
-    func testSuggestionNeverOverwritesManualPick() {
-        XCTAssertFalse(MoodAIGate.shouldApplySuggestion(isCancelled: false, currentSource: .manual))
+    func testSuggestionNeverOverwritesManualPickForSameReflection() {
+        XCTAssertFalse(MoodAIGate.shouldApplySuggestion(
+            isCancelled: false,
+            currentSource: .manual,
+            reflectionAtManualPick: longReflection,
+            classifiedReflection: longReflection
+        ))
+    }
+
+    func testSuggestionOverwritesManualPickOnExplicitRequest() {
+        XCTAssertTrue(MoodAIGate.shouldApplySuggestion(
+            isCancelled: false,
+            currentSource: .manual,
+            reflectionAtManualPick: longReflection,
+            classifiedReflection: longReflection,
+            explicitRequest: true
+        ))
+    }
+
+    func testSuggestionOverwritesManualPickWhenReflectionChanged() {
+        XCTAssertTrue(MoodAIGate.shouldApplySuggestion(
+            isCancelled: false,
+            currentSource: .manual,
+            reflectionAtManualPick: longReflection,
+            classifiedReflection: longReflection + " extra"
+        ))
+    }
+
+    func testSuggestionAppliesForLoadedManualMoodWhenReflectionEdited() {
+        // Reopened review: moodSource is .manual with reflectionAtManualPick restored from disk.
+        XCTAssertTrue(MoodAIGate.shouldApplySuggestion(
+            isCancelled: false,
+            currentSource: .manual,
+            reflectionAtManualPick: longReflection,
+            classifiedReflection: longReflection + " extra"
+        ))
     }
 
     func testCancelledSuggestionIsDiscardedEvenWithoutManualPick() {
-        XCTAssertFalse(MoodAIGate.shouldApplySuggestion(isCancelled: true, currentSource: .none))
+        XCTAssertFalse(MoodAIGate.shouldApplySuggestion(
+            isCancelled: true, currentSource: .none, classifiedReflection: longReflection
+        ))
+    }
+
+    func testHasEnoughTextForClassification() {
+        XCTAssertTrue(MoodAIGate.hasEnoughTextForClassification(longReflection))
+        XCTAssertFalse(MoodAIGate.hasEnoughTextForClassification(shortReflection))
     }
 }
