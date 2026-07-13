@@ -163,6 +163,10 @@ struct EndOfDayReviewView: View {
             Text("Suggested by Apple Intelligence — tap to correct.")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
+        } else if selectedMood != nil, moodSource == .heuristic {
+            Text("Suggested from keywords in your reflection — tap to correct.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
         } else if selectedMood != nil, moodSource == .manual {
             Text(manualMoodFooterText)
                 .font(.caption2)
@@ -251,7 +255,7 @@ struct EndOfDayReviewView: View {
             setAnalyzingMood(false, generation: generation)
             return
         }
-        guard let suggested = await classifyMoodWithTimeout(text) else {
+        guard let result = await classifyMood(text) else {
             setAnalyzingMood(false, generation: generation)
             return
         }
@@ -266,8 +270,8 @@ struct EndOfDayReviewView: View {
             return
         }
 
-        selectedMood = suggested
-        moodSource = .ai
+        selectedMood = result.tag
+        moodSource = result.source
         reflectionAtManualPick = nil
         setAnalyzingMood(false, generation: generation)
     }

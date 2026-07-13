@@ -62,4 +62,22 @@ public enum MoodTag: String, CaseIterable, Codable, Sendable {
         case .disappointed: return "Disappointed"
         }
     }
+
+    /// Maps a model-produced tag string onto `MoodTag`. Prefers exact `rawValue` match;
+    /// also accepts case-insensitive and common display-name variants so a constrained
+    /// decode edge case does not silently become `.neutral`.
+    public static func fromAITag(_ raw: String) -> MoodTag {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let exact = MoodTag(rawValue: trimmed) { return exact }
+        let lowered = trimmed.lowercased()
+        if let match = MoodTag.allCases.first(where: { $0.rawValue.lowercased() == lowered }) {
+            return match
+        }
+        if let match = MoodTag.allCases.first(where: { $0.displayName.lowercased() == lowered }) {
+            return match
+        }
+        // Legacy coercion — should be rare once guided generation uses a Generable enum.
+        return .neutral
+    }
+
 }

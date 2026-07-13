@@ -41,6 +41,7 @@ public enum EscalationTier: Int, CaseIterable, Codable, Sendable, Comparable {
 /// user-confirmed data without touching the score itself.
 public enum MoodSource: String, Codable, Sendable {
     case ai
+    case heuristic
     case manual
     case none
 }
