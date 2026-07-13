@@ -109,6 +109,7 @@ struct AnalyticsView: View {
     @ViewBuilder
     private var tasksContent: some View {
         tasksSummary
+        focusStreakSection
         if hasTaskData {
             chartSection("Planned vs completed") { plannedVsCompleted }
             chartSection("Completion rate") { completionRate }
@@ -116,6 +117,27 @@ struct AnalyticsView: View {
             chartSection("Pomodoro sessions") { sessionsChart }
         } else {
             emptyState("No task data yet. Complete tasks or finish a focus session to populate these charts.")
+        }
+    }
+
+    private var focusStreakSection: some View {
+        let entry = appState.focusStreak()
+        let streak = entry?.streak
+        return VStack(alignment: .leading, spacing: 8) {
+            Text("FOCUS STREAK".uppercased())
+                .font(.caption2.weight(.semibold)).tracking(0.5).foregroundStyle(.secondary)
+            HStack(spacing: 16) {
+                stat("\(streak?.current ?? 0)d", "current")
+                stat("\(streak?.best ?? 0)d", "best")
+                stat("\(streak?.graceRemaining ?? FocusAnalytics.gracePerWeek)", "grace left")
+            }
+            if let cells = entry?.weekCells, !cells.isEmpty {
+                DayscapeStrip(
+                    cells: cells,
+                    currentStreak: streak?.current ?? 0,
+                    graceRemaining: streak?.graceRemaining ?? FocusAnalytics.gracePerWeek
+                )
+            }
         }
     }
 

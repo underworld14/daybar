@@ -6,6 +6,8 @@ struct TaskHistoryView: View {
     var appState: AppState
     @Environment(\.dismiss) private var dismiss
 
+    @State private var detailTodo: DailyTodo?
+
     private let historyDays = AppState.completedHistoryDays
 
     private var groups: [DayHistoryGroup] { appState.completedHistory(days: historyDays) }
@@ -37,6 +39,9 @@ struct TaskHistoryView: View {
             }
         }
         .frame(width: 360, height: 520)
+        .sheet(item: $detailTodo) { todo in
+            TodoDetailSheet(appState: appState, todo: todo)
+        }
     }
 
     private var summary: some View {
@@ -75,7 +80,11 @@ struct TaskHistoryView: View {
                     .foregroundStyle(.secondary)
             }
             ForEach(group.todos) { todo in
-                HistoryTodoRow(appState: appState, todo: todo)
+                HistoryTodoRow(
+                    appState: appState,
+                    todo: todo,
+                    onOpenDetails: { detailTodo = todo }
+                )
             }
         }
     }
@@ -84,6 +93,15 @@ struct TaskHistoryView: View {
 private struct HistoryTodoRow: View {
     var appState: AppState
     let todo: DailyTodo
+    var onOpenDetails: (() -> Void)? = nil
+
+    private var checklistItems: [TodoChecklistItem] {
+        appState.checklistItems(for: todo)
+    }
+
+    private var hasDetails: Bool {
+        todo.hasNotes || !checklistItems.isEmpty
+    }
 
     var body: some View {
         HStack(spacing: 8) {
@@ -94,6 +112,9 @@ private struct HistoryTodoRow: View {
                 .lineLimit(2)
                 .foregroundStyle(.primary)
             Spacer(minLength: 4)
+            if hasDetails {
+                detailIndicator
+            }
             if let completed = todo.completedDate {
                 Text(completed, format: .dateTime.hour().minute())
                     .font(.caption2)
@@ -101,9 +122,39 @@ private struct HistoryTodoRow: View {
                     .monospacedDigit()
             }
         }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            guard hasDetails else { return }
+            onOpenDetails?()
+        }
         .contextMenu {
+            if hasDetails {
+                Button("View details…") { onOpenDetails?() }
+            }
             Button("Bring to today") { appState.reschedule(todo) }
         }
+    }
+
+    private var detailIndicator: some View {
+        Button {
+            onOpenDetails?()
+        } label: {
+            HStack(spacing: 3) {
+                if todo.hasNotes {
+                    Image(systemName: "note.text")
+                }
+                if !checklistItems.isEmpty {
+                    let done = checklistItems.filter(\.isCompleted).count
+                    Text("\(done)/\(checklistItems.count)")
+                        .font(.caption2.monospacedDigit())
+                }
+            }
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+        }
+        .buttonStyle(.plain)
+        .help("View task details")
+        .accessibilityLabel("View task details")
     }
 
     private var priorityColor: Color {

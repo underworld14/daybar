@@ -27,7 +27,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private var statusItem: NSStatusItem!
     private var panel: FloatingPanel!
     private var outsideClickMonitor: Any?
-    private let panelWidth: CGFloat = 320
+    private let panelWidth: CGFloat = 360
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -244,12 +244,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let inWindow = button.convert(button.bounds, to: nil)
         let buttonRect = buttonWindow.convertToScreen(inWindow)
         let panelSize = panel.frame.size
+        let margin: CGFloat = 8
+        let gapBelowButton: CGFloat = 8
+
+        // Prefer centered under the status item, just below it.
         var x = buttonRect.midX - panelSize.width / 2
-        let y = buttonRect.minY - panelSize.height - 4
+        var y = buttonRect.minY - panelSize.height - gapBelowButton
+
         if let screen = buttonWindow.screen ?? NSScreen.main {
-            let maxX = screen.visibleFrame.maxX - panelSize.width - 8
-            let minX = screen.visibleFrame.minX + 8
-            x = min(max(x, minX), maxX)
+            let visible = screen.visibleFrame
+            // Keep fully inside the desktop area so the top isn't clipped by the menu bar
+            // / notch (common when the status item sits near the camera housing).
+            x = min(max(x, visible.minX + margin), visible.maxX - panelSize.width - margin)
+            let maxOriginY = visible.maxY - panelSize.height - margin
+            let minOriginY = visible.minY + margin
+            y = min(y, maxOriginY)
+            y = max(y, minOriginY)
         }
         panel.setFrameOrigin(NSPoint(x: x, y: y))
     }

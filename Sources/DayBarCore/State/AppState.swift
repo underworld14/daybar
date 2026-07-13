@@ -47,6 +47,8 @@ public final class AppState {
     public private(set) var carriedTodos: [DailyTodo] = []
     public private(set) var todayHabits: [TodayHabit] = []
     public private(set) var habitStreakEntries: [HabitStreakEntry] = []
+    /// Focus streak + 7-day Dayscape strip (computed from completed Pomodoros).
+    public private(set) var focusStreakEntry: FocusStreakEntry?
     /// Ephemeral banner (milestones, quiet acknowledgments, undo).
     public var ephemeralBanner: EphemeralBanner?
     /// Backward-compatible alias used by older call sites / tests.
@@ -151,6 +153,7 @@ public final class AppState {
                let session = sessions.first(where: { $0.id == id }) {
                 store.context.delete(session)
                 commitSave()
+                rebuildFocusCache()
             }
         }
         dismissBanner()
@@ -195,6 +198,7 @@ public final class AppState {
         reloadLists(now: now)
         let rawHabits = (try? store.todayHabits(on: now, calendar: calendar)) ?? []
         rebuildHabitCaches(rawHabits: rawHabits, now: now)
+        rebuildFocusCache(now: now)
         notifications.updateBacklogNudge(agingCount: overdueCount, now: now, calendar: calendar)
         rescheduleHabitNotificationsIfNeeded(now: now)
         maybePromptEndOfDayReview(now: now)
@@ -407,6 +411,62 @@ public final class AppState {
         refresh(now: now)
     }
 
+    /// Update the task description (`notes`). Trims trailing whitespace; empty is allowed.
+    public func updateNotes(_ todo: DailyTodo, to notes: String, now: Date = .now) {
+        let trimmed = notes.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed != todo.notes else { return }
+        todo.notes = trimmed
+        markRemindersTodoLocallyModified(todo, now: now)
+        remindersSync.enqueuePush(for: todo)
+        commitSave()
+        refresh(now: now)
+    }
+
+    // MARK: - Checklist
+
+    public func checklistItems(for todo: DailyTodo) -> [TodoChecklistItem] {
+        (try? store.checklistItems(for: todo.id)) ?? []
+    }
+
+    @discardableResult
+    public func addChecklistItem(to todo: DailyTodo, title: String, now: Date = .now) -> TodoChecklistItem? {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let nextOrder = (checklistItems(for: todo).map(\.sortOrder).max() ?? -1) + 1
+        let item = TodoChecklistItem(todoId: todo.id, title: trimmed, sortOrder: nextOrder)
+        store.insert(item)
+        commitSave()
+        refresh(now: now)
+        return item
+    }
+
+    public func renameChecklistItem(_ item: TodoChecklistItem, to title: String, now: Date = .now) {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed != item.title else { return }
+        item.title = trimmed
+        commitSave()
+        refresh(now: now)
+    }
+
+    public func toggleChecklistItem(_ item: TodoChecklistItem, now: Date = .now) {
+        item.isCompleted.toggle()
+        commitSave()
+        refresh(now: now)
+    }
+
+    public func deleteChecklistItem(_ item: TodoChecklistItem, now: Date = .now) {
+        store.delete(item)
+        commitSave()
+        refresh(now: now)
+    }
+
+    public func moveChecklistItem(_ item: TodoChecklistItem, to sortOrder: Int, now: Date = .now) {
+        guard item.sortOrder != sortOrder else { return }
+        item.sortOrder = sortOrder
+        commitSave()
+        refresh(now: now)
+    }
+
     // MARK: - Habits
 
     @discardableResult
@@ -549,9 +609,23 @@ public final class AppState {
         habitStreakEntries
     }
 
+    public func focusStreak() -> FocusStreakEntry? {
+        focusStreakEntry
+    }
+
     /// Clears the notification debounce so the next `refresh()` reschedules habit anchors.
     public func invalidateHabitNotifications() {
         lastHabitNotifySignature = nil
+    }
+
+    private func rebuildFocusCache(now: Date = .now) {
+        let today = calendar.startOfDay(for: now)
+        let lookbackStart = calendar.date(
+            byAdding: .day, value: -FocusAnalytics.cacheLookbackDays, to: today
+        ) ?? today
+        let end = calendar.date(byAdding: .day, value: 1, to: today) ?? now
+        let sessions = (try? store.focusSessions(in: lookbackStart..<end)) ?? []
+        focusStreakEntry = FocusAnalytics.entry(sessions: sessions, asOf: now, calendar: calendar)
     }
 
     private func rebuildHabitCaches(rawHabits: [TodayHabit], now: Date) {
@@ -952,11 +1026,20 @@ public final class AppState {
     }
 
     private func handlePhaseEnd(_ phase: PomodoroPhase, elapsed: TimeInterval, completedNaturally: Bool, endedAt: Date) {
+        var focusMilestoneBanner: String?
         if phase == .work {
             let minutes = Int((elapsed / 60).rounded())
             if minutes > 0 {
+                let priorStreak = focusStreakEntry?.streak.current ?? 0
                 store.insert(FocusSession(endedAt: endedAt, minutes: minutes, completed: completedNaturally))
                 commitSave()
+                rebuildFocusCache(now: endedAt)
+                if completedNaturally {
+                    let newStreak = focusStreakEntry?.streak.current ?? 0
+                    if FocusAnalytics.isMilestone(newStreak), newStreak > priorStreak {
+                        focusMilestoneBanner = "\(newStreak) days of focus — keep going."
+                    }
+                }
             }
             breakArmedAt = endedAt
             // The recap sheet is held back while a focus session runs — retry immediately
@@ -975,8 +1058,13 @@ public final class AppState {
             AlertSoundPlayer.shared.playPhaseEndRing()
         }
         notifications.postPhaseEndBanner(finished: phase)
-        if phase == .work, radio.isPlaying, Preferences.radioPauseOnFocusEnd {
+        let shouldPauseRadio = phase == .work && radio.isPlaying && Preferences.radioPauseOnFocusEnd
+        if shouldPauseRadio {
             radio.pause()
+        }
+        if let focusMilestoneBanner {
+            showBanner(focusMilestoneBanner)
+        } else if shouldPauseRadio {
             showBanner("Focus ended — music paused")
         }
     }

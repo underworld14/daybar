@@ -91,4 +91,46 @@ final class ReminderMappingTests: XCTestCase {
         XCTAssertEqual(dto?.title, "Task")
         XCTAssertEqual(dto?.externalIdentifier, "abc")
     }
+
+    func testNotesRoundTrip() {
+        let todo = DailyTodo(
+            title: "Task",
+            notes: "Ship checklist notes",
+            plannedForDate: today,
+            originalPlannedDate: today,
+            source: .reminders,
+            externalIdentifier: "notes-1"
+        )
+        let dto = ReminderMapping.dto(from: todo)
+        XCTAssertEqual(dto?.notes, "Ship checklist notes")
+
+        let made = ReminderMapping.makeTodo(
+            from: ReminderDTO(
+                externalIdentifier: "notes-2",
+                title: "From remote",
+                notes: "Remote body",
+                dueDate: today,
+                calendarIdentifier: "list-1"
+            ),
+            today: now,
+            calendar: cal
+        )
+        XCTAssertEqual(made.notes, "Remote body")
+
+        let existing = DailyTodo(title: "Old", plannedForDate: today, originalPlannedDate: today)
+        ReminderMapping.apply(
+            ReminderDTO(
+                externalIdentifier: "notes-3",
+                title: "Updated",
+                notes: "Applied notes",
+                dueDate: today,
+                calendarIdentifier: "list-1",
+                modifiedAt: now
+            ),
+            to: existing,
+            today: now,
+            calendar: cal
+        )
+        XCTAssertEqual(existing.notes, "Applied notes")
+    }
 }

@@ -54,22 +54,67 @@ public struct HabitLogDTO: Codable, Sendable {
     public var statusRaw: String
 }
 
+public struct FocusSessionDTO: Codable, Sendable {
+    public var id: UUID
+    public var endedAt: Date
+    public var minutes: Int
+    public var completed: Bool
+
+    public init(id: UUID, endedAt: Date, minutes: Int, completed: Bool) {
+        self.id = id
+        self.endedAt = endedAt
+        self.minutes = minutes
+        self.completed = completed
+    }
+}
+
+public struct ChecklistItemDTO: Codable, Sendable {
+    public var id: UUID
+    public var todoId: UUID
+    public var title: String
+    public var isCompleted: Bool
+    public var sortOrder: Int
+
+    public init(
+        id: UUID,
+        todoId: UUID,
+        title: String,
+        isCompleted: Bool,
+        sortOrder: Int
+    ) {
+        self.id = id
+        self.todoId = todoId
+        self.title = title
+        self.isCompleted = isCompleted
+        self.sortOrder = sortOrder
+    }
+}
+
 public struct StoreSnapshotDTO: Codable, Sendable {
     public var todos: [TodoDTO]
     public var meta: MetaDTO?
     public var habitTemplates: [HabitTemplateDTO]
     public var habitLogs: [HabitLogDTO]
+    /// `nil` when the backup predates focus export — import must preserve live sessions.
+    /// Non-`nil` (including `[]`) replaces focus history on restore.
+    public var focusSessions: [FocusSessionDTO]?
+    /// Local checklist items; missing key (older backups) decodes as `[]`.
+    public var checklistItems: [ChecklistItemDTO]
 
     public init(
         todos: [TodoDTO],
         meta: MetaDTO? = nil,
         habitTemplates: [HabitTemplateDTO] = [],
-        habitLogs: [HabitLogDTO] = []
+        habitLogs: [HabitLogDTO] = [],
+        focusSessions: [FocusSessionDTO]? = nil,
+        checklistItems: [ChecklistItemDTO] = []
     ) {
         self.todos = todos
         self.meta = meta
         self.habitTemplates = habitTemplates
         self.habitLogs = habitLogs
+        self.focusSessions = focusSessions
+        self.checklistItems = checklistItems
     }
 
     public init(from decoder: Decoder) throws {
@@ -78,6 +123,8 @@ public struct StoreSnapshotDTO: Codable, Sendable {
         meta = try c.decodeIfPresent(MetaDTO.self, forKey: .meta)
         habitTemplates = try c.decodeIfPresent([HabitTemplateDTO].self, forKey: .habitTemplates) ?? []
         habitLogs = try c.decodeIfPresent([HabitLogDTO].self, forKey: .habitLogs) ?? []
+        focusSessions = try c.decodeIfPresent([FocusSessionDTO].self, forKey: .focusSessions)
+        checklistItems = try c.decodeIfPresent([ChecklistItemDTO].self, forKey: .checklistItems) ?? []
     }
 }
 
@@ -150,6 +197,32 @@ public extension HabitLogDTO {
         HabitLog(
             id: id, templateId: templateId, day: day, completedAt: completedAt,
             status: HabitDayStatus(rawValue: statusRaw) ?? .pending
+        )
+    }
+}
+
+public extension FocusSessionDTO {
+    init(_ m: FocusSession) {
+        self.init(id: m.id, endedAt: m.endedAt, minutes: m.minutes, completed: m.completed)
+    }
+
+    func makeModel() -> FocusSession {
+        FocusSession(id: id, endedAt: endedAt, minutes: minutes, completed: completed)
+    }
+}
+
+public extension ChecklistItemDTO {
+    init(_ m: TodoChecklistItem) {
+        self.init(
+            id: m.id, todoId: m.todoId, title: m.title,
+            isCompleted: m.isCompleted, sortOrder: m.sortOrder
+        )
+    }
+
+    func makeModel() -> TodoChecklistItem {
+        TodoChecklistItem(
+            id: id, todoId: todoId, title: title,
+            isCompleted: isCompleted, sortOrder: sortOrder
         )
     }
 }

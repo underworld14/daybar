@@ -183,7 +183,7 @@ struct SettingsView: View {
                 pendingRestoreURL = nil
             }
         } message: {
-            Text("This replaces the local DayBar data with the selected backup file.")
+            Text("This replaces local tasks and habits. Focus sessions are replaced only if the backup includes them (older backups leave focus history alone).")
         }
         .onAppear {
             refreshExternalStatus()
@@ -247,7 +247,7 @@ struct SettingsView: View {
                 Button("Back Up…") { backUpData() }
                 Button("Restore…") { chooseRestoreFile() }
             }
-            Text("Backs up tasks and habits (not focus history or mood reflections yet).")
+            Text("Backs up tasks, habits, and focus sessions (not mood reflections yet).")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             if let saved = appState.store.lastSuccessfulSaveAt {

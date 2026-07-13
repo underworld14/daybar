@@ -43,11 +43,18 @@ final class PersistenceTests: XCTestCase {
         model.externalModifiedAt = modified
         let template = HabitTemplate(title: "Read")
         let habitLog = HabitLog(templateId: template.id, day: now, status: .completed)
+        let session = FocusSession(id: UUID(), endedAt: now, minutes: 25, completed: true)
+        model.notes = "detail notes"
+        let checklist = ChecklistItemDTO(
+            id: UUID(), todoId: model.id, title: "Step one", isCompleted: true, sortOrder: 0
+        )
         let snapshot = StoreSnapshotDTO(
             todos: [TodoDTO(model)],
             meta: MetaDTO(lastProcessedDay: now, lastHabitMaterializedDay: now),
             habitTemplates: [HabitTemplateDTO(template)],
-            habitLogs: [HabitLogDTO(habitLog)]
+            habitLogs: [HabitLogDTO(habitLog)],
+            focusSessions: [FocusSessionDTO(session)],
+            checklistItems: [checklist]
         )
         let data = try JSONStore.encode(snapshot)
         let decoded = try JSONStore.decode(data)
@@ -59,6 +66,14 @@ final class PersistenceTests: XCTestCase {
         XCTAssertEqual(decoded.meta?.lastProcessedDay, now)
         XCTAssertEqual(decoded.habitTemplates.count, 1)
         XCTAssertEqual(decoded.habitLogs.count, 1)
+        XCTAssertEqual(decoded.focusSessions?.count, 1)
+        XCTAssertEqual(decoded.focusSessions?.first?.minutes, 25)
+        XCTAssertEqual(decoded.focusSessions?.first?.completed, true)
+        XCTAssertEqual(decoded.todos.first?.notes, "detail notes")
+        XCTAssertEqual(decoded.checklistItems.count, 1)
+        XCTAssertEqual(decoded.checklistItems.first?.title, "Step one")
+        XCTAssertEqual(decoded.checklistItems.first?.isCompleted, true)
+        XCTAssertEqual(decoded.checklistItems.first?.todoId, model.id)
     }
 
     func testLegacyJSONWithoutHabitsDecodes() throws {
@@ -68,6 +83,36 @@ final class PersistenceTests: XCTestCase {
         let decoded = try JSONStore.decode(data)
         XCTAssertTrue(decoded.habitTemplates.isEmpty)
         XCTAssertTrue(decoded.habitLogs.isEmpty)
+        XCTAssertNil(decoded.focusSessions)
+    }
+
+    func testImportSnapshotReplacesFocusSessions() throws {
+        let store = DataStore(inMemory: true)
+        store.insert(FocusSession(endedAt: now, minutes: 10, completed: false))
+        store.save()
+
+        let imported = FocusSessionDTO(
+            id: UUID(), endedAt: now, minutes: 25, completed: true
+        )
+        store.importSnapshot(StoreSnapshotDTO(todos: [], focusSessions: [imported]))
+
+        let sessions = try store.allFocusSessions()
+        XCTAssertEqual(sessions.count, 1)
+        XCTAssertEqual(sessions.first?.minutes, 25)
+        XCTAssertEqual(sessions.first?.completed, true)
+    }
+
+    func testImportLegacySnapshotPreservesFocusSessions() throws {
+        let store = DataStore(inMemory: true)
+        store.insert(FocusSession(endedAt: now, minutes: 40, completed: true))
+        store.save()
+
+        // No focusSessions key — older backup shape.
+        store.importSnapshot(StoreSnapshotDTO(todos: [], focusSessions: nil))
+
+        let sessions = try store.allFocusSessions()
+        XCTAssertEqual(sessions.count, 1)
+        XCTAssertEqual(sessions.first?.minutes, 40)
     }
 
     func testImportSnapshotReplacesAll() throws {
@@ -166,6 +211,40 @@ final class PersistenceTests: XCTestCase {
         store.performLegacyImport(snapshot: nil, legacyFileExists: false)
         XCTAssertTrue(try store.appMeta().didImportLegacyJSON)
         XCTAssertEqual(try store.allTodos().count, 0)
+    }
+
+
+    func testLegacyJSONWithoutChecklistDecodesEmpty() throws {
+        let model = DailyTodo(title: "x", plannedForDate: now, originalPlannedDate: now)
+        let snapshot = StoreSnapshotDTO(todos: [TodoDTO(model)], meta: MetaDTO(lastProcessedDay: now))
+        let data = try JSONStore.encode(snapshot)
+        // Strip checklistItems key to simulate older backup shape.
+        var obj = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+        obj.removeValue(forKey: "checklistItems")
+        let stripped = try JSONSerialization.data(withJSONObject: obj)
+        let decoded = try JSONStore.decode(stripped)
+        XCTAssertTrue(decoded.checklistItems.isEmpty)
+    }
+
+    func testImportSnapshotRoundTripsChecklist() throws {
+        let store = DataStore(inMemory: true)
+        let todo = DailyTodo(title: "with list", notes: "body", plannedForDate: now, originalPlannedDate: now)
+        let item = TodoChecklistItem(todoId: todo.id, title: "A", isCompleted: false, sortOrder: 0)
+        store.importSnapshot(
+            StoreSnapshotDTO(
+                todos: [TodoDTO(todo)],
+                checklistItems: [ChecklistItemDTO(item)]
+            )
+        )
+        XCTAssertEqual(try store.allTodos().first?.notes, "body")
+        let items = try store.allChecklistItems()
+        XCTAssertEqual(items.count, 1)
+        XCTAssertEqual(items.first?.title, "A")
+        XCTAssertEqual(items.first?.todoId, todo.id)
+
+        // Replace clears previous checklist.
+        store.importSnapshot(StoreSnapshotDTO(todos: []))
+        XCTAssertEqual(try store.allChecklistItems().count, 0)
     }
 
     func testFocusSessionQuery() throws {

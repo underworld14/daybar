@@ -13,7 +13,7 @@ public final class DataStore {
     public init(inMemory: Bool = false) {
         let schema = Schema([
             DailyTodo.self, AppMeta.self, FocusSession.self, DayLog.self,
-            HabitTemplate.self, HabitLog.self,
+            HabitTemplate.self, HabitLog.self, TodoChecklistItem.self,
         ])
         let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: inMemory)
         do {
@@ -58,7 +58,40 @@ public final class DataStore {
     }
 
     public func delete(_ todo: DailyTodo) {
+        deleteChecklistItems(for: todo.id)
         context.delete(todo)
+    }
+
+    // MARK: - Checklist
+
+    @discardableResult
+    public func insert(_ item: TodoChecklistItem) -> TodoChecklistItem {
+        context.insert(item)
+        return item
+    }
+
+    public func delete(_ item: TodoChecklistItem) {
+        context.delete(item)
+    }
+
+    public func checklistItems(for todoId: UUID) throws -> [TodoChecklistItem] {
+        let id = todoId
+        let predicate = #Predicate<TodoChecklistItem> { $0.todoId == id }
+        return try context.fetch(FetchDescriptor(
+            predicate: predicate,
+            sortBy: [SortDescriptor(\.sortOrder), SortDescriptor(\.title)]
+        ))
+    }
+
+    public func allChecklistItems() throws -> [TodoChecklistItem] {
+        try context.fetch(FetchDescriptor<TodoChecklistItem>(
+            sortBy: [SortDescriptor(\.sortOrder), SortDescriptor(\.title)]
+        ))
+    }
+
+    public func deleteChecklistItems(for todoId: UUID) {
+        let items = (try? checklistItems(for: todoId)) ?? []
+        for item in items { context.delete(item) }
     }
 
     public func allTodos() throws -> [DailyTodo] {
@@ -144,6 +177,10 @@ public final class DataStore {
         let start = range.lowerBound, end = range.upperBound
         let predicate = #Predicate<FocusSession> { $0.endedAt >= start && $0.endedAt < end }
         return try context.fetch(FetchDescriptor(predicate: predicate, sortBy: [SortDescriptor(\.endedAt)]))
+    }
+
+    public func allFocusSessions() throws -> [FocusSession] {
+        try context.fetch(FetchDescriptor<FocusSession>(sortBy: [SortDescriptor(\.endedAt)]))
     }
 
     /// Non-dropped todos whose ORIGINAL planned date falls in the range (for analytics binning).
@@ -301,6 +338,8 @@ public final class DataStore {
         let meta = try? appMeta()
         let habits = (try? allHabitTemplates()) ?? []
         let habitLogs = (try? allHabitLogs()) ?? []
+        let sessions = (try? allFocusSessions()) ?? []
+        let checklist = (try? allChecklistItems()) ?? []
         return StoreSnapshotDTO(
             todos: todos.map(TodoDTO.init),
             meta: MetaDTO(
@@ -308,22 +347,31 @@ public final class DataStore {
                 lastHabitMaterializedDay: meta?.lastHabitMaterializedDay
             ),
             habitTemplates: habits.map(HabitTemplateDTO.init),
-            habitLogs: habitLogs.map(HabitLogDTO.init)
+            habitLogs: habitLogs.map(HabitLogDTO.init),
+            focusSessions: sessions.map(FocusSessionDTO.init),
+            checklistItems: checklist.map(ChecklistItemDTO.init)
         )
     }
 
-    /// Replace ALL todos/habits with the snapshot's contents (used by Settings "Import").
-    /// Destructive by design — the caller should confirm with the user first.
-    /// Deletes and re-inserts are committed in a **single** save so a crash mid-import
-    /// leaves the previous on-disk store intact (SwiftData only persists on `save()`).
+    /// Replace todos/habits/checklist with the snapshot. Focus sessions are replaced only when the
+    /// snapshot includes a `focusSessions` key (including an explicit empty array); older
+    /// backups omit the key and leave live focus history untouched.
     @discardableResult
     public func importSnapshot(_ snapshot: StoreSnapshotDTO) -> Bool {
+        // Delete checklist first while todos still exist; then wipe todos without cascade
+        // double-work (delete(_:) cascades checklist for live deletes).
+        for existing in (try? allChecklistItems()) ?? [] { context.delete(existing) }
         for existing in (try? allTodos()) ?? [] { context.delete(existing) }
         for existing in (try? allHabitTemplates()) ?? [] { context.delete(existing) }
         for existing in (try? allHabitLogs()) ?? [] { context.delete(existing) }
         for dto in snapshot.todos { context.insert(dto.makeModel()) }
         for dto in snapshot.habitTemplates { context.insert(dto.makeModel()) }
         for dto in snapshot.habitLogs { context.insert(dto.makeModel()) }
+        for dto in snapshot.checklistItems { context.insert(dto.makeModel()) }
+        if let sessions = snapshot.focusSessions {
+            for existing in (try? allFocusSessions()) ?? [] { context.delete(existing) }
+            for dto in sessions { context.insert(dto.makeModel()) }
+        }
         if let meta = try? appMeta() {
             meta.lastProcessedDay = snapshot.meta?.lastProcessedDay
             meta.lastHabitMaterializedDay = snapshot.meta?.lastHabitMaterializedDay

@@ -34,6 +34,8 @@
 - **Pomodoro** — customizable focus/break durations, cycles, auto-start; a **live mm:ss
   countdown right in the menu bar**; accurate across sleep/wake (wall-clock based). Optionally
   **skip a break** if you've stepped away long enough (assumes you already rested).
+- **Dayscape & focus streak** — a quiet 7-day ink strip of completed Pomodoros in the panel,
+  plus a focus streak with one gentle grace day per week (milestones at 7 / 30 / 100).
 - **Lofi Radio** — built-in **SomaFM** ambient/lofi stations in the panel footer; tap ▶ to start
   (random station) or pick from a simple list; skip stations, now-playing label, offline channel cache;
   menu-bar waveform while playing; **auto-pauses when a focus session ends**.
@@ -52,7 +54,8 @@
 - **Quick-add hotkey** — a global shortcut (default ⌥⌘D) opens the panel focused on the field.
 - **Apple Reminders sync** — optional two-way sync with selected Reminder lists (complete,
   delay, and reschedule flow back to Reminders). Habits can sync as recurring reminders on their schedule.
-- **Backup & restore** — export/import a local JSON snapshot of tasks and habits from Settings.
+- **Backup & restore** — export/import a local JSON snapshot of tasks (including notes & checklists), habits, and focus
+  sessions from Settings.
 - **Calm controls** — undo for drop/archive/stop, Away mode, quiet hours, optional weekly digest,
   and nudge intensity (Gentle / Standard).
 - **Local & private** — stored on-device with SwiftData; no account, no cloud. Radio metadata and

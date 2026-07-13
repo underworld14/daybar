@@ -12,6 +12,7 @@ struct TodayView: View {
     @State private var showStats = false
     @State private var showHistory = false
     @State private var addForTomorrow = false
+    @State private var detailTodo: DailyTodo?
 
     private let wordmarkFont = Font.system(size: 15, weight: .bold, design: .rounded)
 
@@ -20,6 +21,13 @@ struct TodayView: View {
             header
             quickAdd
             if appState.totalTodayCount > 0 { progressBar }
+            if let entry = appState.focusStreakEntry {
+                DayscapeStrip(
+                    cells: entry.weekCells,
+                    currentStreak: entry.streak.current,
+                    graceRemaining: entry.streak.graceRemaining
+                )
+            }
             if let banner = appState.ephemeralBanner {
                 HStack(spacing: 8) {
                     Text(banner.message)
@@ -53,7 +61,7 @@ struct TodayView: View {
             PomodoroStrip(appState: appState)
         }
         .padding(14)
-        .frame(width: 320)
+        .frame(width: 360)
         .onAppear {
             appState.refresh()
             DispatchQueue.main.async { addFocused = true }
@@ -79,9 +87,21 @@ struct TodayView: View {
         .sheet(isPresented: $showHistory) {
             TaskHistoryView(appState: appState)
         }
-        .onChange(of: showSettings) { _, open in appState.isPanelSheetPresented = open || showStats || showHistory }
-        .onChange(of: showStats) { _, open in appState.isPanelSheetPresented = open || showSettings || showHistory }
-        .onChange(of: showHistory) { _, open in appState.isPanelSheetPresented = open || showSettings || showStats }
+        .sheet(item: $detailTodo) { todo in
+            TodoDetailSheet(appState: appState, todo: todo)
+        }
+        .onChange(of: showSettings) { _, open in
+            appState.isPanelSheetPresented = open || showStats || showHistory || detailTodo != nil
+        }
+        .onChange(of: showStats) { _, open in
+            appState.isPanelSheetPresented = open || showSettings || showHistory || detailTodo != nil
+        }
+        .onChange(of: showHistory) { _, open in
+            appState.isPanelSheetPresented = open || showSettings || showStats || detailTodo != nil
+        }
+        .onChange(of: detailTodo) { _, todo in
+            appState.isPanelSheetPresented = todo != nil || showSettings || showStats || showHistory
+        }
         .sheet(isPresented: Binding(
             get: { appState.presentEndOfDayReview },
             set: { appState.presentEndOfDayReview = $0 }
@@ -204,7 +224,7 @@ struct TodayView: View {
                     .font(.caption).foregroundStyle(.secondary).padding(.vertical, 2)
             } else {
                 ForEach(appState.todayTodos) { todo in
-                    TodoRow(appState: appState, todo: todo)
+                    TodoRow(appState: appState, todo: todo, onOpenDetails: { detailTodo = todo })
                         .id("\(todo.id)-\(todo.statusRaw)-\(todo.completedDate?.timeIntervalSince1970 ?? 0)")
                 }
             }
@@ -230,7 +250,9 @@ struct TodayView: View {
                     Text("\(appState.overdueCount) aging").font(.caption2).foregroundStyle(.orange)
                 }
             }
-            ForEach(appState.carriedTodos) { TodoRow(appState: appState, todo: $0, showReschedule: true) }
+            ForEach(appState.carriedTodos) { todo in
+                TodoRow(appState: appState, todo: todo, showReschedule: true, onOpenDetails: { detailTodo = todo })
+            }
         }
     }
 
@@ -243,7 +265,7 @@ struct TodayView: View {
                     .font(.caption2).foregroundStyle(.secondary)
             }
             ForEach(appState.tomorrowTodos) { todo in
-                TodoRow(appState: appState, todo: todo)
+                TodoRow(appState: appState, todo: todo, onOpenDetails: { detailTodo = todo })
                     .id("tomorrow-\(todo.id)-\(todo.statusRaw)-\(todo.completedDate?.timeIntervalSince1970 ?? 0)")
             }
         }
@@ -344,6 +366,7 @@ struct TodoRow: View {
     var appState: AppState
     let todo: DailyTodo
     var showReschedule = false
+    var onOpenDetails: (() -> Void)? = nil
 
     @State private var hovering = false
     @State private var isEditing = false
@@ -393,6 +416,10 @@ struct TodoRow: View {
 
             Spacer(minLength: 4)
 
+            if !isEditing {
+                detailIndicator
+            }
+
             if !isEditing, let label = todo.ageLabel() {
                 AgePill(text: label, tier: todo.escalationTier(thresholds: appState.thresholds))
             }
@@ -407,6 +434,7 @@ struct TodoRow: View {
                     } else {
                         Button("Start") { appState.advanceTodo(todo) }
                     }
+                    Button("Details…") { onOpenDetails?() }
                     Button("Edit", action: beginEdit)
                     Menu("Priority") {
                         Button("None") { appState.setPriority(todo, .none) }
@@ -433,6 +461,34 @@ struct TodoRow: View {
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .accessibilityElement(children: .contain)
+    }
+
+    @ViewBuilder
+    private var detailIndicator: some View {
+        let items = appState.checklistItems(for: todo)
+        let hasChecklist = !items.isEmpty
+        let hasNotes = todo.hasNotes
+        if hasNotes || hasChecklist {
+            Button {
+                onOpenDetails?()
+            } label: {
+                HStack(spacing: 3) {
+                    if hasNotes {
+                        Image(systemName: "note.text")
+                    }
+                    if hasChecklist {
+                        let done = items.filter(\.isCompleted).count
+                        Text("\(done)/\(items.count)")
+                            .font(.caption2.monospacedDigit())
+                    }
+                }
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help("Open task details")
+            .accessibilityLabel("Open task details")
+        }
     }
 
     private func beginEdit() {

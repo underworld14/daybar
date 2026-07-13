@@ -84,6 +84,8 @@ public extension DailyTodo {
 
     var isInProgress: Bool { status == .inProgress }
 
+    var hasNotes: Bool { !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+
     /// Days since the task was first planned (clamped at 0), computed live from the
     /// immutable `originalPlannedDate` so no per-row daily writes are needed.
     func carryOverAgeInDays(asOf now: Date = .now, calendar: Calendar = .current) -> Int {
@@ -104,3 +106,5 @@ public extension DailyTodo {
         EscalationModel.ageLabel(forAgeInDays: carryOverAgeInDays(asOf: now, calendar: calendar))
     }
 }
+
+extension DailyTodo: Identifiable {}
