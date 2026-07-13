@@ -12,6 +12,7 @@ struct TodoDetailSheet: View {
     @State private var newItemTitle = ""
     @State private var items: [TodoChecklistItem] = []
     @FocusState private var newItemFocused: Bool
+    @FocusState private var descriptionFocused: Bool
 
     var body: some View {
         VStack(spacing: 0) {
@@ -20,15 +21,42 @@ struct TodoDetailSheet: View {
                     .font(.system(.headline, design: .rounded))
                 Spacer()
                 Button("Done") { saveAndDismiss() }
-                    .keyboardShortcut(.defaultAction)
+                    .keyboardShortcut(.return, modifiers: .command)
+                    .help("Done (⌘↩)")
             }
             .padding()
             Divider()
 
             Form {
                 TextField("Title", text: $title)
-                TextField("Description", text: $notes, axis: .vertical)
-                    .lineLimit(3...8)
+
+                Section {
+                    TextEditor(text: $notes)
+                        .font(.body)
+                        .focused($descriptionFocused)
+                        .frame(minHeight: 120, maxHeight: 180)
+                        .scrollContentBackground(.hidden)
+                        .accessibilityLabel("Description")
+
+                    if !detectedLinks.isEmpty {
+                        VStack(alignment: .leading, spacing: 6) {
+                            ForEach(detectedLinks, id: \.absoluteString) { url in
+                                Link(destination: url) {
+                                    Label(url.absoluteString, systemImage: "link")
+                                        .lineLimit(1)
+                                        .truncationMode(.middle)
+                                }
+                                .font(.caption)
+                            }
+                        }
+                        .padding(.top, 2)
+                    }
+                } header: {
+                    Text("Description")
+                } footer: {
+                    Text("Line breaks are kept. Valid URLs become clickable links below.")
+                        .font(.caption2)
+                }
 
                 Section {
                     ForEach(items, id: \.id) { item in
@@ -68,9 +96,13 @@ struct TodoDetailSheet: View {
             }
             .formStyle(.grouped)
         }
-        .frame(width: 380, height: 460)
+        .frame(width: 400, height: 520)
         .onAppear(perform: load)
         .onDisappear(perform: persistTitleAndNotes)
+    }
+
+    private var detectedLinks: [URL] {
+        NotesLinkDetector.urls(in: notes)
     }
 
     private func load() {
@@ -102,6 +134,7 @@ struct TodoDetailSheet: View {
         dismiss()
     }
 }
+
 
 private struct ChecklistRow: View {
     let item: TodoChecklistItem

@@ -1,4 +1,5 @@
 import XCTest
+import UserNotifications
 @testable import DayBarCore
 
 @MainActor
@@ -9,18 +10,18 @@ final class NotificationSchedulingTests: XCTestCase {
         return calendar
     }()
 
-    private func date(hour: Int) -> Date {
+    private func date(year: Int = 2026, month: Int = 7, day: Int = 9, hour: Int) -> Date {
         DateComponents(
             calendar: calendar,
             timeZone: calendar.timeZone,
-            year: 2026,
-            month: 7,
-            day: 9,
+            year: year,
+            month: month,
+            day: day,
             hour: hour
         ).date!
     }
 
-    func testBacklogBeforeTwoSchedulesFutureDelivery() throws {
+    func testBacklogBeforeTwoSchedulesTodayAtTwo() throws {
         let now = date(hour: 10)
 
         let fireDate = try XCTUnwrap(NotificationScheduling.backlogFireDate(
@@ -34,11 +35,12 @@ final class NotificationSchedulingTests: XCTestCase {
             calendar: calendar
         ))
 
-        XCTAssertGreaterThan(fireDate, now)
+        let expected = try XCTUnwrap(calendar.date(bySettingHour: 14, minute: 0, second: 0, of: now))
+        XCTAssertEqual(fireDate, expected)
         XCTAssertEqual(interval, 4 * 60 * 60, accuracy: 0.001)
     }
 
-    func testBacklogAfterTwoWithAgingDeliversImmediately() throws {
+    func testBacklogAfterTwoSchedulesTomorrowAtTwo() throws {
         let now = date(hour: 15)
 
         let fireDate = try XCTUnwrap(NotificationScheduling.backlogFireDate(
@@ -52,8 +54,47 @@ final class NotificationSchedulingTests: XCTestCase {
             calendar: calendar
         ))
 
-        XCTAssertLessThan(fireDate, now)
-        XCTAssertEqual(interval, 1, accuracy: 0.001)
+        let todayTwo = try XCTUnwrap(calendar.date(bySettingHour: 14, minute: 0, second: 0, of: now))
+        let tomorrowTwo = try XCTUnwrap(calendar.date(byAdding: .day, value: 1, to: todayTwo))
+        XCTAssertEqual(fireDate, tomorrowTwo)
+        XCTAssertGreaterThan(interval, 0)
+        XCTAssertEqual(interval, tomorrowTwo.timeIntervalSince(now), accuracy: 0.001)
+    }
+
+    func testBacklogZeroAgingSchedulesNothing() {
+        XCTAssertNil(NotificationScheduling.backlogFireDate(agingCount: 0, now: date(hour: 10), calendar: calendar))
+        XCTAssertNil(NotificationScheduling.backlogDeliveryInterval(agingCount: 0, now: date(hour: 15), calendar: calendar))
+    }
+
+    func testWillPresentSuppressesBannerWhenPanelOpenForReminders() {
+        let options = NotificationScheduling.willPresentOptions(
+            identifier: NotificationScheduler.ID.backlog,
+            panelVisible: true,
+            allowSound: true
+        )
+        XCTAssertEqual(options, [.list])
+    }
+
+    func testWillPresentKeepsBannerForPhaseEndWhenPanelOpen() {
+        let options = NotificationScheduling.willPresentOptions(
+            identifier: NotificationScheduler.ID.phaseEnd,
+            panelVisible: true,
+            allowSound: false
+        )
+        XCTAssertTrue(options.contains(.banner))
+        XCTAssertTrue(options.contains(.list))
+        XCTAssertFalse(options.contains(.sound))
+    }
+
+    func testWillPresentIncludesSoundWhenAllowedAndPanelClosed() {
+        let options = NotificationScheduling.willPresentOptions(
+            identifier: NotificationScheduler.ID.morning,
+            panelVisible: false,
+            allowSound: true
+        )
+        XCTAssertTrue(options.contains(.banner))
+        XCTAssertTrue(options.contains(.sound))
+        XCTAssertTrue(options.contains(.list))
     }
 
     func testHabitAnchorsSkipCompletedAndOffScheduleDays() {

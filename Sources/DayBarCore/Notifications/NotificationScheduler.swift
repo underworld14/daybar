@@ -2,15 +2,24 @@ import Foundation
 import Observation
 import UserNotifications
 
-/// Pure scheduling decisions shared by notification code and unit tests.
+/// Pure scheduling / presentation decisions shared by notification code and unit tests.
 public enum NotificationScheduling {
+    public static let remindersThread = "daybar.reminders"
+    public static let focusThread = "daybar.focus"
+
+    /// Next upcoming 14:00 when there are aging tasks; `nil` when none.
+    /// After 14:00, returns tomorrow 14:00 (no immediate catch-up on open).
     public static func backlogFireDate(
         agingCount: Int,
         now: Date = .now,
         calendar: Calendar = .current
     ) -> Date? {
         guard agingCount > 0 else { return nil }
-        return calendar.date(bySettingHour: 14, minute: 0, second: 0, of: now)
+        guard let todayAtTwo = calendar.date(bySettingHour: 14, minute: 0, second: 0, of: now) else {
+            return nil
+        }
+        if now < todayAtTwo { return todayAtTwo }
+        return calendar.date(byAdding: .day, value: 1, to: todayAtTwo)
     }
 
     public static func backlogDeliveryInterval(
@@ -18,8 +27,30 @@ public enum NotificationScheduling {
         now: Date = .now,
         calendar: Calendar = .current
     ) -> TimeInterval? {
-        guard let fireDate = backlogFireDate(agingCount: agingCount, now: now, calendar: calendar) else { return nil }
-        return max(1, fireDate.timeIntervalSince(now))
+        guard let fireDate = backlogFireDate(agingCount: agingCount, now: now, calendar: calendar) else {
+            return nil
+        }
+        let interval = fireDate.timeIntervalSince(now)
+        guard interval > 0 else { return nil }
+        return interval
+    }
+
+    /// Foreground presentation: suppress banner/sound for reminders while the panel is open;
+    /// phase-end may still banner. Sound follows quiet-hours / Focus gating via `allowSound`.
+    public static func willPresentOptions(
+        identifier: String,
+        panelVisible: Bool,
+        allowSound: Bool
+    ) -> UNNotificationPresentationOptions {
+        let isPhaseEnd = identifier == NotificationScheduler.ID.phaseEnd
+        if panelVisible && !isPhaseEnd {
+            return [.list]
+        }
+        var options: UNNotificationPresentationOptions = [.banner, .list]
+        if allowSound {
+            options.insert(.sound)
+        }
+        return options
     }
 
     public static func habitAnchorTemplates(
@@ -118,7 +149,8 @@ public final class NotificationScheduler {
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body
-        content.sound = .default
+        content.sound = Preferences.shouldPlayAudibleAlerts() ? .default : nil
+        content.threadIdentifier = NotificationScheduling.remindersThread
         let trigger = UNCalendarNotificationTrigger(dateMatching: comps, repeats: true)
         center.add(UNNotificationRequest(identifier: id, content: content, trigger: trigger))
     }
@@ -136,6 +168,7 @@ public final class NotificationScheduler {
             content.body = "Back to focus."
         }
         content.sound = nil
+        content.threadIdentifier = NotificationScheduling.focusThread
         center.add(UNNotificationRequest(identifier: ID.phaseEnd, content: content, trigger: nil))
     }
 
@@ -204,7 +237,8 @@ public final class NotificationScheduler {
         content.body = agingCount == 1
             ? "1 task has been waiting a few days — reschedule or drop it?"
             : "\(agingCount) tasks have been waiting a few days — reschedule or drop them?"
-        content.sound = .default
+        content.sound = Preferences.shouldPlayAudibleAlerts() ? .default : nil
+        content.threadIdentifier = NotificationScheduling.remindersThread
         let trigger = UNTimeIntervalNotificationTrigger(timeInterval: deliveryInterval, repeats: false)
         center.add(UNNotificationRequest(identifier: ID.backlog, content: content, trigger: trigger))
     }
@@ -222,6 +256,7 @@ public final class NotificationScheduler {
         content.title = "Your week in DayBar"
         content.body = "\(tasksCompleted) tasks · \(habitsCompleted) habits · \(focusSessions) focus · \(agingTasks) aging"
         content.sound = Preferences.shouldPlayAudibleAlerts() ? .default : nil
+        content.threadIdentifier = NotificationScheduling.remindersThread
         center.add(UNNotificationRequest(identifier: ID.weeklyDigest, content: content, trigger: nil))
     }
 }

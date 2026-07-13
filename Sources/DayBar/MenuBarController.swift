@@ -271,7 +271,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         willPresent notification: UNNotification,
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
-        completionHandler([.banner, .sound, .list])
+        let id = notification.request.identifier
+        Task { @MainActor in
+            let options = NotificationScheduling.willPresentOptions(
+                identifier: id,
+                panelVisible: self.panel.isVisible,
+                allowSound: Preferences.shouldPlayAudibleAlerts()
+            )
+            completionHandler(options)
+        }
     }
 
     nonisolated func userNotificationCenter(
@@ -282,7 +290,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let id = response.notification.request.identifier
         Task { @MainActor in
             self.showPanel()
-            if id == NotificationScheduler.ID.evening { self.appState.presentEndOfDayReview = true }
+            if id == NotificationScheduler.ID.evening {
+                self.appState.presentEndOfDayReview = true
+            }
             completionHandler()
         }
     }

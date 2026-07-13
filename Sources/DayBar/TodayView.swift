@@ -361,7 +361,7 @@ struct HabitRow: View {
 }
 
 /// A single task row: checkbox, title (double-click to rename), optional age pill, and a
-/// hover-revealed actions menu.
+/// hover-revealed actions menu (full edit via Details…).
 struct TodoRow: View {
     var appState: AppState
     let todo: DailyTodo
@@ -411,7 +411,7 @@ struct TodoRow: View {
                 }
                 .contentShape(Rectangle())
                 .onTapGesture(count: 2, perform: beginEdit)
-                .help("Double-click to edit")
+                .help("Double-click to rename")
             }
 
             Spacer(minLength: 4)
@@ -435,7 +435,6 @@ struct TodoRow: View {
                         Button("Start") { appState.advanceTodo(todo) }
                     }
                     Button("Details…") { onOpenDetails?() }
-                    Button("Edit", action: beginEdit)
                     Menu("Priority") {
                         Button("None") { appState.setPriority(todo, .none) }
                         Button("Low") { appState.setPriority(todo, .low) }
