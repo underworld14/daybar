@@ -9,6 +9,16 @@ import DayBarCore
 final class FloatingPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
+
+    /// Clicks on a nonactivating panel don't always promote it to key — without that,
+    /// SwiftUI `TextField` can report focus while AppKit never draws the insertion point.
+    override func mouseDown(with event: NSEvent) {
+        if !isKeyWindow {
+            NSApp.activate(ignoringOtherApps: true)
+            makeKey()
+        }
+        super.mouseDown(with: event)
+    }
 }
 
 /// `NSHostingView` that ignores mouse events so clicks fall through to the status button.
@@ -149,6 +159,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         panel.titleVisibility = .hidden
         panel.titlebarAppearsTransparent = true
         panel.isMovable = false
+        // This panel's primary job is quick-add typing — stay key once shown.
+        panel.becomesKeyOnlyIfNeeded = false
         panel.standardWindowButton(.closeButton)?.isHidden = true
         panel.standardWindowButton(.miniaturizeButton)?.isHidden = true
         panel.standardWindowButton(.zoomButton)?.isHidden = true
@@ -160,6 +172,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         panel.animationBehavior = .utilityWindow
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.contentView = effect
+        trackPanelHeightUpdates()
+    }
+
+    /// Resize the open panel when habit/task counts change so adding/removing rows
+    /// doesn't force a ScrollView until the next remount. Self-re-arms like `trackStatusUpdates()`.
+    private func trackPanelHeightUpdates() {
+        withObservationTracking {
+            _ = appState.totalHabitsTodayCount
+            _ = appState.totalTodayCount
+            _ = appState.tomorrowTodos.count
+            _ = appState.carriedTodos.count
+        } onChange: { [weak self] in
+            Task { @MainActor in
+                self?.updatePanelHeightIfNeeded()
+                self?.trackPanelHeightUpdates()
+            }
+        }
+    }
+
+    /// Apply `desiredPanelHeight()` only while the panel is visible (no thrash when hidden).
+    private func updatePanelHeightIfNeeded() {
+        guard panel.isVisible else { return }
+        let height = desiredPanelHeight()
+        guard abs(panel.frame.height - height) > 0.5 else { return }
+        panel.setContentSize(NSSize(width: panelWidth, height: height))
+        positionPanel()
     }
 
     /// A stretchable rounded-rect mask so the visual-effect view rounds cleanly — avoids the

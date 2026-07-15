@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import DayBarCore
 
@@ -64,10 +65,10 @@ struct TodayView: View {
         .frame(width: 360)
         .onAppear {
             appState.refresh()
-            DispatchQueue.main.async { addFocused = true }
+            DispatchQueue.main.async { claimQuickAddFocus() }
             Task { await appState.loadRadioChannels() }
         }
-        .onChange(of: appState.quickAddFocusSignal) { _, _ in addFocused = true }
+        .onChange(of: appState.quickAddFocusSignal) { _, _ in claimQuickAddFocus() }
         .onChange(of: appState.ephemeralBanner?.id) { _, _ in
             guard let banner = appState.ephemeralBanner else { return }
             let id = banner.id
@@ -151,11 +152,28 @@ struct TodayView: View {
             .labelsHidden()
 
             HStack(spacing: 8) {
-                Image(systemName: "plus.circle.fill").foregroundStyle(.tint)
-                TextField(addForTomorrow ? "Add a task for tomorrow…" : "Add a task for today…", text: $newTitle)
-                    .textFieldStyle(.plain)
-                    .focused($addFocused)
-                    .onSubmit(addCurrent)
+                Button(action: claimQuickAddFocus) {
+                    Image(systemName: "plus.circle.fill")
+                        .foregroundStyle(addFocused ? Color.accentColor : .secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Focus quick-add")
+
+                ZStack(alignment: .leading) {
+                    TextField(addForTomorrow ? "Add a task for tomorrow…" : "Add a task for today…", text: $newTitle)
+                        .textFieldStyle(.plain)
+                        .focused($addFocused)
+                        .tint(.accentColor)
+                        .onSubmit(addCurrent)
+
+                    // Borderless nonactivating panels often omit AppKit's insertion point
+                    // even when FocusState is true — draw one while the field is empty.
+                    if addFocused && newTitle.isEmpty {
+                        BlinkingInsertionCaret()
+                            .accessibilityHidden(true)
+                    }
+                }
+
                 if !trimmed.isEmpty {
                     Button(action: addCurrent) {
                         Image(systemName: "return").font(.system(size: 11, weight: .semibold))
@@ -165,6 +183,39 @@ struct TodayView: View {
                     .help("Add task")
                 }
             }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Color.primary.opacity(addFocused ? 0.08 : 0.04))
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(
+                        addFocused ? Color.accentColor : Color.primary.opacity(0.12),
+                        lineWidth: addFocused ? 1.5 : 1
+                    )
+            }
+            .animation(.easeInOut(duration: 0.12), value: addFocused)
+            .onChange(of: addFocused) { _, focused in
+                if focused { ensureQuickAddKeyWindow() }
+            }
+        }
+    }
+
+    /// Activate the app, make the floating panel key, then focus the field so typing works
+    /// and the caret/affordance are visible.
+    private func claimQuickAddFocus() {
+        ensureQuickAddKeyWindow()
+        addFocused = true
+    }
+
+    private func ensureQuickAddKeyWindow() {
+        NSApp.activate(ignoringOtherApps: true)
+        if let panel = NSApp.windows.first(where: { $0 is FloatingPanel && $0.isVisible }) {
+            panel.makeKeyAndOrderFront(nil)
+        } else {
+            NSApp.keyWindow?.makeKey()
         }
     }
 
@@ -176,7 +227,7 @@ struct TodayView: View {
             appState.addTodo(title: newTitle)
         }
         newTitle = ""
-        addFocused = true // keep the field hot for multi-add
+        claimQuickAddFocus() // keep the field hot for multi-add
     }
 
     private var progressBar: some View {
@@ -269,6 +320,24 @@ struct TodayView: View {
                     .id("tomorrow-\(todo.id)-\(todo.statusRaw)-\(todo.completedDate?.timeIntervalSince1970 ?? 0)")
             }
         }
+    }
+}
+
+/// Visible typing caret for empty focused fields. AppKit often suppresses the real
+/// insertion point inside borderless nonactivating panels.
+private struct BlinkingInsertionCaret: View {
+    @State private var visible = true
+
+    var body: some View {
+        Capsule()
+            .fill(Color.accentColor)
+            .frame(width: 1.5, height: 15)
+            .opacity(visible ? 1 : 0)
+            .onAppear {
+                withAnimation(.easeInOut(duration: 0.53).repeatForever(autoreverses: true)) {
+                    visible = false
+                }
+            }
     }
 }
 
