@@ -31,6 +31,53 @@ public enum GardenWeather: String, Codable, Sendable {
     case clear, rain
 }
 
+/// How completed-session energy drives plots. `automatic` (default) plants empty plots and harvests
+/// mature crops as focus energy arrives; `manual` grows crops but leaves harvest/plant to the player.
+public enum GardenActionMode: String, Codable, Sendable, CaseIterable {
+    case automatic, manual
+}
+
+/// Panel-level navigation for the menu popover.
+public enum PanelTab: String, Codable, Sendable, CaseIterable {
+    case today, garden
+}
+
+/// A durable, human-readable record of what a focus session (or manual action) gave the garden.
+/// `seq` is a deterministic monotonically-increasing id (newest = highest) so SwiftUI `ForEach`
+/// identity is stable without relying on nondeterministic UUIDs.
+public struct GardenRewardEntry: Codable, Sendable, Equatable, Identifiable {
+    public var seq: Int
+    public var date: Date
+    public var text: String
+    public var coinDelta: Int
+    public var kindRaw: String
+    public var cropID: String?
+
+    public var id: Int { seq }
+
+    public enum Kind: String, Codable, Sendable {
+        case coin, grew, planted, harvested
+    }
+
+    public var kind: Kind { Kind(rawValue: kindRaw) ?? .coin }
+
+    public init(
+        seq: Int,
+        date: Date,
+        text: String,
+        coinDelta: Int,
+        kind: Kind,
+        cropID: String? = nil
+    ) {
+        self.seq = seq
+        self.date = date
+        self.text = text
+        self.coinDelta = coinDelta
+        self.kindRaw = kind.rawValue
+        self.cropID = cropID
+    }
+}
+
 public struct GardenPlotSlot: Codable, Sendable, Equatable, Identifiable {
     public var index: Int
     public var cropID: String?
@@ -90,6 +137,8 @@ public struct GardenSnapshot: Sendable, Equatable {
     public var justHarvestedCropID: String?
     public var hasFence: Bool
     public var hasScarf: Bool
+    /// Newest-first durable reward feed for the Garden HUD ribbon.
+    public var recentRewards: [GardenRewardEntry]
 
     public init(
         slots: [GardenPlotSlot],
@@ -103,7 +152,8 @@ public struct GardenSnapshot: Sendable, Equatable {
         harvestThisWeek: Int = 0,
         justHarvestedCropID: String? = nil,
         hasFence: Bool = false,
-        hasScarf: Bool = false
+        hasScarf: Bool = false,
+        recentRewards: [GardenRewardEntry] = []
     ) {
         self.slots = slots
         self.companionMood = companionMood
@@ -117,5 +167,6 @@ public struct GardenSnapshot: Sendable, Equatable {
         self.justHarvestedCropID = justHarvestedCropID
         self.hasFence = hasFence
         self.hasScarf = hasScarf
+        self.recentRewards = recentRewards
     }
 }

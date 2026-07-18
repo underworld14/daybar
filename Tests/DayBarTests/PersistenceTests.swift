@@ -150,6 +150,48 @@ final class PersistenceTests: XCTestCase {
         XCTAssertEqual(try store.gardenMeta().coins, 11)
     }
 
+    func testGardenMetaRewardFeedRoundTrip() throws {
+        let store = DataStore(inMemory: true)
+        let garden = try store.gardenMeta()
+        garden.recentRewards = [
+            GardenRewardEntry(seq: 1, date: now, text: "Focus complete · +1 coin · Parsnip grew",
+                              coinDelta: 1, kind: .grew, cropID: "parsnip"),
+        ]
+        store.save()
+
+        let snapshot = store.exportSnapshot()
+        XCTAssertNotNil(snapshot.gardenMeta?.rewardFeedJSON)
+
+        let store2 = DataStore(inMemory: true)
+        _ = try store2.gardenMeta()
+        store2.importSnapshot(snapshot)
+        let imported = try store2.gardenMeta()
+        XCTAssertEqual(imported.recentRewards.first?.text, "Focus complete · +1 coin · Parsnip grew")
+        XCTAssertEqual(imported.recentRewards.first?.kind, .grew)
+    }
+
+    /// Regression for the DTO decode trap: a backup written before `rewardFeedJSON` existed must still
+    /// decode the WHOLE snapshot (a nested required key would throw out of `decodeIfPresent`).
+    func testGardenMetaBackupWithoutRewardFeedDecodes() throws {
+        let store = DataStore(inMemory: true)
+        let garden = try store.gardenMeta()
+        garden.coins = 9
+        store.save()
+        let snapshot = store.exportSnapshot()
+        let data = try JSONStore.encode(snapshot)
+
+        var obj = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+        var gardenObj = obj["gardenMeta"] as! [String: Any]
+        gardenObj.removeValue(forKey: "rewardFeedJSON")  // simulate pre-feed backup shape
+        obj["gardenMeta"] = gardenObj
+        let stripped = try JSONSerialization.data(withJSONObject: obj)
+
+        let decoded = try JSONStore.decode(stripped)
+        XCTAssertNotNil(decoded.gardenMeta)
+        XCTAssertNil(decoded.gardenMeta?.rewardFeedJSON)
+        XCTAssertEqual(decoded.gardenMeta?.coins, 9)
+    }
+
     func testImportSnapshotReplacesAll() throws {
         let store = DataStore(inMemory: true)
         store.insert(DailyTodo(title: "old", plannedForDate: now, originalPlannedDate: now))

@@ -15,6 +15,8 @@ public final class GardenMeta {
     public var harvestLogJSON: String = "[]"
     /// Last crop planted (drives Phase 2 rotation).
     public var lastPlantedCropID: String?
+    /// Newest-first durable reward feed for the Garden HUD ribbon.
+    public var rewardFeedJSON: String = "[]"
 
     public init(
         lastSettledDay: Date? = nil,
@@ -25,7 +27,8 @@ public final class GardenMeta {
         currentSeasonRaw: String = GardenSeason.spring.rawValue,
         plotSlotsJSON: String = GardenMeta.defaultSlotsJSON,
         harvestLogJSON: String = "[]",
-        lastPlantedCropID: String? = nil
+        lastPlantedCropID: String? = nil,
+        rewardFeedJSON: String = "[]"
     ) {
         self.lastSettledDay = lastSettledDay
         self.coins = coins
@@ -36,6 +39,7 @@ public final class GardenMeta {
         self.plotSlotsJSON = plotSlotsJSON
         self.harvestLogJSON = harvestLogJSON
         self.lastPlantedCropID = lastPlantedCropID
+        self.rewardFeedJSON = rewardFeedJSON
     }
 
     public static var defaultSlotsJSON: String {
@@ -55,6 +59,11 @@ public final class GardenMeta {
     public var harvestLog: [GardenHarvestEntry] {
         get { Self.decodeHarvestLog(harvestLogJSON) }
         set { harvestLogJSON = Self.encodeHarvestLog(newValue) ?? "[]" }
+    }
+
+    public var recentRewards: [GardenRewardEntry] {
+        get { Self.decodeRewardFeed(rewardFeedJSON) }
+        set { rewardFeedJSON = Self.encodeRewardFeed(newValue) ?? "[]" }
     }
 
     public var season: GardenSeason {
@@ -100,5 +109,18 @@ public final class GardenMeta {
             return []
         }
         return log
+    }
+
+    public static func encodeRewardFeed(_ feed: [GardenRewardEntry]) -> String? {
+        guard let data = try? JSONEncoder().encode(feed) else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    public static func decodeRewardFeed(_ json: String) -> [GardenRewardEntry] {
+        guard let data = json.data(using: .utf8),
+              let feed = try? JSONDecoder().decode([GardenRewardEntry].self, from: data) else {
+            return []
+        }
+        return feed
     }
 }

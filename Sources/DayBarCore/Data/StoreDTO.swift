@@ -143,6 +143,9 @@ public struct GardenMetaDTO: Codable, Sendable, Equatable {
     public var plotSlotsJSON: String
     public var harvestLogJSON: String
     public var lastPlantedCropID: String?
+    /// Optional so backups written before the reward feed existed still decode (missing key ⇒ nil ⇒
+    /// live garden keeps its `"[]"`). Keeps synthesized Codable — see `HabitTemplateDTO`'s added fields.
+    public var rewardFeedJSON: String?
 
     public init(
         lastSettledDay: Date? = nil,
@@ -153,7 +156,8 @@ public struct GardenMetaDTO: Codable, Sendable, Equatable {
         currentSeasonRaw: String = GardenSeason.spring.rawValue,
         plotSlotsJSON: String = GardenMeta.defaultSlotsJSON,
         harvestLogJSON: String = "[]",
-        lastPlantedCropID: String? = nil
+        lastPlantedCropID: String? = nil,
+        rewardFeedJSON: String? = nil
     ) {
         self.lastSettledDay = lastSettledDay
         self.coins = coins
@@ -164,6 +168,7 @@ public struct GardenMetaDTO: Codable, Sendable, Equatable {
         self.plotSlotsJSON = plotSlotsJSON
         self.harvestLogJSON = harvestLogJSON
         self.lastPlantedCropID = lastPlantedCropID
+        self.rewardFeedJSON = rewardFeedJSON
     }
 
     public init(_ m: GardenMeta) {
@@ -176,7 +181,8 @@ public struct GardenMetaDTO: Codable, Sendable, Equatable {
             currentSeasonRaw: m.currentSeasonRaw,
             plotSlotsJSON: m.plotSlotsJSON,
             harvestLogJSON: m.harvestLogJSON,
-            lastPlantedCropID: m.lastPlantedCropID
+            lastPlantedCropID: m.lastPlantedCropID,
+            rewardFeedJSON: m.rewardFeedJSON
         )
     }
 
@@ -190,6 +196,7 @@ public struct GardenMetaDTO: Codable, Sendable, Equatable {
         m.plotSlotsJSON = plotSlotsJSON
         m.harvestLogJSON = harvestLogJSON
         m.lastPlantedCropID = lastPlantedCropID
+        m.rewardFeedJSON = rewardFeedJSON ?? "[]"
     }
 }
 

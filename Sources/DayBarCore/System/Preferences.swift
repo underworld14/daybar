@@ -13,6 +13,7 @@ public enum PreferenceKeys {
     public static let soundEnabled = "sound.enabled"
     public static let tickingSoundEnabled = "sound.tickingEnabled"
     public static let gardenSoundEnabled = "sound.gardenEnabled"
+    public static let gardenActionMode = "garden.actionMode" // automatic (default) | manual
 
     public static let morningEnabled = "notify.morningEnabled"
     public static let morningHour = "notify.morningHour"
@@ -71,6 +72,11 @@ public enum Preferences {
     /// Soft growth/harvest chimes in the focus garden — on by default when global sound is on.
     public static var gardenSoundEnabled: Bool {
         defaults.object(forKey: PreferenceKeys.gardenSoundEnabled) as? Bool ?? true
+    }
+    /// Whether the garden harvests/plants automatically as focus energy arrives, or leaves those
+    /// actions to the player. Unset ⇒ `.automatic` (preserves the shipped behavior).
+    public static var gardenActionMode: GardenActionMode {
+        GardenActionMode(rawValue: defaults.string(forKey: PreferenceKeys.gardenActionMode) ?? "") ?? .automatic
     }
 
     /// The current Pomodoro configuration assembled from the saved minute values.

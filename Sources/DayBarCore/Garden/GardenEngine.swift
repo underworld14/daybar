@@ -5,13 +5,23 @@ public enum GardenEngine {
     public static let coinPerSession = 1
     public static let harvestBonusCoins = 2
     public static let maxHarvestLogEntries = 30
+    public static let maxRewardFeedEntries = 8
+
+    /// What a single unit of focus energy did to the garden this settle.
+    enum EnergyOutcome {
+        case harvested(String)
+        case grew(String)
+        case planted(String)
+        case none
+    }
 
     @discardableResult
     public static func settle(
         meta: GardenMeta,
         sessions: [FocusSession],
         asOf now: Date = .now,
-        calendar: Calendar = .current
+        calendar: Calendar = .current,
+        mode: GardenActionMode = .automatic
     ) -> GardenSnapshot {
         let today = calendar.startOfDay(for: now)
         var slots = meta.slots
@@ -33,24 +43,45 @@ public enum GardenEngine {
         let completedCount = sessions.filter(\.completed).count
         let newEnergy = max(0, completedCount - meta.lifetimeCompletedSessions)
         if newEnergy > 0 {
-            var energy = newEnergy
-            while energy > 0 {
-                let harvested = applyOneEnergy(
-                    slots: &slots,
-                    meta: meta,
-                    unlocks: unlocks,
-                    today: today,
-                    calendar: calendar
-                )
-                if let crop = harvested {
+            var harvestedCount = 0
+            var lastHarvested: String?
+            var lastPlanted: String?
+            var lastGrew: String?
+            for _ in 0..<newEnergy {
+                switch applyOneEnergy(slots: &slots, meta: meta, unlocks: unlocks, today: today, mode: mode) {
+                case .harvested(let crop):
+                    harvestedCount += 1
+                    lastHarvested = crop
                     justHarvested = crop
                     recordHarvest(meta: meta, cropID: crop, day: today)
                     meta.coins += harvestBonusCoins
+                case .planted(let crop):
+                    lastPlanted = crop
+                case .grew(let crop):
+                    lastGrew = crop
+                case .none:
+                    break
                 }
-                energy -= 1
             }
             meta.coins += newEnergy * coinPerSession
             meta.lifetimeCompletedSessions = completedCount
+
+            // One durable reward entry summarizing the batch (verb precedence: harvested > planted > grew).
+            let coinDelta = newEnergy * coinPerSession + harvestedCount * harvestBonusCoins
+            let verb: (GardenRewardEntry.Kind, String)?
+            if let c = lastHarvested { verb = (.harvested, c) }
+            else if let c = lastPlanted { verb = (.planted, c) }
+            else if let c = lastGrew { verb = (.grew, c) }
+            else { verb = nil }
+            let text = sessionRewardText(coinDelta: coinDelta, verb: verb)
+            prependReward(
+                meta: meta,
+                date: now,
+                text: text,
+                coinDelta: coinDelta,
+                kind: verb?.0 ?? .coin,
+                cropID: verb?.1
+            )
         }
 
         let season = GardenSeason.from(month: calendar.component(.month, from: now))
@@ -59,6 +90,131 @@ public enum GardenEngine {
         meta.unlockedItemIDs = unlocks
         meta.lastSettledDay = today
 
+        return makeSnapshot(
+            meta: meta,
+            slots: slots,
+            unlocks: unlocks,
+            season: season,
+            sessions: sessions,
+            justHarvested: justHarvested,
+            today: today,
+            now: now,
+            calendar: calendar
+        )
+    }
+
+    // MARK: - Manual actions (pure)
+
+    /// Manually harvest a mature plot: clears it, awards the harvest bonus, logs it, and returns a reward entry.
+    /// Returns `nil` (no-op, no mutation) if the index is out of range or the slot isn't mature.
+    /// Never touches `lifetimeCompletedSessions`/`lastSettledDay` — `settle` owns those.
+    @discardableResult
+    public static func harvest(
+        meta: GardenMeta,
+        slotIndex idx: Int,
+        asOf now: Date = .now,
+        calendar: Calendar = .current
+    ) -> GardenRewardEntry? {
+        var slots = meta.slots
+        guard slots.indices.contains(idx), slots[idx].isMature else { return nil }
+        let today = calendar.startOfDay(for: now)
+        let crop = slots[idx].cropID ?? GardenCatalog.defaultCropID
+        slots[idx] = GardenPlotSlot(index: slots[idx].index)
+        meta.slots = slots
+        meta.coins += harvestBonusCoins
+        recordHarvest(meta: meta, cropID: crop, day: today)
+        let text = "Harvested \(GardenCatalog.displayName(for: crop)) · +\(harvestBonusCoins) coins"
+        return prependReward(meta: meta, date: now, text: text, coinDelta: harvestBonusCoins, kind: .harvested, cropID: crop)
+    }
+
+    /// Manually plant an empty plot with the next rotation crop. No coin cost. Returns a reward entry,
+    /// or `nil` (no-op) if the index is out of range or the slot isn't empty.
+    @discardableResult
+    public static func plant(
+        meta: GardenMeta,
+        slotIndex idx: Int,
+        asOf now: Date = .now,
+        calendar: Calendar = .current
+    ) -> GardenRewardEntry? {
+        var slots = meta.slots
+        guard slots.indices.contains(idx), slots[idx].isEmpty else { return nil }
+        let today = calendar.startOfDay(for: now)
+        let crop = GardenCatalog.nextCropID(after: meta.lastPlantedCropID, unlocked: meta.unlockedItemIDs)
+        slots[idx].cropID = crop
+        slots[idx].stage = 1
+        slots[idx].plantedOn = today
+        slots[idx].lastGrownOn = today
+        slots[idx].wiltLevel = 0
+        meta.slots = slots
+        meta.lastPlantedCropID = crop
+        let text = "Planted \(GardenCatalog.displayName(for: crop))"
+        return prependReward(meta: meta, date: now, text: text, coinDelta: 0, kind: .planted, cropID: crop)
+    }
+
+    // MARK: - Growth
+
+    /// Applies one unit of focus energy and reports what it did.
+    /// In `.manual` mode the harvest and plant steps are skipped (crops still grow; wilt still recovers),
+    /// leaving mature crops ready and empty plots open for the player.
+    private static func applyOneEnergy(
+        slots: inout [GardenPlotSlot],
+        meta: GardenMeta,
+        unlocks: [String],
+        today: Date,
+        mode: GardenActionMode
+    ) -> EnergyOutcome {
+        // Recover wilt on all planted slots.
+        for i in slots.indices where !slots[i].isEmpty {
+            slots[i].wiltLevel = max(0, slots[i].wiltLevel - 1)
+        }
+
+        // Harvest mature first (leftmost) — automatic mode only.
+        if mode == .automatic, let idx = slots.firstIndex(where: { $0.isMature }) {
+            let crop = slots[idx].cropID ?? GardenCatalog.defaultCropID
+            slots[idx] = GardenPlotSlot(index: slots[idx].index)
+            return .harvested(crop)
+        }
+
+        // Grow leftmost non-mature planted slot.
+        if let idx = slots.firstIndex(where: { !$0.isEmpty && !$0.isMature }) {
+            let bonus = seasonalBonusSteps(slot: slots[idx], season: meta.season)
+            slots[idx].stage = min(GardenCatalog.maxStage, slots[idx].stage + 1 + bonus)
+            slots[idx].lastGrownOn = today
+            return .grew(slots[idx].cropID ?? GardenCatalog.defaultCropID)
+        }
+
+        // Plant in first empty slot — automatic mode only.
+        if mode == .automatic, let idx = slots.firstIndex(where: \.isEmpty) {
+            let crop = GardenCatalog.nextCropID(after: meta.lastPlantedCropID, unlocked: unlocks)
+            slots[idx].cropID = crop
+            slots[idx].stage = 1
+            slots[idx].plantedOn = today
+            slots[idx].lastGrownOn = today
+            slots[idx].wiltLevel = 0
+            meta.lastPlantedCropID = crop
+            return .planted(crop)
+        }
+        return .none
+    }
+
+    private static func seasonalBonusSteps(slot: GardenPlotSlot, season: GardenSeason) -> Int {
+        guard let crop = slot.cropID, season.favoredCropIDs.contains(crop) else { return 0 }
+        return 1
+    }
+
+    // MARK: - Snapshot
+
+    private static func makeSnapshot(
+        meta: GardenMeta,
+        slots: [GardenPlotSlot],
+        unlocks: [String],
+        season: GardenSeason,
+        sessions: [FocusSession],
+        justHarvested: String?,
+        today: Date,
+        now: Date,
+        calendar: Calendar
+    ) -> GardenSnapshot {
         let streak = FocusAnalytics.streakInfo(sessions: sessions, asOf: now, calendar: calendar)
         let todayCompleted = sessions.filter {
             $0.completed && calendar.isDate($0.endedAt, inSameDayAs: today)
@@ -82,56 +238,45 @@ public enum GardenEngine {
             harvestThisWeek: harvestThisWeek,
             justHarvestedCropID: justHarvested,
             hasFence: unlocks.contains(GardenCatalog.itemFence),
-            hasScarf: unlocks.contains(GardenCatalog.itemScarf)
+            hasScarf: unlocks.contains(GardenCatalog.itemScarf),
+            recentRewards: meta.recentRewards
         )
     }
 
-    // MARK: - Growth
+    // MARK: - Reward feed
 
-    /// Returns harvested crop ID if this energy harvested a mature plant.
-    private static func applyOneEnergy(
-        slots: inout [GardenPlotSlot],
-        meta: GardenMeta,
-        unlocks: [String],
-        today: Date,
-        calendar: Calendar
-    ) -> String? {
-        // Recover wilt on all planted slots.
-        for i in slots.indices where !slots[i].isEmpty {
-            slots[i].wiltLevel = max(0, slots[i].wiltLevel - 1)
+    private static func sessionRewardText(coinDelta: Int, verb: (GardenRewardEntry.Kind, String)?) -> String {
+        var text = "Focus complete · +\(coinDelta) \(coinDelta == 1 ? "coin" : "coins")"
+        if let (kind, cropID) = verb {
+            let name = GardenCatalog.displayName(for: cropID)
+            switch kind {
+            case .harvested: text += " · \(name) harvested"
+            case .planted: text += " · \(name) planted"
+            case .grew: text += " · \(name) grew"
+            case .coin: break
+            }
         }
-
-        // Harvest mature first (leftmost).
-        if let idx = slots.firstIndex(where: { $0.isMature }) {
-            let crop = slots[idx].cropID ?? GardenCatalog.defaultCropID
-            slots[idx] = GardenPlotSlot(index: slots[idx].index)
-            return crop
-        }
-
-        // Grow leftmost non-mature planted slot.
-        if let idx = slots.firstIndex(where: { !$0.isEmpty && !$0.isMature }) {
-            let bonus = seasonalBonusSteps(slot: slots[idx], season: meta.season)
-            slots[idx].stage = min(GardenCatalog.maxStage, slots[idx].stage + 1 + bonus)
-            slots[idx].lastGrownOn = today
-            return nil
-        }
-
-        // Plant in first empty slot.
-        if let idx = slots.firstIndex(where: \.isEmpty) {
-            let crop = GardenCatalog.nextCropID(after: meta.lastPlantedCropID, unlocked: unlocks)
-            slots[idx].cropID = crop
-            slots[idx].stage = 1
-            slots[idx].plantedOn = today
-            slots[idx].lastGrownOn = today
-            slots[idx].wiltLevel = 0
-            meta.lastPlantedCropID = crop
-        }
-        return nil
+        return text
     }
 
-    private static func seasonalBonusSteps(slot: GardenPlotSlot, season: GardenSeason) -> Int {
-        guard let crop = slot.cropID, season.favoredCropIDs.contains(crop) else { return 0 }
-        return 1
+    @discardableResult
+    private static func prependReward(
+        meta: GardenMeta,
+        date: Date,
+        text: String,
+        coinDelta: Int,
+        kind: GardenRewardEntry.Kind,
+        cropID: String?
+    ) -> GardenRewardEntry {
+        var feed = meta.recentRewards
+        let seq = (feed.first?.seq ?? 0) + 1
+        let entry = GardenRewardEntry(seq: seq, date: date, text: text, coinDelta: coinDelta, kind: kind, cropID: cropID)
+        feed.insert(entry, at: 0)
+        if feed.count > maxRewardFeedEntries {
+            feed = Array(feed.prefix(maxRewardFeedEntries))
+        }
+        meta.recentRewards = feed
+        return entry
     }
 
     // MARK: - Wilt

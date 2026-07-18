@@ -18,6 +18,14 @@ dist/
 # Editor
 *.swp
 
+# Secrets / local env — NEVER commit
+.env
+.env.*
+
+# Python (asset generation pipeline)
+.venv/
+__pycache__/
+
 # Beads / Dolt files (added by bd init)
 .dolt/
 *.db

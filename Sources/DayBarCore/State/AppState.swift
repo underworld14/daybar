@@ -53,6 +53,8 @@ public final class AppState {
     public private(set) var focusStreakEntry: FocusStreakEntry?
     /// Focus garden snapshot for the Today panel / Analytics.
     public private(set) var gardenSnapshot: GardenSnapshot?
+    /// Which panel-level tab the menu popover shows. Observed by the AppKit height tracker.
+    public var selectedPanelTab: PanelTab = .today
     /// Ephemeral banner (milestones, quiet acknowledgments, undo).
     public var ephemeralBanner: EphemeralBanner?
     /// Backward-compatible alias used by older call sites / tests.
@@ -658,7 +660,8 @@ public final class AppState {
             meta: meta,
             sessions: sessions,
             asOf: now,
-            calendar: calendar
+            calendar: calendar,
+            mode: Preferences.gardenActionMode
         )
         gardenSnapshot = snapshot
         commitSave()
@@ -684,6 +687,34 @@ public final class AppState {
             rebuildFocusCache()
         }
         return result.success
+    }
+
+    /// Manually harvest a mature plot (Manual garden mode). Returns whether it acted.
+    /// The re-settle after this has `newEnergy == 0`, so the chime won't fire from `settleGarden` —
+    /// this intent plays it directly.
+    @discardableResult
+    public func harvestGardenSlot(_ index: Int, now: Date = .now) -> Bool {
+        guard let meta = try? store.gardenMeta() else { return false }
+        guard GardenEngine.harvest(meta: meta, slotIndex: index, asOf: now, calendar: calendar) != nil else {
+            return false
+        }
+        commitSave()
+        rebuildFocusCache(now: now)
+        playGardenFeedbackIfEnabled(now: now)
+        return true
+    }
+
+    /// Manually plant an empty plot (Manual garden mode). Returns whether it acted.
+    @discardableResult
+    public func plantGardenSlot(_ index: Int, now: Date = .now) -> Bool {
+        guard let meta = try? store.gardenMeta() else { return false }
+        guard GardenEngine.plant(meta: meta, slotIndex: index, asOf: now, calendar: calendar) != nil else {
+            return false
+        }
+        commitSave()
+        rebuildFocusCache(now: now)
+        playGardenFeedbackIfEnabled(now: now)
+        return true
     }
 
     private func rebuildHabitCaches(rawHabits: [TodayHabit], now: Date) {

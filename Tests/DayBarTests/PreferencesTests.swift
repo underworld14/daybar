@@ -9,7 +9,7 @@ final class PreferencesTests: XCTestCase {
         PreferenceKeys.tickingSoundEnabled, PreferenceKeys.moodAIEnabled,
         PreferenceKeys.escalationIntensity, PreferenceKeys.quietHoursEnabled,
         PreferenceKeys.weeklyDigestEnabled, PreferenceKeys.selectedReminderCalendarIDs,
-        PreferenceKeys.selectedHabitReminderCalendarIDs,
+        PreferenceKeys.selectedHabitReminderCalendarIDs, PreferenceKeys.gardenActionMode,
     ]
 
     override func setUp() { keys.forEach { UserDefaults.standard.removeObject(forKey: $0) } }
@@ -47,6 +47,7 @@ final class PreferencesTests: XCTestCase {
         XCTAssertFalse(Preferences.quietHoursEnabled)
         XCTAssertFalse(Preferences.weeklyDigestEnabled)
         XCTAssertEqual(Preferences.effectiveHabitReminderCalendarIDs, [])
+        XCTAssertEqual(Preferences.gardenActionMode, .automatic)
     }
 
     func testAdditionalPreferencesReadStoredValues() {
@@ -55,6 +56,7 @@ final class PreferencesTests: XCTestCase {
         Preferences.escalationIntensity = 1
         Preferences.quietHoursEnabled = true
         Preferences.weeklyDigestEnabled = true
+        UserDefaults.standard.set("manual", forKey: PreferenceKeys.gardenActionMode)
 
         XCTAssertTrue(Preferences.tickingSoundEnabled)
         XCTAssertFalse(Preferences.moodAIEnabled)
@@ -62,6 +64,7 @@ final class PreferencesTests: XCTestCase {
         XCTAssertEqual(Preferences.escalationThresholds, .standard)
         XCTAssertTrue(Preferences.quietHoursEnabled)
         XCTAssertTrue(Preferences.weeklyDigestEnabled)
+        XCTAssertEqual(Preferences.gardenActionMode, .manual)
     }
 
     func testEffectiveHabitReminderCalendarIDsFallbackAndOverride() {
