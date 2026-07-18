@@ -45,6 +45,7 @@ targets:
         embed: true
       - package: KeyboardShortcuts
       - package: Sparkle
+      - sdk: SpriteKit.framework
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.yusrilizza.DayBar
