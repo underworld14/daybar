@@ -25,6 +25,8 @@ dist/
 # Python (asset generation pipeline)
 .venv/
 __pycache__/
+# Raw 1024px AI generations (cache only; processed 16px masters are committed)
+ThirdParty/garden-pixel-src/_ai_raw/
 
 # Beads / Dolt files (added by bd init)
 .dolt/

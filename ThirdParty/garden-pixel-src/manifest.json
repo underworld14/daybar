@@ -1,0 +1,180 @@
+{
+  "sprites": {
+    "companion_happy_down": {
+      "file": "companion_happy_down.png",
+      "h": 16,
+      "w": 16
+    },
+    "companion_idle_down": {
+      "file": "companion_idle_down.png",
+      "h": 16,
+      "w": 16
+    },
+    "companion_wilted_down": {
+      "file": "companion_wilted_down.png",
+      "h": 16,
+      "w": 16
+    },
+    "crop_berry_top_1": {
+      "file": "crop_berry_top_1.png",
+      "h": 16,
+      "w": 16
+    },
+    "crop_berry_top_2": {
+      "file": "crop_berry_top_2.png",
+      "h": 16,
+      "w": 16
+    },
+    "crop_berry_top_3": {
+      "file": "crop_berry_top_3.png",
+      "h": 16,
+      "w": 16
+    },
+    "crop_berry_top_4": {
+      "file": "crop_berry_top_4.png",
+      "h": 16,
+      "w": 16
+    },
+    "crop_cauliflower_top_1": {
+      "file": "crop_cauliflower_top_1.png",
+      "h": 16,
+      "w": 16
+    },
+    "crop_cauliflower_top_2": {
+      "file": "crop_cauliflower_top_2.png",
+      "h": 16,
+      "w": 16
+    },
+    "crop_cauliflower_top_3": {
+      "file": "crop_cauliflower_top_3.png",
+      "h": 16,
+      "w": 16
+    },
+    "crop_cauliflower_top_4": {
+      "file": "crop_cauliflower_top_4.png",
+      "h": 16,
+      "w": 16
+    },
+    "crop_parsnip_top_1": {
+      "file": "crop_parsnip_top_1.png",
+      "h": 16,
+      "w": 16
+    },
+    "crop_parsnip_top_2": {
+      "file": "crop_parsnip_top_2.png",
+      "h": 16,
+      "w": 16
+    },
+    "crop_parsnip_top_3": {
+      "file": "crop_parsnip_top_3.png",
+      "h": 16,
+      "w": 16
+    },
+    "crop_parsnip_top_4": {
+      "file": "crop_parsnip_top_4.png",
+      "h": 16,
+      "w": 16
+    },
+    "fence_e": {
+      "file": "fence_e.png",
+      "h": 16,
+      "w": 16
+    },
+    "fence_n": {
+      "file": "fence_n.png",
+      "h": 16,
+      "w": 16
+    },
+    "fence_ne": {
+      "file": "fence_ne.png",
+      "h": 16,
+      "w": 16
+    },
+    "fence_nw": {
+      "file": "fence_nw.png",
+      "h": 16,
+      "w": 16
+    },
+    "fence_s": {
+      "file": "fence_s.png",
+      "h": 16,
+      "w": 16
+    },
+    "fence_se": {
+      "file": "fence_se.png",
+      "h": 16,
+      "w": 16
+    },
+    "fence_sw": {
+      "file": "fence_sw.png",
+      "h": 16,
+      "w": 16
+    },
+    "fence_w": {
+      "file": "fence_w.png",
+      "h": 16,
+      "w": 16
+    },
+    "fx_highlight": {
+      "file": "fx_highlight.png",
+      "h": 16,
+      "w": 16
+    },
+    "fx_rain_16": {
+      "file": "fx_rain_16.png",
+      "h": 16,
+      "w": 16
+    },
+    "fx_sparkle": {
+      "file": "fx_sparkle.png",
+      "h": 16,
+      "w": 16
+    },
+    "plot_soil_autumn": {
+      "file": "plot_soil_autumn.png",
+      "h": 16,
+      "w": 16
+    },
+    "plot_soil_spring": {
+      "file": "plot_soil_spring.png",
+      "h": 16,
+      "w": 16
+    },
+    "plot_soil_summer": {
+      "file": "plot_soil_summer.png",
+      "h": 16,
+      "w": 16
+    },
+    "plot_soil_winter": {
+      "file": "plot_soil_winter.png",
+      "h": 16,
+      "w": 16
+    },
+    "prop_home": {
+      "file": "prop_home.png",
+      "h": 32,
+      "w": 32
+    },
+    "prop_sign": {
+      "file": "prop_sign.png",
+      "h": 16,
+      "w": 16
+    },
+    "tile_grass_a": {
+      "file": "tile_grass_a.png",
+      "h": 16,
+      "w": 16
+    },
+    "tile_grass_b": {
+      "file": "tile_grass_b.png",
+      "h": 16,
+      "w": 16
+    },
+    "tile_path": {
+      "file": "tile_path.png",
+      "h": 16,
+      "w": 16
+    }
+  },
+  "tile": 16
+}
