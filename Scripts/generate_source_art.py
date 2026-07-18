@@ -23,6 +23,9 @@ import base64
 import io
 import json
 import math
+import os
+import time
+import urllib.request
 from pathlib import Path
 
 from PIL import Image, ImageDraw
@@ -406,24 +409,66 @@ def _pixelize(im, size, colors):
     rgb.putalpha(a)
     return rgb
 
+def _openrouter_image(key, prompt, attempts=4):
+    """Generate a transparent PNG via OpenRouter's dedicated image endpoint, routed to gpt-image-1.
+    Response shape mirrors OpenAI: {"data": [{"b64_json", "media_type"}], ...}. Retries transient
+    network resets with backoff so one blip doesn't sink the whole run."""
+    body = {
+        "model": "openai/gpt-image-1", "prompt": prompt, "size": "1024x1024",
+        "background": "transparent", "quality": "high", "output_format": "png", "stream": False,
+    }
+    last = None
+    for i in range(attempts):
+        try:
+            req = urllib.request.Request(
+                "https://openrouter.ai/api/v1/images",
+                data=json.dumps(body).encode(),
+                headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json",
+                         "HTTP-Referer": "https://github.com/underworld14/daybar", "X-Title": "DayBar"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=300) as r:
+                obj = json.loads(r.read())
+            if "data" not in obj:  # surface API-level errors (billing, bad model) without retrying
+                raise RuntimeError(f"openrouter error: {json.dumps(obj)[:200]}")
+            return base64.b64decode(obj["data"][0]["b64_json"])
+        except RuntimeError:
+            raise
+        except Exception as e:
+            last = e
+            wait = 4 * (i + 1)
+            print(f"    openrouter attempt {i + 1}/{attempts} failed ({type(e).__name__}); retry in {wait}s")
+            time.sleep(wait)
+    raise last
+
+
+def _generate_raw(prompt):
+    """Raw PNG bytes for an AI sprite. Prefers OpenRouter (gpt-image-1) when OPENROUTER_API_KEY is set
+    — direct OpenAI billing hit its hard limit — else falls back to the direct OpenAI Images API."""
+    from dotenv import load_dotenv
+    load_dotenv(ROOT / ".env")
+    or_key = os.environ.get("OPENROUTER_API_KEY")
+    if or_key:
+        return _openrouter_image(or_key, prompt)
+    from openai import OpenAI
+    client = OpenAI()
+    try:
+        r = client.images.generate(model="gpt-image-1.5", prompt=prompt, size="1024x1024",
+                                    background="transparent", output_format="png", quality="high", n=1)
+    except Exception as e:
+        print(f"  gpt-image-1.5 failed ({e}); falling back to gpt-image-1")
+        r = client.images.generate(model="gpt-image-1", prompt=prompt, size="1024x1024",
+                                    background="transparent", output_format="png", quality="high", n=1)
+    return base64.b64decode(r.data[0].b64_json)
+
+
 def ai_sprite(name, prompt, size):
     AI_CACHE.mkdir(parents=True, exist_ok=True)
     cache = AI_CACHE / f"{name}.png"
     if cache.exists():
         raw = cache.read_bytes()
     else:
-        from openai import OpenAI
-        from dotenv import load_dotenv
-        load_dotenv(ROOT / ".env")
-        client = OpenAI()
-        try:
-            r = client.images.generate(model="gpt-image-1.5", prompt=prompt, size="1024x1024",
-                                        background="transparent", output_format="png", quality="high", n=1)
-        except Exception as e:
-            print(f"  gpt-image-1.5 failed for {name} ({e}); falling back to gpt-image-1")
-            r = client.images.generate(model="gpt-image-1", prompt=prompt, size="1024x1024",
-                                        background="transparent", output_format="png", quality="high", n=1)
-        raw = base64.b64decode(r.data[0].b64_json)
+        raw = _generate_raw(prompt)
         cache.write_bytes(raw)
         print(f"  generated {name}")
     return _pixelize(Image.open(io.BytesIO(raw)), size, colors=48)
