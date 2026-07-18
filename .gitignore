@@ -24,3 +24,6 @@ dist/
 .beads-credential-key
 releases/
 sparkle-private-key.txt
+
+# Git worktrees
+.worktrees/

@@ -227,6 +227,125 @@ public extension ChecklistItemDTO {
     }
 }
 
+/// On-disk locations for SwiftData and the Phase-1 JSON store.
+public enum PersistencePaths {
+    public static var applicationSupportDirectory: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? FileManager.default.temporaryDirectory
+    }
+
+    /// `~/Library/Application Support/DayBar/`
+    public static var dayBarDirectory: URL {
+        applicationSupportDirectory.appendingPathComponent("DayBar", isDirectory: true)
+    }
+
+    /// Pinned SwiftData store: `…/DayBar/daybar.store`
+    public static var storeURL: URL {
+        dayBarDirectory.appendingPathComponent("daybar.store")
+    }
+
+    /// Pre-pin location used by the default `ModelConfiguration` (`…/default.store`).
+    public static var legacyDefaultStoreURL: URL {
+        applicationSupportDirectory.appendingPathComponent("default.store")
+    }
+
+    /// `~/Library/Application Support/DayBar/daybar-store.json` (the Phase-1 store).
+    public static var legacyFileURL: URL {
+        dayBarDirectory.appendingPathComponent("daybar-store.json")
+    }
+
+    public static var importedLegacyFileURL: URL {
+        dayBarDirectory.appendingPathComponent("daybar-store.json.imported")
+    }
+
+    /// Ensure `DayBar/` exists, then move `default.store` (+ shm/wal) into `daybar.store` once.
+    /// If a prior launch moved the main store but left sidecars behind, a later launch heals them.
+    /// Injectable roots support unit tests without touching the real Application Support folder.
+    @discardableResult
+    public static func migrateDefaultStoreIfNeeded(
+        fileManager: FileManager = .default,
+        applicationSupport: URL? = nil,
+        dayBarDirectory overrideDayBar: URL? = nil
+    ) -> Bool {
+        let appSupport = applicationSupport ?? applicationSupportDirectory
+        let dayBar = overrideDayBar ?? appSupport.appendingPathComponent("DayBar", isDirectory: true)
+        let destination = dayBar.appendingPathComponent("daybar.store")
+        let source = appSupport.appendingPathComponent("default.store")
+
+        do {
+            try fileManager.createDirectory(at: dayBar, withIntermediateDirectories: true)
+        } catch {
+            print("DayBar: failed to create DayBar directory: \(error)")
+            return false
+        }
+
+        var movedMain = false
+        if !fileManager.fileExists(atPath: destination.path) {
+            guard fileManager.fileExists(atPath: source.path) else { return false }
+            do {
+                try fileManager.moveItem(at: source, to: destination)
+                movedMain = true
+            } catch {
+                print("DayBar: failed to migrate default.store: \(error)")
+                return false
+            }
+        }
+
+        let movedSidecars = migrateStoreSidecars(
+            from: source, to: destination, fileManager: fileManager
+        )
+        return movedMain || movedSidecars
+    }
+
+    /// Move leftover `default.store-{shm,wal}` next to an already-migrated `daybar.store`.
+    @discardableResult
+    public static func migrateStoreSidecars(
+        from source: URL,
+        to destination: URL,
+        fileManager: FileManager = .default
+    ) -> Bool {
+        guard fileManager.fileExists(atPath: destination.path) else { return false }
+        var movedAny = false
+        for suffix in ["-shm", "-wal"] {
+            let sideSource = URL(fileURLWithPath: source.path + suffix)
+            let sideDest = URL(fileURLWithPath: destination.path + suffix)
+            guard fileManager.fileExists(atPath: sideSource.path) else { continue }
+            do {
+                if fileManager.fileExists(atPath: sideDest.path) {
+                    try fileManager.removeItem(at: sideDest)
+                }
+                try fileManager.moveItem(at: sideSource, to: sideDest)
+                movedAny = true
+            } catch {
+                print("DayBar: failed to migrate store sidecar \(suffix): \(error)")
+            }
+        }
+        return movedAny
+    }
+
+    /// Rename the Phase-1 JSON so an empty SwiftData store cannot re-import it.
+    @discardableResult
+    public static func neutralizeLegacyFileIfPresent(
+        fileManager: FileManager = .default,
+        legacyURL: URL? = nil,
+        importedURL: URL? = nil
+    ) -> Bool {
+        let source = legacyURL ?? legacyFileURL
+        let destination = importedURL ?? importedLegacyFileURL
+        guard fileManager.fileExists(atPath: source.path) else { return false }
+        do {
+            if fileManager.fileExists(atPath: destination.path) {
+                try fileManager.removeItem(at: destination)
+            }
+            try fileManager.moveItem(at: source, to: destination)
+            return true
+        } catch {
+            print("DayBar: failed to neutralize legacy JSON: \(error)")
+            return false
+        }
+    }
+}
+
 /// JSON (de)serialization + the Phase-1 store location.
 public enum JSONStore {
     public static let encoder: JSONEncoder = {
@@ -243,16 +362,10 @@ public enum JSONStore {
     }()
 
     /// `~/Library/Application Support/DayBar/daybar-store.json` (the Phase-1 store).
-    public static var legacyFileURL: URL {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? FileManager.default.temporaryDirectory
-        return base
-            .appendingPathComponent("DayBar", isDirectory: true)
-            .appendingPathComponent("daybar-store.json")
-    }
+    public static var legacyFileURL: URL { PersistencePaths.legacyFileURL }
 
-    public static func loadLegacy() -> StoreSnapshotDTO? {
-        guard let data = try? Data(contentsOf: legacyFileURL) else { return nil }
+    public static func loadLegacy(from url: URL = PersistencePaths.legacyFileURL) -> StoreSnapshotDTO? {
+        guard let data = try? Data(contentsOf: url) else { return nil }
         return try? decoder.decode(StoreSnapshotDTO.self, from: data)
     }
 

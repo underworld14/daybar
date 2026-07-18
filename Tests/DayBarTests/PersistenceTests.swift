@@ -213,6 +213,126 @@ final class PersistenceTests: XCTestCase {
         XCTAssertEqual(try store.allTodos().count, 0)
     }
 
+    func testStoreURLIsUnderDayBar() {
+        let path = PersistencePaths.storeURL.path
+        XCTAssertTrue(path.hasSuffix("DayBar/daybar.store"), path)
+    }
+
+    func testMigrateDefaultStoreWhenDestinationMissing() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("daybar-migrate-\(UUID().uuidString)", isDirectory: true)
+        let dayBar = root.appendingPathComponent("DayBar", isDirectory: true)
+        let source = root.appendingPathComponent("default.store")
+        let dest = dayBar.appendingPathComponent("daybar.store")
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try Data("store".utf8).write(to: source)
+        try Data("shm".utf8).write(to: URL(fileURLWithPath: source.path + "-shm"))
+
+        XCTAssertTrue(PersistencePaths.migrateDefaultStoreIfNeeded(
+            applicationSupport: root, dayBarDirectory: dayBar
+        ))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: dest.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: source.path))
+        XCTAssertEqual(try String(contentsOf: dest, encoding: .utf8), "store")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: dest.path + "-shm"))
+
+        // Destination already present with no orphan sidecars → no-op.
+        try Data("other".utf8).write(to: root.appendingPathComponent("default.store"))
+        XCTAssertFalse(PersistencePaths.migrateDefaultStoreIfNeeded(
+            applicationSupport: root, dayBarDirectory: dayBar
+        ))
+        XCTAssertEqual(try String(contentsOf: dest, encoding: .utf8), "store")
+    }
+
+    func testMigrateHealsOrphanedSidecarsWhenDestinationExists() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("daybar-heal-\(UUID().uuidString)", isDirectory: true)
+        let dayBar = root.appendingPathComponent("DayBar", isDirectory: true)
+        let source = root.appendingPathComponent("default.store")
+        let dest = dayBar.appendingPathComponent("daybar.store")
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        try FileManager.default.createDirectory(at: dayBar, withIntermediateDirectories: true)
+        try Data("store".utf8).write(to: dest)
+        // Simulate partial migrate: main moved, wal left behind.
+        try Data("wal".utf8).write(to: URL(fileURLWithPath: source.path + "-wal"))
+
+        XCTAssertTrue(PersistencePaths.migrateDefaultStoreIfNeeded(
+            applicationSupport: root, dayBarDirectory: dayBar
+        ))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: source.path + "-wal"))
+        XCTAssertEqual(
+            try String(contentsOf: URL(fileURLWithPath: dest.path + "-wal"), encoding: .utf8),
+            "wal"
+        )
+    }
+
+    func testLegacyNeutralizeSkippedWhenSaveWouldLoseRetry() throws {
+        // Unreadable legacy leaves guard unset and must not neutralize (retry next launch).
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("daybar-noretry-\(UUID().uuidString)", isDirectory: true)
+        let legacy = root.appendingPathComponent("daybar-store.json")
+        let imported = root.appendingPathComponent("daybar-store.json.imported")
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try Data("not-json".utf8).write(to: legacy)
+
+        let store = DataStore(inMemory: true)
+        var neutralized = false
+        store.performLegacyImport(
+            snapshot: nil,
+            legacyFileExists: true,
+            neutralizeLegacyFile: {
+                neutralized = PersistencePaths.neutralizeLegacyFileIfPresent(
+                    legacyURL: legacy, importedURL: imported
+                )
+            }
+        )
+        XCTAssertFalse(neutralized)
+        XCTAssertFalse(try store.appMeta().didImportLegacyJSON)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: legacy.path))
+    }
+
+    func testLegacyFileRenamedAfterSuccessfulImport() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("daybar-legacy-\(UUID().uuidString)", isDirectory: true)
+        let legacy = root.appendingPathComponent("daybar-store.json")
+        let imported = root.appendingPathComponent("daybar-store.json.imported")
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let snapshot = StoreSnapshotDTO(
+            todos: [TodoDTO(DailyTodo(title: "Halo", plannedForDate: now, originalPlannedDate: now))]
+        )
+        try JSONStore.encode(snapshot).write(to: legacy)
+
+        let store = DataStore(inMemory: true)
+        var neutralized = false
+        store.performLegacyImport(
+            snapshot: snapshot,
+            legacyFileExists: true,
+            neutralizeLegacyFile: {
+                neutralized = PersistencePaths.neutralizeLegacyFileIfPresent(
+                    legacyURL: legacy, importedURL: imported
+                )
+            }
+        )
+        XCTAssertTrue(neutralized)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: legacy.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: imported.path))
+
+        // Empty store + neutralized legacy path → no re-import.
+        let empty = DataStore(inMemory: true)
+        empty.performLegacyImport(
+            snapshot: JSONStore.loadLegacy(from: legacy),
+            legacyFileExists: FileManager.default.fileExists(atPath: legacy.path)
+        )
+        XCTAssertEqual(try empty.allTodos().count, 0)
+        XCTAssertTrue(try empty.appMeta().didImportLegacyJSON)
+    }
 
     func testLegacyJSONWithoutChecklistDecodesEmpty() throws {
         let model = DailyTodo(title: "x", plannedForDate: now, originalPlannedDate: now)

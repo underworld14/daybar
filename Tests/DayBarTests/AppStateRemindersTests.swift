@@ -49,4 +49,40 @@ final class AppStateRemindersTests: XCTestCase {
         XCTAssertFalse(appState.isRemindersSyncing)
         XCTAssertNotNil(appState.remindersLastSyncedAt)
     }
+
+    func testPublishesRemindersAccessStatusAfterRequest() async {
+        let store = DataStore(inMemory: true)
+        let mock = MockRemindersProvider()
+        mock.accessStatus = .notDetermined
+        let appState = AppState(
+            store: store,
+            calendar: cal,
+            remindersProvider: mock,
+            schedulesRemindersSync: false,
+            observeSystemEvents: false
+        )
+        XCTAssertEqual(appState.remindersAccessStatus, .notDetermined)
+
+        let granted = await appState.requestRemindersAccess()
+        XCTAssertTrue(granted)
+        XCTAssertEqual(appState.remindersAccessStatus, .authorized)
+    }
+
+    func testRefreshRemindersAccessStatusTracksProvider() {
+        let store = DataStore(inMemory: true)
+        let mock = MockRemindersProvider()
+        mock.accessStatus = .denied
+        let appState = AppState(
+            store: store,
+            calendar: cal,
+            remindersProvider: mock,
+            schedulesRemindersSync: false,
+            observeSystemEvents: false
+        )
+        XCTAssertEqual(appState.remindersAccessStatus, .denied)
+
+        mock.accessStatus = .authorized
+        appState.refreshRemindersAccessStatus()
+        XCTAssertEqual(appState.remindersAccessStatus, .authorized)
+    }
 }

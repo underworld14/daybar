@@ -15,7 +15,24 @@ public final class DataStore {
             DailyTodo.self, AppMeta.self, FocusSession.self, DayLog.self,
             HabitTemplate.self, HabitLog.self, TodoChecklistItem.self,
         ])
-        let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: inMemory)
+        let config: ModelConfiguration
+        if inMemory {
+            config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
+        } else {
+            PersistencePaths.migrateDefaultStoreIfNeeded()
+            do {
+                try FileManager.default.createDirectory(
+                    at: PersistencePaths.dayBarDirectory, withIntermediateDirectories: true
+                )
+            } catch {
+                fatalError("DayBar: failed to create DayBar directory: \(error)")
+            }
+            config = ModelConfiguration(
+                "daybar",
+                schema: schema,
+                url: PersistencePaths.storeURL
+            )
+        }
         do {
             container = try ModelContainer(for: schema, configurations: [config])
         } catch {
@@ -24,7 +41,8 @@ public final class DataStore {
         if !inMemory {
             performLegacyImport(
                 snapshot: JSONStore.loadLegacy(),
-                legacyFileExists: FileManager.default.fileExists(atPath: JSONStore.legacyFileURL.path)
+                legacyFileExists: FileManager.default.fileExists(atPath: PersistencePaths.legacyFileURL.path),
+                neutralizeLegacyFile: { _ = PersistencePaths.neutralizeLegacyFileIfPresent() }
             )
         }
     }
@@ -383,22 +401,31 @@ public final class DataStore {
     /// `AppMeta.didImportLegacyJSON`). Internal + injectable so it is unit-testable. The guard
     /// is burned only once the migration is genuinely settled: a present-but-unreadable file
     /// leaves it unset so a transient read failure retries next launch instead of silently
-    /// discarding the Phase-1 data.
-    func performLegacyImport(snapshot: StoreSnapshotDTO?, legacyFileExists: Bool) {
-        guard let meta = try? appMeta(), !meta.didImportLegacyJSON else { return }
+    /// discarding the Phase-1 data. After a settled outcome the legacy JSON is renamed so a
+    /// later empty store cannot resurrect stale Phase-1 todos.
+    func performLegacyImport(
+        snapshot: StoreSnapshotDTO?,
+        legacyFileExists: Bool,
+        neutralizeLegacyFile: () -> Void = {}
+    ) {
+        guard let meta = try? appMeta() else { return }
+
+        if meta.didImportLegacyJSON {
+            neutralizeLegacyFile()
+            return
+        }
 
         // Store already has data → migration is effectively done; never overwrite.
         let count = (try? context.fetchCount(FetchDescriptor<DailyTodo>())) ?? 0
         if count > 0 {
-            meta.didImportLegacyJSON = true
-            save()
+            settleLegacyImport(meta: meta, neutralizeLegacyFile: neutralizeLegacyFile)
             return
         }
 
         // No legacy file → nothing to migrate, ever.
         if !legacyFileExists {
             meta.didImportLegacyJSON = true
-            save()
+            _ = save()
             return
         }
 
@@ -407,7 +434,15 @@ public final class DataStore {
 
         for dto in snapshot.todos { context.insert(dto.makeModel()) }
         if let last = snapshot.meta?.lastProcessedDay { meta.lastProcessedDay = last }
+        settleLegacyImport(meta: meta, neutralizeLegacyFile: neutralizeLegacyFile)
+    }
+
+    /// Persist the import guard, then neutralize the Phase-1 file only if the save stuck.
+    /// Neutralizing after a failed save would leave an empty store with no JSON to retry.
+    private func settleLegacyImport(meta: AppMeta, neutralizeLegacyFile: () -> Void) {
         meta.didImportLegacyJSON = true
-        save()
+        if save() {
+            neutralizeLegacyFile()
+        }
     }
 }

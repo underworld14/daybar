@@ -21,16 +21,20 @@ struct RemindersSettingsSection: View {
         Section("Apple Reminders") {
             Toggle("Sync with Reminders", isOn: $syncEnabled)
                 .onChange(of: syncEnabled) { _, enabled in
-                    if enabled { Task { await enableSync() } }
-                    else { persistSelection() }
-                    appState.invalidateRemindersSync()
-                    appState.refresh()
+                    if enabled {
+                        // Await access before refresh so authorized UI appears without off→on.
+                        Task { await enableSync() }
+                    } else {
+                        persistSelection()
+                        appState.invalidateRemindersSync()
+                        appState.refresh()
+                    }
                 }
 
             if syncEnabled {
                 accessStatusRow
 
-                if appState.remindersSync.accessStatus == .authorized {
+                if appState.remindersAccessStatus == .authorized {
                     if isLoadingLists {
                         ProgressView().controlSize(.small)
                     } else if lists.isEmpty {
@@ -99,6 +103,7 @@ struct RemindersSettingsSection: View {
         .onAppear {
             selectedIDs = Set(Preferences.selectedReminderCalendarIDs)
             selectedHabitIDs = Set(Preferences.selectedHabitReminderCalendarIDs)
+            appState.refreshRemindersAccessStatus()
             if syncEnabled { Task { await loadLists() } }
         }
     }
@@ -132,7 +137,7 @@ struct RemindersSettingsSection: View {
 
     @ViewBuilder
     private var accessStatusRow: some View {
-        switch appState.remindersSync.accessStatus {
+        switch appState.remindersAccessStatus {
         case .authorized:
             EmptyView()
         case .notDetermined:
@@ -179,7 +184,7 @@ struct RemindersSettingsSection: View {
     }
 
     private func enableSync() async {
-        _ = await appState.remindersSync.requestAccess()
+        _ = await appState.requestRemindersAccess()
         await loadLists()
         appState.invalidateRemindersSync()
         appState.refresh()

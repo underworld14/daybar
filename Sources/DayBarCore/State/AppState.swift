@@ -41,6 +41,8 @@ public final class AppState {
     public private(set) var remindersLastSyncedAt: Date?
     public private(set) var remindersLastSyncError: String?
     public private(set) var isRemindersSyncing = false
+    /// Published EventKit auth so Settings re-renders after grant without an off→on toggle.
+    public private(set) var remindersAccessStatus: RemindersAccessStatus = .notDetermined
 
     public private(set) var todayTodos: [DailyTodo] = []
     public private(set) var tomorrowTodos: [DailyTodo] = []
@@ -109,8 +111,21 @@ public final class AppState {
         self.radio.onPlaybackStarted = { TickingSoundPlayer.shared.stop() }
         self.notifications.onAuthorizationGranted = { [weak self] in self?.refresh() }
         applyPreferences()
+        refreshRemindersAccessStatus()
         refresh()
         if observeSystemEvents { observeSystem() }
+    }
+
+    public func refreshRemindersAccessStatus() {
+        remindersAccessStatus = remindersSync.accessStatus
+    }
+
+    /// Request EventKit access and publish the resulting status for Settings observation.
+    @discardableResult
+    public func requestRemindersAccess() async -> Bool {
+        let granted = await remindersSync.requestAccess()
+        refreshRemindersAccessStatus()
+        return granted
     }
 
 
@@ -193,6 +208,7 @@ public final class AppState {
 
     /// Reconciles the day (idempotent rollover) and reloads the today/carried lists.
     public func refresh(now: Date = .now) {
+        refreshRemindersAccessStatus()
         rollover.performRolloverIfNeeded(now: now)
         habitEngine.materializeIfNeeded(now: now)
         reloadLists(now: now)
@@ -502,6 +518,7 @@ public final class AppState {
         if remindersSyncEnabled {
             markHabitLocallyModified(template, now: now)
             habitRemindersSync.enqueuePush(for: template)
+            invalidateRemindersSync()
         }
         invalidateHabitNotifications()
         refresh(now: now)

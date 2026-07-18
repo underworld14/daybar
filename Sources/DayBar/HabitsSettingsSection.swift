@@ -157,7 +157,7 @@ private struct HabitEditorSheet: View {
                     }
                 }
                 if Preferences.remindersHabitsSyncEnabled,
-                   appState.remindersSync.accessStatus == .authorized {
+                   appState.remindersAccessStatus == .authorized {
                     Toggle("Sync to Reminders", isOn: $remindersSyncEnabled)
                 }
                 Toggle("Anchor reminder", isOn: $notifyEnabled)
@@ -214,18 +214,22 @@ private struct HabitEditorSheet: View {
     }
 
     private func load() {
-        guard let template else { return }
-        title = template.title
-        cueText = template.cueText
-        symbolName = template.symbolName
-        notifyEnabled = template.notifyEnabled
-        schedulePreset = template.schedulePreset
-        weekdayMask = template.scheduleWeekdayMask
-        remindersSyncEnabled = template.remindersSyncEnabled
-        if let hour = template.anchorHour, let minute = template.anchorMinute {
-            anchorEnabled = true
-            anchorHour = hour
-            anchorMinute = minute
+        if let template {
+            title = template.title
+            cueText = template.cueText
+            symbolName = template.symbolName
+            notifyEnabled = template.notifyEnabled
+            schedulePreset = template.schedulePreset
+            weekdayMask = template.scheduleWeekdayMask
+            remindersSyncEnabled = template.remindersSyncEnabled
+            if let hour = template.anchorHour, let minute = template.anchorMinute {
+                anchorEnabled = true
+                anchorHour = hour
+                anchorMinute = minute
+            }
+        } else if isNew {
+            // Global habit sync on → new habits opt in by default; user can still toggle off.
+            remindersSyncEnabled = Preferences.remindersHabitsSyncEnabled
         }
     }
 

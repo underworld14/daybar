@@ -100,4 +100,47 @@ final class AppStateHabitTests: XCTestCase {
         XCTAssertFalse(template.isActive)
         XCTAssertEqual(info.best, 1)
     }
+
+    func testAddHabitDefaultsRemindersSyncOffWhenGlobalOff() throws {
+        UserDefaults.standard.set(false, forKey: PreferenceKeys.remindersHabitsSyncEnabled)
+        defer { UserDefaults.standard.removeObject(forKey: PreferenceKeys.remindersHabitsSyncEnabled) }
+
+        let store = DataStore(inMemory: true)
+        let state = AppState(
+            store: store,
+            calendar: cal,
+            remindersProvider: MockRemindersProvider(),
+            schedulesRemindersSync: false,
+            observeSystemEvents: false
+        )
+        let template = try XCTUnwrap(state.addHabitTemplate(
+            title: "Read",
+            remindersSyncEnabled: Preferences.remindersHabitsSyncEnabled,
+            now: now
+        ))
+        XCTAssertFalse(template.remindersSyncEnabled)
+        XCTAssertFalse(state.habitRemindersSync.hasPendingPush(for: template.id))
+    }
+
+    func testAddHabitEnqueuesPushWhenRemindersSyncEnabled() throws {
+        UserDefaults.standard.set(true, forKey: PreferenceKeys.remindersHabitsSyncEnabled)
+        defer { UserDefaults.standard.removeObject(forKey: PreferenceKeys.remindersHabitsSyncEnabled) }
+
+        let store = DataStore(inMemory: true)
+        let state = AppState(
+            store: store,
+            calendar: cal,
+            remindersProvider: MockRemindersProvider(),
+            schedulesRemindersSync: false,
+            observeSystemEvents: false
+        )
+        let template = try XCTUnwrap(state.addHabitTemplate(
+            title: "Walk",
+            remindersSyncEnabled: Preferences.remindersHabitsSyncEnabled,
+            now: now
+        ))
+        XCTAssertTrue(Preferences.remindersHabitsSyncEnabled)
+        XCTAssertTrue(template.remindersSyncEnabled)
+        XCTAssertTrue(state.habitRemindersSync.hasPendingPush(for: template.id))
+    }
 }
