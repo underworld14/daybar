@@ -14,6 +14,7 @@ struct TodayView: View {
     @State private var showHistory = false
     @State private var addForTomorrow = false
     @State private var detailTodo: DailyTodo?
+    @State private var showGardenShop = false
 
     private let wordmarkFont = Font.system(size: 15, weight: .bold, design: .rounded)
 
@@ -22,12 +23,10 @@ struct TodayView: View {
             header
             quickAdd
             if appState.totalTodayCount > 0 { progressBar }
-            if let entry = appState.focusStreakEntry {
-                DayscapeStrip(
-                    cells: entry.weekCells,
-                    currentStreak: entry.streak.current,
-                    graceRemaining: entry.streak.graceRemaining
-                )
+            if let garden = appState.gardenSnapshot {
+                GardenDayscapeView(snapshot: garden) {
+                    showGardenShop = true
+                }
             }
             if let banner = appState.ephemeralBanner {
                 HStack(spacing: 8) {
@@ -91,17 +90,24 @@ struct TodayView: View {
         .sheet(item: $detailTodo) { todo in
             TodoDetailSheet(appState: appState, todo: todo)
         }
+        .sheet(isPresented: $showGardenShop) {
+            GardenShopSheet()
+                .environment(appState)
+        }
         .onChange(of: showSettings) { _, open in
-            appState.isPanelSheetPresented = open || showStats || showHistory || detailTodo != nil
+            appState.isPanelSheetPresented = open || showStats || showHistory || showGardenShop || detailTodo != nil
         }
         .onChange(of: showStats) { _, open in
-            appState.isPanelSheetPresented = open || showSettings || showHistory || detailTodo != nil
+            appState.isPanelSheetPresented = open || showSettings || showHistory || showGardenShop || detailTodo != nil
         }
         .onChange(of: showHistory) { _, open in
-            appState.isPanelSheetPresented = open || showSettings || showStats || detailTodo != nil
+            appState.isPanelSheetPresented = open || showSettings || showStats || showGardenShop || detailTodo != nil
+        }
+        .onChange(of: showGardenShop) { _, open in
+            appState.isPanelSheetPresented = open || showSettings || showStats || showHistory || detailTodo != nil
         }
         .onChange(of: detailTodo) { _, todo in
-            appState.isPanelSheetPresented = todo != nil || showSettings || showStats || showHistory
+            appState.isPanelSheetPresented = todo != nil || showSettings || showStats || showHistory || showGardenShop
         }
         .sheet(isPresented: Binding(
             get: { appState.presentEndOfDayReview },

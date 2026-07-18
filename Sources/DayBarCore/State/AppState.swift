@@ -51,6 +51,8 @@ public final class AppState {
     public private(set) var habitStreakEntries: [HabitStreakEntry] = []
     /// Focus streak + 7-day Dayscape strip (computed from completed Pomodoros).
     public private(set) var focusStreakEntry: FocusStreakEntry?
+    /// Focus garden snapshot for the Today panel / Analytics.
+    public private(set) var gardenSnapshot: GardenSnapshot?
     /// Ephemeral banner (milestones, quiet acknowledgments, undo).
     public var ephemeralBanner: EphemeralBanner?
     /// Backward-compatible alias used by older call sites / tests.
@@ -643,6 +645,45 @@ public final class AppState {
         let end = calendar.date(byAdding: .day, value: 1, to: today) ?? now
         let sessions = (try? store.focusSessions(in: lookbackStart..<end)) ?? []
         focusStreakEntry = FocusAnalytics.entry(sessions: sessions, asOf: now, calendar: calendar)
+        settleGarden(sessions: sessions, now: now)
+    }
+
+    private func settleGarden(sessions: [FocusSession], now: Date) {
+        guard let meta = try? store.gardenMeta() else {
+            gardenSnapshot = nil
+            return
+        }
+        let priorLifetime = meta.lifetimeCompletedSessions
+        let snapshot = GardenEngine.settle(
+            meta: meta,
+            sessions: sessions,
+            asOf: now,
+            calendar: calendar
+        )
+        gardenSnapshot = snapshot
+        commitSave()
+        let grew = meta.lifetimeCompletedSessions > priorLifetime
+        if grew || snapshot.justHarvestedCropID != nil {
+            playGardenFeedbackIfEnabled(now: now)
+        }
+    }
+
+    private func playGardenFeedbackIfEnabled(now: Date) {
+        guard Preferences.soundEnabled, Preferences.gardenSoundEnabled else { return }
+        guard Preferences.shouldPlayAudibleAlerts(now: now, calendar: calendar) else { return }
+        AlertSoundPlayer.shared.playGardenChime()
+    }
+
+    /// Purchase a garden shop item; returns whether the purchase succeeded.
+    @discardableResult
+    public func purchaseGardenItem(_ itemID: String) -> Bool {
+        guard let meta = try? store.gardenMeta() else { return false }
+        let result = GardenShop.purchase(itemID: itemID, meta: meta)
+        if result.success {
+            commitSave()
+            rebuildFocusCache()
+        }
+        return result.success
     }
 
     private func rebuildHabitCaches(rawHabits: [TodayHabit], now: Date) {

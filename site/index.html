@@ -3,11 +3,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="DayBar is a native macOS menu-bar app to plan your day, focus with a Pomodoro, and finish what you planned — with gentle carry-over instead of silent disappearances.">
-  <meta name="theme-color" content="#f4f5f8" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="#121218" media="(prefers-color-scheme: dark)">
+  <meta name="description" content="DayBar is a calm macOS menu-bar app — plan your day, focus with Pomodoro, and grow a cozy focus garden from every session you finish.">
+  <meta name="theme-color" content="#eef5e6" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#12181a" media="(prefers-color-scheme: dark)">
   <meta name="color-scheme" content="light dark">
-  <title>DayBar — Plan your day. Finish what you planned.</title>
+  <meta property="og:title" content="DayBar — Grow focus. Finish the day.">
+  <meta property="og:description" content="A calm macOS menu-bar app with Pomodoro focus that grows a Stardew-cozy garden — soft wilt, not guilt.">
+  <title>DayBar — Grow focus. Finish the day.</title>
   <link rel="icon" type="image/png" href="assets/icon.png">
   <link rel="preload" href="assets/icon.png" as="image">
   <link rel="stylesheet" href="styles.css">
@@ -30,17 +32,27 @@
   </header>
 
   <main id="main">
-    <section class="hero" aria-labelledby="hero-heading">
+    <section class="hero hero-farm" aria-labelledby="hero-heading">
+      <div class="hero-farm-bg" aria-hidden="true">
+        <img
+          class="hero-diorama"
+          src="assets/garden/hero-farm.svg"
+          alt=""
+          width="960"
+          height="540"
+          fetchpriority="high"
+          decoding="async">
+      </div>
       <div class="shell hero-grid">
         <div class="hero-copy">
           <p class="hero-brand" translate="no">
             <img src="assets/icon.png" alt="" width="48" height="48" fetchpriority="high" decoding="async">
             <span>DayBar</span>
           </p>
-          <h1 id="hero-heading">Plan your day. Finish what you planned.</h1>
+          <h1 id="hero-heading">Grow focus. Finish the day.</h1>
           <p class="hero-lede">
-            A calm macOS menu-bar app for habits, todos, and Pomodoro focus —
-            unfinished work carries into tomorrow with a gentle nudge, not a wall of red.
+            A calm macOS menu-bar app for habits, todos, and Pomodoro —
+            every session you finish tends a cozy focus garden. Soft wilt, not guilt.
           </p>
           <div class="hero-actions">
             <a class="btn btn-primary" href="https://github.com/underworld14/daybar/releases/latest" rel="noopener noreferrer">
@@ -56,7 +68,7 @@
           <img
             class="shot shot-hero"
             src="assets/screenshots/today-panel.svg"
-            alt="Illustrative mockup of the DayBar Today panel showing habits, todos, progress, and Pomodoro controls"
+            alt="DayBar Today panel with a focus garden strip, habits, todos, and Pomodoro controls"
             width="640"
             height="720"
             fetchpriority="high"
@@ -122,16 +134,16 @@ open /Applications/DayBar.app</code></pre>
 
         <article class="feature" aria-labelledby="dayscape-heading">
           <div class="feature-copy">
-            <h3 id="dayscape-heading">Dayscape &amp; focus streak</h3>
+            <h3 id="dayscape-heading">Focus garden</h3>
             <p>
-              Watch your week fill with quiet ink as Pomodoros finish —
-              a calm focus streak with one grace day, never a harsh reset.
+              Completed Pomodoros plant and grow a tiny cottage plot —
+              a companion cheers you on, soft wilt fades misses, and one grace day keeps the streak kind.
             </p>
           </div>
           <img
             class="shot"
-            src="assets/screenshots/dayscape-focus.svg"
-            alt="Illustrative mockup of DayBar Dayscape strip showing a week of focus intensity and a streak pill"
+            src="assets/screenshots/garden-dayscape.svg"
+            alt="DayBar focus garden with crop plots, companion, streak pill, and garden coins"
             width="560"
             height="420"
             loading="lazy"

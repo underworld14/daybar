@@ -23,6 +23,12 @@ public final class AlertSoundPlayer {
     /// Used by the Settings "Test sound" button.
     public func playTestRing() { playPhaseEndRing() }
 
+    /// Soft garden growth / harvest chime (quieter than phase-end).
+    public func playGardenChime() {
+        guard let buffer = SynthesizedTone.gardenChime() else { return }
+        play(buffer)
+    }
+
     private func play(_ buffer: AVAudioPCMBuffer) {
         setUpIfNeeded(format: buffer.format)
         // Restart cleanly if a previous ring is somehow still playing, so back-to-back

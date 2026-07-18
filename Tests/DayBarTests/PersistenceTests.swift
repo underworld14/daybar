@@ -115,6 +115,41 @@ final class PersistenceTests: XCTestCase {
         XCTAssertEqual(sessions.first?.minutes, 40)
     }
 
+    func testGardenMetaExportImportRoundTrip() throws {
+        let store = DataStore(inMemory: true)
+        let garden = try store.gardenMeta()
+        garden.coins = 7
+        garden.lifetimeCompletedSessions = 3
+        garden.slots = [
+            GardenPlotSlot(index: 0, cropID: "parsnip", stage: 2, wiltLevel: 1),
+            GardenPlotSlot(index: 1),
+            GardenPlotSlot(index: 2),
+        ]
+        store.save()
+
+        let snapshot = store.exportSnapshot()
+        XCTAssertEqual(snapshot.gardenMeta?.coins, 7)
+
+        let store2 = DataStore(inMemory: true)
+        _ = try store2.gardenMeta()
+        store2.importSnapshot(snapshot)
+        let imported = try store2.gardenMeta()
+        XCTAssertEqual(imported.coins, 7)
+        XCTAssertEqual(imported.lifetimeCompletedSessions, 3)
+        XCTAssertEqual(imported.slots[0].cropID, "parsnip")
+        XCTAssertEqual(imported.slots[0].stage, 2)
+    }
+
+    func testImportLegacySnapshotPreservesGarden() throws {
+        let store = DataStore(inMemory: true)
+        let garden = try store.gardenMeta()
+        garden.coins = 11
+        store.save()
+
+        store.importSnapshot(StoreSnapshotDTO(todos: [], gardenMeta: nil))
+        XCTAssertEqual(try store.gardenMeta().coins, 11)
+    }
+
     func testImportSnapshotReplacesAll() throws {
         let store = DataStore(inMemory: true)
         store.insert(DailyTodo(title: "old", plannedForDate: now, originalPlannedDate: now))

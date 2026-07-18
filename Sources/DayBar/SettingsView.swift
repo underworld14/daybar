@@ -20,6 +20,7 @@ struct SettingsView: View {
     @AppStorage(PreferenceKeys.idleSkipMinutes) private var idleSkipMinutes = 45
     @AppStorage(PreferenceKeys.soundEnabled) private var soundEnabled = true
     @AppStorage(PreferenceKeys.tickingSoundEnabled) private var tickingSoundEnabled = false
+    @AppStorage(PreferenceKeys.gardenSoundEnabled) private var gardenSoundEnabled = true
 
     @AppStorage(PreferenceKeys.morningEnabled) private var morningEnabled = true
     @AppStorage(PreferenceKeys.morningHour) private var morningHour = 9
@@ -97,6 +98,8 @@ struct SettingsView: View {
                     Button("Test sound") { AlertSoundPlayer.shared.playTestRing() }
                         .disabled(!soundEnabled)
                     Toggle("Play ticking sound during focus", isOn: $tickingSoundEnabled)
+                    Toggle("Play garden growth sounds", isOn: $gardenSoundEnabled)
+                        .disabled(!soundEnabled)
                 }
 
                 Section("Notifications") {

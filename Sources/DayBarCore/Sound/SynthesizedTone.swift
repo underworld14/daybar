@@ -25,6 +25,23 @@ public enum SynthesizedTone {
         }
     }
 
+    /// Soft two-note chime for garden growth / harvest (quieter than the phase-end ring).
+    public static func gardenChime() -> AVAudioPCMBuffer? {
+        let notes: [(start: TimeInterval, freq: Double)] = [
+            (0.0, 660),
+            (0.12, 880),
+        ]
+        return makeBuffer(duration: 0.45) { t in
+            var sample: Float = 0
+            for note in notes {
+                let local = t - note.start
+                guard local >= 0, local < 0.28 else { continue }
+                sample += Float(sin(2 * Double.pi * note.freq * local)) * Float(exp(-5.5 * local)) * 0.22
+            }
+            return sample
+        }
+    }
+
     /// A very short, dry click that reads as a clock "tick" rather than a musical note.
     public static func tick(duration: TimeInterval = 0.05, frequency: Double = 1_800) -> AVAudioPCMBuffer? {
         makeBuffer(duration: duration) { t in

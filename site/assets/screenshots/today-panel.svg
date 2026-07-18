@@ -21,7 +21,18 @@
   <rect x="144" y="164" width="352" height="8" rx="4" fill="rgba(60,60,67,0.12)"/>
   <rect x="144" y="164" width="210" height="8" rx="4" fill="#34c759"/>
   <rect x="354" y="164" width="48" height="8" fill="#5c6bf2"/>
-  <text x="144" y="208" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="600" fill="#636366">HABITS</text>
+  <!-- Focus garden row -->
+  <rect x="144" y="184" width="280" height="40" rx="8" fill="#c8e4f5"/>
+  <rect x="158" y="204" width="28" height="12" rx="2" fill="#6b4423"/>
+  <rect x="192" y="204" width="28" height="12" rx="2" fill="#6b4423"/>
+  <rect x="226" y="204" width="28" height="12" rx="2" fill="#6b4423"/>
+  <circle cx="172" cy="198" r="5" fill="#e8c35a"/>
+  <ellipse cx="206" cy="196" rx="6" ry="5" fill="#dfe8a8"/>
+  <circle cx="240" cy="198" r="4" fill="#c23b5a"/>
+  <circle cx="280" cy="200" r="9" fill="#e8b86d"/>
+  <rect x="400" y="192" width="40" height="18" rx="9" fill="rgba(60,60,67,0.1)"/>
+  <text x="420" y="205" font-family="system-ui, -apple-system, sans-serif" font-size="10" font-weight="600" fill="#636366" text-anchor="middle">7d</text>
+  <text x="144" y="248" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="600" fill="#636366">HABITS</text>
   <circle cx="156" cy="236" r="9" fill="none" stroke="#34c759" stroke-width="2"/>
   <path d="M151 236l3 3 7-7" fill="none" stroke="#34c759" stroke-width="2" stroke-linecap="round"/>
   <text x="176" y="241" font-family="system-ui, -apple-system, sans-serif" font-size="14" fill="#1c1c1e">Morning stretch</text>

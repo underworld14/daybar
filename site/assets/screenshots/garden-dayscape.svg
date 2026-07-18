@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="560" height="420" viewBox="0 0 560 420" role="img" aria-label="DayBar Focus garden strip with plots, companion, and streak">
+  <defs>
+    <filter id="shadow" x="-10%" y="-10%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="6" stdDeviation="12" flood-color="#1c1c2e" flood-opacity="0.1"/>
+    </filter>
+  </defs>
+  <rect width="560" height="420" fill="#e8f0d8"/>
+  <rect x="48" y="36" width="464" height="348" rx="16" fill="#ffffff" filter="url(#shadow)" stroke="rgba(60,60,67,0.12)"/>
+  <text x="72" y="76" font-family="ui-rounded, system-ui, sans-serif" font-size="16" font-weight="700" fill="#1c1c1e">Focus garden</text>
+  <text x="72" y="100" font-family="system-ui, sans-serif" font-size="12" fill="#636366">Completed Pomodoros plant, grow, and gently wilt  with one grace day.</text>
+
+  <rect x="72" y="130" width="320" height="56" rx="10" fill="#c8e4f5"/>
+  <rect x="90" y="158" width="36" height="18" rx="3" fill="#6b4423"/>
+  <rect x="136" y="158" width="36" height="18" rx="3" fill="#6b4423"/>
+  <rect x="182" y="158" width="36" height="18" rx="3" fill="#6b4423"/>
+  <circle cx="108" cy="150" r="8" fill="#e8c35a"/>
+  <ellipse cx="154" cy="148" rx="10" ry="8" fill="#dfe8a8"/>
+  <circle cx="200" cy="152" r="6" fill="#c23b5a"/>
+  <circle cx="260" cy="155" r="12" fill="#e8b86d"/>
+  <rect x="248" y="162" width="24" height="4" rx="2" fill="#4a58e0"/>
+
+  <rect x="410" y="140" width="52" height="24" rx="12" fill="rgba(60,60,67,0.1)"/>
+  <text x="436" y="157" font-family="system-ui, sans-serif" font-size="12" font-weight="600" fill="#636366" text-anchor="middle">12d</text>
+  <text x="436" y="178" font-family="system-ui, sans-serif" font-size="11" fill="#636366" text-anchor="middle">18c</text>
+
+  <rect x="72" y="220" width="416" height="88" rx="12" fill="#f4f7ef"/>
+  <text x="92" y="252" font-family="system-ui, sans-serif" font-size="14" font-weight="600" fill="#1c1c1e">Soft wilt, not guilt</text>
+  <text x="92" y="276" font-family="system-ui, sans-serif" font-size="13" fill="#636366">Miss a day and plants fade a little  one grace day keeps them green.</text>
+
+  <rect x="180" y="340" width="200" height="26" rx="8" fill="rgba(90,143,62,0.18)"/>
+  <text x="280" y="358" font-family="system-ui, sans-serif" font-size="11" font-weight="600" fill="#3d6b2e" text-anchor="middle">Focus garden · Stardew-cozy</text>
+</svg>

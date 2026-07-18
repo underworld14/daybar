@@ -14,6 +14,7 @@ public final class DataStore {
         let schema = Schema([
             DailyTodo.self, AppMeta.self, FocusSession.self, DayLog.self,
             HabitTemplate.self, HabitLog.self, TodoChecklistItem.self,
+            GardenMeta.self,
         ])
         let config: ModelConfiguration
         if inMemory {
@@ -179,6 +180,16 @@ public final class DataStore {
             return existing
         }
         let meta = AppMeta()
+        context.insert(meta)
+        return meta
+    }
+
+    /// The single garden progress row, creating it on first access.
+    public func gardenMeta() throws -> GardenMeta {
+        if let existing = try context.fetch(FetchDescriptor<GardenMeta>()).first {
+            return existing
+        }
+        let meta = GardenMeta()
         context.insert(meta)
         return meta
     }
@@ -358,6 +369,7 @@ public final class DataStore {
         let habitLogs = (try? allHabitLogs()) ?? []
         let sessions = (try? allFocusSessions()) ?? []
         let checklist = (try? allChecklistItems()) ?? []
+        let garden = try? gardenMeta()
         return StoreSnapshotDTO(
             todos: todos.map(TodoDTO.init),
             meta: MetaDTO(
@@ -367,7 +379,8 @@ public final class DataStore {
             habitTemplates: habits.map(HabitTemplateDTO.init),
             habitLogs: habitLogs.map(HabitLogDTO.init),
             focusSessions: sessions.map(FocusSessionDTO.init),
-            checklistItems: checklist.map(ChecklistItemDTO.init)
+            checklistItems: checklist.map(ChecklistItemDTO.init),
+            gardenMeta: garden.map(GardenMetaDTO.init)
         )
     }
 
@@ -393,6 +406,9 @@ public final class DataStore {
         if let meta = try? appMeta() {
             meta.lastProcessedDay = snapshot.meta?.lastProcessedDay
             meta.lastHabitMaterializedDay = snapshot.meta?.lastHabitMaterializedDay
+        }
+        if let gardenDTO = snapshot.gardenMeta, let garden = try? gardenMeta() {
+            gardenDTO.apply(to: garden)
         }
         return save()
     }

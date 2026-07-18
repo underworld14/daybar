@@ -131,12 +131,13 @@ struct AnalyticsView: View {
                 stat("\(streak?.best ?? 0)d", "best")
                 stat("\(streak?.graceRemaining ?? FocusAnalytics.gracePerWeek)", "grace left")
             }
-            if let cells = entry?.weekCells, !cells.isEmpty {
-                DayscapeStrip(
-                    cells: cells,
-                    currentStreak: streak?.current ?? 0,
-                    graceRemaining: streak?.graceRemaining ?? FocusAnalytics.gracePerWeek
-                )
+            if let garden = appState.gardenSnapshot {
+                GardenDayscapeView(snapshot: garden)
+                if garden.harvestThisWeek > 0 {
+                    Text("Harvests this week: \(garden.harvestThisWeek)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
             }
         }
     }

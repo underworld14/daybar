@@ -100,6 +100,8 @@ public struct StoreSnapshotDTO: Codable, Sendable {
     public var focusSessions: [FocusSessionDTO]?
     /// Local checklist items; missing key (older backups) decodes as `[]`.
     public var checklistItems: [ChecklistItemDTO]
+    /// `nil` when the backup predates garden export — import must preserve live garden.
+    public var gardenMeta: GardenMetaDTO?
 
     public init(
         todos: [TodoDTO],
@@ -107,7 +109,8 @@ public struct StoreSnapshotDTO: Codable, Sendable {
         habitTemplates: [HabitTemplateDTO] = [],
         habitLogs: [HabitLogDTO] = [],
         focusSessions: [FocusSessionDTO]? = nil,
-        checklistItems: [ChecklistItemDTO] = []
+        checklistItems: [ChecklistItemDTO] = [],
+        gardenMeta: GardenMetaDTO? = nil
     ) {
         self.todos = todos
         self.meta = meta
@@ -115,6 +118,7 @@ public struct StoreSnapshotDTO: Codable, Sendable {
         self.habitLogs = habitLogs
         self.focusSessions = focusSessions
         self.checklistItems = checklistItems
+        self.gardenMeta = gardenMeta
     }
 
     public init(from decoder: Decoder) throws {
@@ -125,6 +129,67 @@ public struct StoreSnapshotDTO: Codable, Sendable {
         habitLogs = try c.decodeIfPresent([HabitLogDTO].self, forKey: .habitLogs) ?? []
         focusSessions = try c.decodeIfPresent([FocusSessionDTO].self, forKey: .focusSessions)
         checklistItems = try c.decodeIfPresent([ChecklistItemDTO].self, forKey: .checklistItems) ?? []
+        gardenMeta = try c.decodeIfPresent(GardenMetaDTO.self, forKey: .gardenMeta)
+    }
+}
+
+public struct GardenMetaDTO: Codable, Sendable, Equatable {
+    public var lastSettledDay: Date?
+    public var coins: Int
+    public var lifetimeCompletedSessions: Int
+    public var companionID: String
+    public var unlockedItemIDsJSON: String
+    public var currentSeasonRaw: String
+    public var plotSlotsJSON: String
+    public var harvestLogJSON: String
+    public var lastPlantedCropID: String?
+
+    public init(
+        lastSettledDay: Date? = nil,
+        coins: Int = 0,
+        lifetimeCompletedSessions: Int = 0,
+        companionID: String = "default",
+        unlockedItemIDsJSON: String = "[]",
+        currentSeasonRaw: String = GardenSeason.spring.rawValue,
+        plotSlotsJSON: String = GardenMeta.defaultSlotsJSON,
+        harvestLogJSON: String = "[]",
+        lastPlantedCropID: String? = nil
+    ) {
+        self.lastSettledDay = lastSettledDay
+        self.coins = coins
+        self.lifetimeCompletedSessions = lifetimeCompletedSessions
+        self.companionID = companionID
+        self.unlockedItemIDsJSON = unlockedItemIDsJSON
+        self.currentSeasonRaw = currentSeasonRaw
+        self.plotSlotsJSON = plotSlotsJSON
+        self.harvestLogJSON = harvestLogJSON
+        self.lastPlantedCropID = lastPlantedCropID
+    }
+
+    public init(_ m: GardenMeta) {
+        self.init(
+            lastSettledDay: m.lastSettledDay,
+            coins: m.coins,
+            lifetimeCompletedSessions: m.lifetimeCompletedSessions,
+            companionID: m.companionID,
+            unlockedItemIDsJSON: m.unlockedItemIDsJSON,
+            currentSeasonRaw: m.currentSeasonRaw,
+            plotSlotsJSON: m.plotSlotsJSON,
+            harvestLogJSON: m.harvestLogJSON,
+            lastPlantedCropID: m.lastPlantedCropID
+        )
+    }
+
+    public func apply(to m: GardenMeta) {
+        m.lastSettledDay = lastSettledDay
+        m.coins = coins
+        m.lifetimeCompletedSessions = lifetimeCompletedSessions
+        m.companionID = companionID
+        m.unlockedItemIDsJSON = unlockedItemIDsJSON
+        m.currentSeasonRaw = currentSeasonRaw
+        m.plotSlotsJSON = plotSlotsJSON
+        m.harvestLogJSON = harvestLogJSON
+        m.lastPlantedCropID = lastPlantedCropID
     }
 }
 
