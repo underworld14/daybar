@@ -192,6 +192,56 @@ final class PersistenceTests: XCTestCase {
         XCTAssertEqual(decoded.gardenMeta?.coins, 9)
     }
 
+    func testGardenMetaAnimalsRoundTrip() throws {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let store = DataStore(inMemory: true)
+        let garden = try store.gardenMeta()
+        garden.animals = [
+            OwnedAnimal(kind: .chicken, energyUntilReady: 2, cell: 0, acquiredAt: now),
+            OwnedAnimal(kind: .cow, energyUntilReady: 0, cell: 1, acquiredAt: now),
+        ]
+        store.save()
+
+        let snapshot = store.exportSnapshot()
+        XCTAssertNotNil(snapshot.gardenMeta?.animalsJSON)
+
+        let store2 = DataStore(inMemory: true)
+        _ = try store2.gardenMeta()
+        store2.importSnapshot(snapshot)
+        let imported = try store2.gardenMeta()
+        XCTAssertEqual(imported.animals.count, 2)
+        XCTAssertEqual(imported.animals.first?.kind, .chicken)
+        XCTAssertEqual(imported.animals.last?.hasProduct, true)
+    }
+
+    /// Regression: a backup written before `animalsJSON` existed must still decode the whole snapshot
+    /// (a nested required key would throw out of `decodeIfPresent`), and collapse to a live `"[]"`.
+    func testGardenMetaBackupWithoutAnimalsJSONDecodes() throws {
+        let store = DataStore(inMemory: true)
+        let garden = try store.gardenMeta()
+        garden.coins = 13
+        store.save()
+        let snapshot = store.exportSnapshot()
+        let data = try JSONStore.encode(snapshot)
+
+        var obj = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+        var gardenObj = obj["gardenMeta"] as! [String: Any]
+        gardenObj.removeValue(forKey: "animalsJSON")   // simulate pre-animal backup shape
+        obj["gardenMeta"] = gardenObj
+        let stripped = try JSONSerialization.data(withJSONObject: obj)
+
+        let decoded = try JSONStore.decode(stripped)
+        XCTAssertNotNil(decoded.gardenMeta)
+        XCTAssertNil(decoded.gardenMeta?.animalsJSON)
+        XCTAssertEqual(decoded.gardenMeta?.coins, 13)
+
+        // apply(to:) collapses the missing key to a live "[]".
+        let live = GardenMeta()
+        decoded.gardenMeta?.apply(to: live)
+        XCTAssertEqual(live.animalsJSON, "[]")
+        XCTAssertTrue(live.animals.isEmpty)
+    }
+
     func testImportSnapshotReplacesAll() throws {
         let store = DataStore(inMemory: true)
         store.insert(DailyTodo(title: "old", plannedForDate: now, originalPlannedDate: now))

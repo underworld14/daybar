@@ -107,4 +107,69 @@ final class AppStateGardenTests: XCTestCase {
         )
         XCTAssertFalse(state.harvestGardenSlot(0, now: now))
     }
+
+    func testBuyAnimalIntentDeductsAndPersists() {
+        let cal = utcCal()
+        let store = DataStore(inMemory: true)
+        let garden = try! store.gardenMeta()
+        garden.coins = 15
+        store.save()
+        let state = AppState(
+            store: store, calendar: cal,
+            remindersProvider: MockRemindersProvider(),
+            schedulesRemindersSync: false, observeSystemEvents: false
+        )
+        XCTAssertTrue(state.buyAnimal(.chicken, now: now))
+        XCTAssertEqual(state.gardenSnapshot?.animals.count, 1)
+        XCTAssertEqual(state.gardenSnapshot?.coins, 5)
+        XCTAssertEqual(try! store.gardenMeta().animals.count, 1)   // persisted
+    }
+
+    func testCollectFromAnimalIntentAddsCoins() {
+        let cal = utcCal()
+        let store = DataStore(inMemory: true)
+        let garden = try! store.gardenMeta()
+        garden.coins = 0
+        let ready = OwnedAnimal(kind: .cow, energyUntilReady: 0, cell: 0, acquiredAt: now)
+        garden.animals = [ready]
+        store.save()
+        let state = AppState(
+            store: store, calendar: cal,
+            remindersProvider: MockRemindersProvider(),
+            schedulesRemindersSync: false, observeSystemEvents: false
+        )
+        XCTAssertTrue(state.collectFromAnimal(ready.id, now: now))
+        XCTAssertEqual(state.gardenSnapshot?.coins, 5)             // cow collectValue
+        XCTAssertEqual(state.gardenSnapshot?.animals.first?.hasProduct, false)
+    }
+
+    func testCollectInvalidAnimalIntentNoOp() {
+        let cal = utcCal()
+        let store = DataStore(inMemory: true)
+        let state = AppState(
+            store: store, calendar: cal,
+            remindersProvider: MockRemindersProvider(),
+            schedulesRemindersSync: false, observeSystemEvents: false
+        )
+        XCTAssertFalse(state.collectFromAnimal(UUID(), now: now))
+    }
+
+    func testAnimalProducesAfterFocusThroughAppState() {
+        let cal = utcCal()
+        let store = DataStore(inMemory: true)
+        let garden = try! store.gardenMeta()
+        garden.animals = [OwnedAnimal(kind: .chicken, energyUntilReady: 3, cell: 0, acquiredAt: now)]
+        store.save()
+        let state = AppState(
+            store: store, calendar: cal,
+            remindersProvider: MockRemindersProvider(),
+            schedulesRemindersSync: false, observeSystemEvents: false
+        )
+        for _ in 0..<3 {
+            store.insert(FocusSession(endedAt: now, minutes: 25, completed: true))
+        }
+        store.save()
+        state.refresh(now: now)
+        XCTAssertEqual(state.gardenSnapshot?.animals.first?.hasProduct, true)
+    }
 }

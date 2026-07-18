@@ -717,6 +717,32 @@ public final class AppState {
         return true
     }
 
+    /// Buy a farm animal from the shop. Returns whether the purchase succeeded.
+    @discardableResult
+    public func buyAnimal(_ kind: AnimalKind, now: Date = .now) -> Bool {
+        guard let meta = try? store.gardenMeta() else { return false }
+        guard GardenShop.buyAnimal(kind: kind, meta: meta, asOf: now).success else { return false }
+        commitSave()
+        rebuildFocusCache(now: now)
+        playGardenFeedbackIfEnabled(now: now)
+        return true
+    }
+
+    /// Collect the ready product from an owned animal. Returns whether it acted.
+    /// The re-settle after this has `newEnergy == 0`, so the chime won't fire from `settleGarden` —
+    /// this intent plays it directly (mirrors `harvestGardenSlot`).
+    @discardableResult
+    public func collectFromAnimal(_ id: UUID, now: Date = .now) -> Bool {
+        guard let meta = try? store.gardenMeta() else { return false }
+        guard GardenEngine.collectFromAnimal(meta: meta, animalID: id, asOf: now, calendar: calendar) != nil else {
+            return false
+        }
+        commitSave()
+        rebuildFocusCache(now: now)
+        playGardenFeedbackIfEnabled(now: now)
+        return true
+    }
+
     private func rebuildHabitCaches(rawHabits: [TodayHabit], now: Date) {
         let today = calendar.startOfDay(for: now)
         let lookbackStart = calendar.date(

@@ -25,6 +25,7 @@ public enum GardenEngine {
     ) -> GardenSnapshot {
         let today = calendar.startOfDay(for: now)
         var slots = meta.slots
+        var animals = meta.animals
         var justHarvested: String?
         var unlocks = meta.unlockedItemIDs
 
@@ -47,6 +48,7 @@ public enum GardenEngine {
             var lastHarvested: String?
             var lastPlanted: String?
             var lastGrew: String?
+            var newlyReady: [OwnedAnimal] = []
             for _ in 0..<newEnergy {
                 switch applyOneEnergy(slots: &slots, meta: meta, unlocks: unlocks, today: today, mode: mode) {
                 case .harvested(let crop):
@@ -62,6 +64,8 @@ public enum GardenEngine {
                 case .none:
                     break
                 }
+                // Each unit of focus energy also feeds the animals (mode-agnostic, no coins here).
+                advanceAnimals(&animals, newlyReady: &newlyReady)
             }
             meta.coins += newEnergy * coinPerSession
             meta.lifetimeCompletedSessions = completedCount
@@ -82,11 +86,25 @@ public enum GardenEngine {
                 kind: verb?.0 ?? .coin,
                 cropID: verb?.1
             )
+
+            // A separate, coin-free entry when animals become collectable (batched to avoid feed flooding).
+            if !newlyReady.isEmpty {
+                meta.animals = animals   // persist the fresh timers before the ready-entry reads them
+                let readyText: String
+                if newlyReady.count == 1 {
+                    let k = newlyReady[0].kind
+                    readyText = "\(k.displayName) has \(k.productName.lowercased()) ready"
+                } else {
+                    readyText = "\(newlyReady.count) animals have products ready"
+                }
+                prependReward(meta: meta, date: now, text: readyText, coinDelta: 0, kind: .animalReady, cropID: nil)
+            }
         }
 
         let season = GardenSeason.from(month: calendar.component(.month, from: now))
         meta.season = season
         meta.slots = slots
+        meta.animals = animals
         meta.unlockedItemIDs = unlocks
         meta.lastSettledDay = today
 
@@ -151,7 +169,41 @@ public enum GardenEngine {
         return prependReward(meta: meta, date: now, text: text, coinDelta: 0, kind: .planted, cropID: crop)
     }
 
+    /// Collect the product from a ready animal: awards coins, resets its timer, returns a reward entry.
+    /// Returns `nil` (no-op, no mutation) if the animal is unknown or has no product yet.
+    /// Never touches `lifetimeCompletedSessions`/`lastSettledDay` — collecting is not new focus energy.
+    @discardableResult
+    public static func collectFromAnimal(
+        meta: GardenMeta,
+        animalID: UUID,
+        asOf now: Date = .now,
+        calendar: Calendar = .current
+    ) -> GardenRewardEntry? {
+        var animals = meta.animals
+        guard let idx = animals.firstIndex(where: { $0.id == animalID }), animals[idx].hasProduct else {
+            return nil
+        }
+        let kind = animals[idx].kind
+        animals[idx].energyUntilReady = kind.productionEnergy   // reset — must be focus-fed again
+        meta.animals = animals
+        meta.coins += kind.collectValue
+        let text = "Collected \(kind.productName) · +\(kind.collectValue) coins"
+        return prependReward(meta: meta, date: now, text: text, coinDelta: kind.collectValue, kind: .collected, cropID: nil)
+    }
+
     // MARK: - Growth
+
+    /// Feeds one unit of focus energy to every not-yet-ready animal. Any animal that crosses to ready
+    /// this step is appended to `newlyReady` (for a single batched reward entry). No coins here —
+    /// coins are only awarded on collect, keeping "focus is the only fuel" structurally true.
+    private static func advanceAnimals(_ animals: inout [OwnedAnimal], newlyReady: inout [OwnedAnimal]) {
+        for i in animals.indices where animals[i].energyUntilReady > 0 {
+            animals[i].energyUntilReady -= 1
+            if animals[i].energyUntilReady <= 0 {
+                newlyReady.append(animals[i])
+            }
+        }
+    }
 
     /// Applies one unit of focus energy and reports what it did.
     /// In `.manual` mode the harvest and plant steps are skipped (crops still grow; wilt still recovers),
@@ -239,7 +291,16 @@ public enum GardenEngine {
             justHarvestedCropID: justHarvested,
             hasFence: unlocks.contains(GardenCatalog.itemFence),
             hasScarf: unlocks.contains(GardenCatalog.itemScarf),
-            recentRewards: meta.recentRewards
+            recentRewards: meta.recentRewards,
+            animals: meta.animals.map {
+                AnimalSnapshot(
+                    id: $0.id,
+                    kind: $0.kind,
+                    cell: $0.cell,
+                    hasProduct: $0.hasProduct,
+                    energyUntilReady: $0.energyUntilReady
+                )
+            }
         )
     }
 
@@ -253,7 +314,7 @@ public enum GardenEngine {
             case .harvested: text += " · \(name) harvested"
             case .planted: text += " · \(name) planted"
             case .grew: text += " · \(name) grew"
-            case .coin: break
+            case .coin, .animalReady, .collected: break
             }
         }
         return text

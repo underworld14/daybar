@@ -17,6 +17,8 @@ public final class GardenMeta {
     public var lastPlantedCropID: String?
     /// Newest-first durable reward feed for the Garden HUD ribbon.
     public var rewardFeedJSON: String = "[]"
+    /// Owned farm animals (JSON `[OwnedAnimal]`).
+    public var animalsJSON: String = "[]"
 
     public init(
         lastSettledDay: Date? = nil,
@@ -28,7 +30,8 @@ public final class GardenMeta {
         plotSlotsJSON: String = GardenMeta.defaultSlotsJSON,
         harvestLogJSON: String = "[]",
         lastPlantedCropID: String? = nil,
-        rewardFeedJSON: String = "[]"
+        rewardFeedJSON: String = "[]",
+        animalsJSON: String = "[]"
     ) {
         self.lastSettledDay = lastSettledDay
         self.coins = coins
@@ -40,6 +43,7 @@ public final class GardenMeta {
         self.harvestLogJSON = harvestLogJSON
         self.lastPlantedCropID = lastPlantedCropID
         self.rewardFeedJSON = rewardFeedJSON
+        self.animalsJSON = animalsJSON
     }
 
     public static var defaultSlotsJSON: String {
@@ -64,6 +68,11 @@ public final class GardenMeta {
     public var recentRewards: [GardenRewardEntry] {
         get { Self.decodeRewardFeed(rewardFeedJSON) }
         set { rewardFeedJSON = Self.encodeRewardFeed(newValue) ?? "[]" }
+    }
+
+    public var animals: [OwnedAnimal] {
+        get { Self.decodeAnimals(animalsJSON) }
+        set { animalsJSON = Self.encodeAnimals(newValue) ?? "[]" }
     }
 
     public var season: GardenSeason {
@@ -122,5 +131,18 @@ public final class GardenMeta {
             return []
         }
         return feed
+    }
+
+    public static func encodeAnimals(_ animals: [OwnedAnimal]) -> String? {
+        guard let data = try? JSONEncoder().encode(animals) else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    public static func decodeAnimals(_ json: String) -> [OwnedAnimal] {
+        guard let data = json.data(using: .utf8),
+              let animals = try? JSONDecoder().decode([OwnedAnimal].self, from: data) else {
+            return []
+        }
+        return animals
     }
 }

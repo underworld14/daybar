@@ -56,7 +56,7 @@ public struct GardenRewardEntry: Codable, Sendable, Equatable, Identifiable {
     public var id: Int { seq }
 
     public enum Kind: String, Codable, Sendable {
-        case coin, grew, planted, harvested
+        case coin, grew, planted, harvested, animalReady, collected
     }
 
     public var kind: Kind { Kind(rawValue: kindRaw) ?? .coin }
@@ -124,6 +124,107 @@ public struct GardenHarvestEntry: Codable, Sendable, Equatable {
     }
 }
 
+/// A kind of farm animal you can buy. Animals produce a collectible ONLY as completed focus sessions
+/// arrive (never on idle/real time) — every coin still traces back to focus. Prices sit at/above the
+/// top shop tier so animals are aspirational; marginal coins/session stays below the guaranteed
+/// 1 coin/session from focus itself, so an animal is a long-term investment, not an idle earner.
+public enum AnimalKind: String, Codable, Sendable, CaseIterable, Identifiable {
+    case chicken, cow, sheep
+
+    public var id: String { rawValue }
+
+    /// Coin cost in the shop.
+    public var price: Int {
+        switch self {
+        case .chicken: return 10
+        case .cow: return 20
+        case .sheep: return 30
+        }
+    }
+
+    /// Completed focus sessions needed to grow one product.
+    public var productionEnergy: Int {
+        switch self {
+        case .chicken: return 3
+        case .cow: return 6
+        case .sheep: return 8
+        }
+    }
+
+    /// Coins awarded when the ready product is collected.
+    public var collectValue: Int {
+        switch self {
+        case .chicken: return 2
+        case .cow: return 5
+        case .sheep: return 7
+        }
+    }
+
+    public var productName: String {
+        switch self {
+        case .chicken: return "Egg"
+        case .cow: return "Milk"
+        case .sheep: return "Wool"
+        }
+    }
+
+    public var displayName: String {
+        switch self {
+        case .chicken: return "Chicken"
+        case .cow: return "Cow"
+        case .sheep: return "Sheep"
+        }
+    }
+
+    /// Base sprite name; `_idle`/`_ready` variants render the current state.
+    public var spriteBase: String { "animal_\(rawValue)" }
+}
+
+/// A single owned animal instance. `energyUntilReady` counts DOWN as completed-session energy arrives;
+/// at `<= 0` the animal has a product to collect. Collecting resets it to `kind.productionEnergy`.
+public struct OwnedAnimal: Codable, Sendable, Equatable, Identifiable {
+    public var id: UUID
+    public var kindRaw: String
+    public var energyUntilReady: Int
+    /// Pen-cell INDEX in the farm scene (0..<maxAnimals); `nil` = unplaced.
+    public var cell: Int?
+    public var acquiredAt: Date
+
+    public var kind: AnimalKind { AnimalKind(rawValue: kindRaw) ?? .chicken }
+    public var hasProduct: Bool { energyUntilReady <= 0 }
+
+    public init(
+        id: UUID = UUID(),
+        kind: AnimalKind,
+        energyUntilReady: Int,
+        cell: Int? = nil,
+        acquiredAt: Date
+    ) {
+        self.id = id
+        self.kindRaw = kind.rawValue
+        self.energyUntilReady = energyUntilReady
+        self.cell = cell
+        self.acquiredAt = acquiredAt
+    }
+}
+
+/// Derived, UI-facing view of an owned animal (not persisted; rebuilt each settle).
+public struct AnimalSnapshot: Sendable, Equatable, Identifiable {
+    public var id: UUID
+    public var kind: AnimalKind
+    public var cell: Int?
+    public var hasProduct: Bool
+    public var energyUntilReady: Int
+
+    public init(id: UUID, kind: AnimalKind, cell: Int?, hasProduct: Bool, energyUntilReady: Int) {
+        self.id = id
+        self.kind = kind
+        self.cell = cell
+        self.hasProduct = hasProduct
+        self.energyUntilReady = energyUntilReady
+    }
+}
+
 public struct GardenSnapshot: Sendable, Equatable {
     public var slots: [GardenPlotSlot]
     public var companionMood: CompanionMood
@@ -139,6 +240,8 @@ public struct GardenSnapshot: Sendable, Equatable {
     public var hasScarf: Bool
     /// Newest-first durable reward feed for the Garden HUD ribbon.
     public var recentRewards: [GardenRewardEntry]
+    /// Owned farm animals with their current ready/energy state (for the roaming farm scene + HUD).
+    public var animals: [AnimalSnapshot]
 
     public init(
         slots: [GardenPlotSlot],
@@ -153,7 +256,8 @@ public struct GardenSnapshot: Sendable, Equatable {
         justHarvestedCropID: String? = nil,
         hasFence: Bool = false,
         hasScarf: Bool = false,
-        recentRewards: [GardenRewardEntry] = []
+        recentRewards: [GardenRewardEntry] = [],
+        animals: [AnimalSnapshot] = []
     ) {
         self.slots = slots
         self.companionMood = companionMood
@@ -168,5 +272,6 @@ public struct GardenSnapshot: Sendable, Equatable {
         self.hasFence = hasFence
         self.hasScarf = hasScarf
         self.recentRewards = recentRewards
+        self.animals = animals
     }
 }
