@@ -9,26 +9,33 @@ struct GardenDayscapeView: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    private let stripHeight: CGFloat = 72
+
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 10) {
                 ZStack(alignment: .bottomLeading) {
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(GardenRenderer.seasonSky(snapshot.season))
-                        .frame(height: 44)
-                        .overlay {
-                            if snapshot.weather == .rain, !reduceMotion {
-                                RainDots()
-                            } else if snapshot.weather == .rain {
-                                Color.blue.opacity(0.08)
-                            }
-                        }
+                    GardenRenderer.PixelImage(
+                        name: GardenRenderer.skyName(for: snapshot.season),
+                        width: stripWidth,
+                        height: stripHeight
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
 
-                    HStack(alignment: .bottom, spacing: 6) {
+                    if snapshot.weather == .rain {
+                        GardenRenderer.PixelImage(
+                            name: "weather_rain",
+                            width: stripWidth,
+                            height: stripHeight
+                        )
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .opacity(reduceMotion ? 0.5 : 0.85)
+                        .allowsHitTesting(false)
+                    }
+
+                    HStack(alignment: .bottom, spacing: 4) {
                         if snapshot.hasFence {
-                            RoundedRectangle(cornerRadius: 1)
-                                .fill(Color.brown.opacity(0.55))
-                                .frame(width: 3, height: 22)
+                            GardenRenderer.FenceView()
                         }
                         ForEach(snapshot.slots) { slot in
                             GardenRenderer.PlotView(
@@ -38,9 +45,7 @@ struct GardenDayscapeView: View {
                             )
                         }
                         if snapshot.hasFence {
-                            RoundedRectangle(cornerRadius: 1)
-                                .fill(Color.brown.opacity(0.55))
-                                .frame(width: 3, height: 22)
+                            GardenRenderer.FenceView()
                         }
                         Button {
                             onShop?()
@@ -48,7 +53,6 @@ struct GardenDayscapeView: View {
                             GardenRenderer.CompanionView(
                                 mood: snapshot.companionMood,
                                 hasScarf: snapshot.hasScarf,
-                                season: snapshot.season,
                                 reduceMotion: reduceMotion
                             )
                         }
@@ -57,8 +61,9 @@ struct GardenDayscapeView: View {
                         .accessibilityHint("Opens the garden shop")
                     }
                     .padding(.horizontal, 8)
-                    .padding(.bottom, 4)
+                    .padding(.bottom, 2)
                 }
+                .frame(height: stripHeight)
 
                 Spacer(minLength: 0)
 
@@ -94,25 +99,21 @@ struct GardenDayscapeView: View {
         .accessibilityLabel("Focus garden, \(snapshot.season.rawValue)")
     }
 
+    /// Wide enough for 3–4 plots + companion + optional fences.
+    private var stripWidth: CGFloat {
+        let plots = CGFloat(snapshot.slots.count)
+        let plotW: CGFloat = 32 * GardenRenderer.pixelScale
+        let companion: CGFloat = 32 * GardenRenderer.pixelScale
+        let fence: CGFloat = snapshot.hasFence ? 12 * GardenRenderer.pixelScale * 2 : 0
+        let gaps = 4 * (plots + 2)
+        return max(240, plots * plotW + companion + fence + gaps + 24)
+    }
+
     private var graceHelp: String {
         if snapshot.graceRemaining > 0 {
             return "\(snapshot.graceRemaining) grace day left this week"
         }
         return "No grace days left this week"
-    }
-}
-
-private struct RainDots: View {
-    var body: some View {
-        Canvas { context, size in
-            for i in 0..<12 {
-                let x = CGFloat((i * 17) % Int(size.width))
-                let y = CGFloat((i * 11) % Int(max(size.height, 1)))
-                let rect = CGRect(x: x, y: y, width: 1.5, height: 4)
-                context.fill(Path(ellipseIn: rect), with: .color(.blue.opacity(0.25)))
-            }
-        }
-        .allowsHitTesting(false)
     }
 }
 

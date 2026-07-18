@@ -34,9 +34,11 @@
 - **Pomodoro** — customizable focus/break durations, cycles, auto-start; a **live mm:ss
   countdown right in the menu bar**; accurate across sleep/wake (wall-clock based). Optionally
   **skip a break** if you've stepped away long enough (assumes you already rested).
-- **Focus garden** — completed Pomodoros plant and grow a cozy cottage plot with a companion
-  (soft wilt on misses, one grace day, coins/shop unlocks). Replaces the old Dayscape ink strip;
-  focus streak milestones at 7 / 30 / 100 remain. Showcased on the [product site](https://underworld14.github.io/daybar/).
+- **Focus garden** — completed Pomodoros plant and grow a cozy **pixel-art** cottage plot with a
+  companion (soft wilt on misses, one grace day, coins/shop unlocks). Sprites are original DayBar
+  pixel art (CC0; see `ThirdParty/NOTICE-garden.md`), rendered with nearest-neighbor scaling.
+  Replaces the old Dayscape ink strip; streak milestones at 7 / 30 / 100 remain. Showcased on the
+  [product site](https://underworld14.github.io/daybar/).
 - **Lofi Radio** — built-in **SomaFM** ambient/lofi stations in the panel footer; tap ▶ to start
   (random station) or pick from a simple list; skip stations, now-playing label, offline channel cache;
   menu-bar waveform while playing; **auto-pauses when a focus session ends**.

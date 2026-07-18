@@ -1,0 +1,6 @@
+DayBar Focus Garden pixel sprites
+Copyright (c) 2026 DayBar contributors
+License: CC0 1.0 Universal (public domain dedication)
+
+These sprites were authored for DayBar (programmatic pixel art) for the Focus Garden UI.
+You may use them freely without attribution.

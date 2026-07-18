@@ -1,37 +1,37 @@
 import SwiftUI
 import DayBarCore
 
-/// Procedural pixel-cozy drawing for garden plots and companion.
+/// Nearest-neighbor pixel sprites for the Focus Garden strip (32×32 crop/companion tiles).
 enum GardenRenderer {
-    static func seasonSky(_ season: GardenSeason) -> Color {
-        switch season {
-        case .spring: return Color(red: 0.72, green: 0.88, blue: 0.95)
-        case .summer: return Color(red: 0.55, green: 0.78, blue: 0.95)
-        case .autumn: return Color(red: 0.90, green: 0.78, blue: 0.58)
-        case .winter: return Color(red: 0.78, green: 0.84, blue: 0.92)
+    /// Display scale for 32px source art (integer → crisp pixels).
+    static let pixelScale: CGFloat = 2
+
+    struct PixelImage: View {
+        let name: String
+        var width: CGFloat
+        var height: CGFloat
+
+        var body: some View {
+            Image(name)
+                .interpolation(.none)
+                .resizable()
+                .frame(width: width, height: height)
+                .accessibilityHidden(true)
         }
     }
 
-    static func seasonSoil(_ season: GardenSeason) -> Color {
-        switch season {
-        case .spring: return Color(red: 0.45, green: 0.32, blue: 0.20)
-        case .summer: return Color(red: 0.42, green: 0.28, blue: 0.16)
-        case .autumn: return Color(red: 0.40, green: 0.26, blue: 0.14)
-        case .winter: return Color(red: 0.50, green: 0.48, blue: 0.46)
-        }
+    static func skyName(for season: GardenSeason) -> String {
+        "garden_sky_\(season.rawValue)"
     }
 
-    static func cropColor(cropID: String?, stage: Int) -> Color {
-        guard stage > 0, let cropID else { return .clear }
-        let base: Color = {
-            switch cropID {
-            case "cauliflower": return Color(red: 0.85, green: 0.88, blue: 0.70)
-            case "berry": return Color(red: 0.75, green: 0.25, blue: 0.40)
-            default: return Color(red: 0.85, green: 0.72, blue: 0.35)
-            }
-        }()
-        let opacity = 0.35 + 0.15 * Double(min(stage, 4))
-        return base.opacity(opacity)
+    static func soilName(for season: GardenSeason) -> String {
+        season == .winter ? "garden_soil_winter" : "garden_soil"
+    }
+
+    static func cropName(cropID: String?, stage: Int) -> String? {
+        guard let cropID, stage >= 1 else { return nil }
+        let clamped = min(4, max(1, stage))
+        return "crop_\(cropID)_\(clamped)"
     }
 
     struct PlotView: View {
@@ -39,42 +39,30 @@ enum GardenRenderer {
         let season: GardenSeason
         var reduceMotion: Bool = false
 
+        private var soilW: CGFloat { 32 * pixelScale }
+        private var soilH: CGFloat { 20 * pixelScale }
+        private var cropW: CGFloat { 32 * pixelScale }
+        private var cropH: CGFloat { 32 * pixelScale }
+
         var body: some View {
             ZStack(alignment: .bottom) {
-                RoundedRectangle(cornerRadius: 4)
-                    .fill(GardenRenderer.seasonSoil(season))
-                    .frame(width: 28, height: 18)
-                if !slot.isEmpty {
-                    cropShape
-                        .frame(width: cropSize, height: cropSize)
-                        .offset(y: -6)
-                        .opacity(slot.wiltLevel >= 2 ? 0.45 : slot.wiltLevel == 1 ? 0.7 : 1)
-                        .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: slot.stage)
+                PixelImage(name: GardenRenderer.soilName(for: season), width: soilW, height: soilH)
+                if let crop = GardenRenderer.cropName(cropID: slot.cropID, stage: slot.stage) {
+                    ZStack {
+                        PixelImage(name: crop, width: cropW, height: cropH)
+                        if slot.wiltLevel >= 1 {
+                            PixelImage(name: "crop_wilt_overlay", width: cropW, height: cropH)
+                                .opacity(slot.wiltLevel >= 2 ? 0.85 : 0.45)
+                        }
+                    }
+                    .offset(y: -10)
+                    .opacity(slot.wiltLevel >= 2 ? 0.75 : 1)
+                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: slot.stage)
                 }
             }
+            .frame(width: soilW, height: cropH)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(label)
-        }
-
-        @ViewBuilder
-        private var cropShape: some View {
-            let color = GardenRenderer.cropColor(cropID: slot.cropID, stage: slot.stage)
-            switch slot.stage {
-            case 1:
-                Circle().fill(color).frame(width: 6, height: 6)
-            case 2:
-                Capsule().fill(Color.green.opacity(0.7)).frame(width: 4, height: 10)
-            case 3:
-                RoundedRectangle(cornerRadius: 2).fill(color).frame(width: 10, height: 12)
-            default:
-                Image(systemName: slot.cropID == "berry" ? "circle.fill" : "leaf.fill")
-                    .font(.system(size: 11))
-                    .foregroundStyle(color)
-            }
-        }
-
-        private var cropSize: CGFloat {
-            CGFloat(8 + min(slot.stage, 4) * 3)
         }
 
         private var label: String {
@@ -88,28 +76,16 @@ enum GardenRenderer {
     struct CompanionView: View {
         let mood: CompanionMood
         let hasScarf: Bool
-        let season: GardenSeason
         var reduceMotion: Bool = false
         @State private var bob = false
 
+        private var size: CGFloat { 32 * pixelScale }
+
         var body: some View {
             ZStack {
-                Circle()
-                    .fill(bodyColor)
-                    .frame(width: 22, height: 22)
-                Circle()
-                    .fill(Color.white.opacity(0.9))
-                    .frame(width: 4, height: 4)
-                    .offset(x: -4, y: -2)
-                Circle()
-                    .fill(Color.white.opacity(0.9))
-                    .frame(width: 4, height: 4)
-                    .offset(x: 4, y: -2)
+                PixelImage(name: "companion_\(mood.rawValue)", width: size, height: size)
                 if hasScarf {
-                    Capsule()
-                        .fill(scarfColor)
-                        .frame(width: 16, height: 4)
-                        .offset(y: 6)
+                    PixelImage(name: "companion_scarf", width: size, height: size)
                 }
             }
             .offset(y: bob && !reduceMotion ? -2 : 0)
@@ -122,29 +98,21 @@ enum GardenRenderer {
             .accessibilityLabel(moodLabel)
         }
 
-        private var bodyColor: Color {
-            switch mood {
-            case .happy: return Color(red: 0.95, green: 0.75, blue: 0.35)
-            case .wilted: return Color(red: 0.65, green: 0.62, blue: 0.55)
-            case .idle: return Color(red: 0.85, green: 0.70, blue: 0.45)
-            }
-        }
-
-        private var scarfColor: Color {
-            switch season {
-            case .spring: return Color(red: 0.40, green: 0.70, blue: 0.55)
-            case .summer: return Color(red: 0.95, green: 0.55, blue: 0.30)
-            case .autumn: return Color(red: 0.85, green: 0.40, blue: 0.25)
-            case .winter: return Color(red: 0.45, green: 0.55, blue: 0.85)
-            }
-        }
-
         private var moodLabel: String {
             switch mood {
             case .happy: return "Garden companion, happy"
             case .wilted: return "Garden companion, a bit wilted"
             case .idle: return "Garden companion, idle"
             }
+        }
+    }
+
+    struct FenceView: View {
+        private var w: CGFloat { 12 * pixelScale }
+        private var h: CGFloat { 32 * pixelScale }
+
+        var body: some View {
+            PixelImage(name: "garden_fence", width: w, height: h)
         }
     }
 }
