@@ -37,3 +37,6 @@ sparkle-private-key.txt
 
 # Git worktrees
 .worktrees/
+
+# Playwright MCP scratch
+.playwright-mcp/

@@ -34,14 +34,13 @@
   <main id="main">
     <section class="hero hero-farm" aria-labelledby="hero-heading">
       <div class="hero-farm-bg" aria-hidden="true">
-        <img
+        <canvas
           class="hero-diorama"
-          src="assets/garden/hero-farm.svg"
-          alt=""
-          width="960"
-          height="540"
-          fetchpriority="high"
-          decoding="async">
+          data-garden="hero"
+          data-state="growing"
+          data-animate="true"
+          width="640"
+          height="384"></canvas>
       </div>
       <div class="shell hero-grid">
         <div class="hero-copy">
@@ -67,10 +66,10 @@
         <div class="hero-visual">
           <img
             class="shot shot-hero"
-            src="assets/screenshots/today-panel.svg"
-            alt="DayBar Today panel with a focus garden strip, habits, todos, and Pomodoro controls"
-            width="640"
-            height="720"
+            src="assets/screenshots/garden-tab.png"
+            alt="DayBar's Garden tab: a Today/Garden switcher, a coins/streak/ready HUD, a top-down pixel farm, and a recent-reward feed"
+            width="720"
+            height="909"
             fetchpriority="high"
             decoding="async">
         </div>
@@ -134,20 +133,32 @@ open /Applications/DayBar.app</code></pre>
 
         <article class="feature" aria-labelledby="dayscape-heading">
           <div class="feature-copy">
-            <h3 id="dayscape-heading">Focus garden</h3>
+            <h3 id="dayscape-heading">A garden you can tend</h3>
             <p>
-              Completed Pomodoros plant and grow a tiny cottage plot —
-              a companion cheers you on, soft wilt fades misses, and one grace day keeps the streak kind.
+              Every finished Pomodoro tends a top-down farm on its own Garden tab —
+              plots grow crops, a companion cheers you on, soft wilt fades misses, and one grace day
+              keeps the streak kind. Harvest and plant automatically, or switch to manual and do it yourself.
             </p>
           </div>
-          <img
-            class="shot"
-            src="assets/screenshots/garden-dayscape.svg"
-            alt="DayBar focus garden with crop plots, companion, streak pill, and garden coins"
-            width="560"
-            height="420"
-            loading="lazy"
-            decoding="async">
+          <figure class="garden-demo-figure">
+            <canvas
+              class="garden-demo"
+              id="garden-demo"
+              data-garden="demo"
+              data-state="growing"
+              data-animate="true"
+              width="640"
+              height="384"
+              role="img"
+              aria-label="Interactive top-down pixel farm: cottage, crop plots, a fox companion, and a fence."></canvas>
+            <div class="garden-states" role="group" aria-label="Preview garden state">
+              <button type="button" data-garden-state="empty">Empty</button>
+              <button type="button" data-garden-state="growing" aria-pressed="true">Growing</button>
+              <button type="button" data-garden-state="ready">Ready</button>
+              <button type="button" data-garden-state="winter">Winter</button>
+            </div>
+            <figcaption>The same sprite sheet that renders in the app — click a state to preview.</figcaption>
+          </figure>
         </article>
 
         <article class="feature feature-review" aria-labelledby="review-heading">
@@ -193,5 +204,7 @@ open /Applications/DayBar.app</code></pre>
       <p class="footer-copy">© 2026 Yusril Izza</p>
     </div>
   </footer>
+  <script src="assets/garden/garden-frames.js" defer></script>
+  <script src="assets/garden/garden-scene.js" defer></script>
 </body>
 </html>

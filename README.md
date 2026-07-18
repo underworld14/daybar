@@ -34,9 +34,12 @@
 - **Pomodoro** — customizable focus/break durations, cycles, auto-start; a **live mm:ss
   countdown right in the menu bar**; accurate across sleep/wake (wall-clock based). Optionally
   **skip a break** if you've stepped away long enough (assumes you already rested).
-- **Focus garden** — completed Pomodoros plant and grow a cozy **pixel-art** cottage plot with a
-  companion (soft wilt on misses, one grace day, coins/shop unlocks). Sprites are original DayBar
-  pixel art (CC0; see `ThirdParty/NOTICE-garden.md`), rendered with nearest-neighbor scaling.
+- **Focus garden** — a small farming game on its own **Garden tab**: completed Pomodoros tend a
+  top-down pixel farm with crop plots, a companion, a coins/streak/next-unlock HUD, and a recent-
+  reward feed. Harvest and plant automatically, or switch to **Manual** mode in Settings and tend it
+  yourself. Soft wilt on misses, one grace day, shop unlocks. Sprites are original DayBar pixel art
+  (CC0, AI-assisted; see `ThirdParty/NOTICE-garden.md`), 32px tiles rendered with nearest-neighbor
+  scaling. The same sprite sheet drives the app and the landing site so they can't drift.
   Replaces the old Dayscape ink strip; streak milestones at 7 / 30 / 100 remain. Showcased on the
   [product site](https://underworld14.github.io/daybar/).
 - **Lofi Radio** — built-in **SomaFM** ambient/lofi stations in the panel footer; tap ▶ to start
