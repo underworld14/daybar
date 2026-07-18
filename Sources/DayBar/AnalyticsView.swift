@@ -132,7 +132,7 @@ struct AnalyticsView: View {
                 stat("\(streak?.graceRemaining ?? FocusAnalytics.gracePerWeek)", "grace left")
             }
             if let garden = appState.gardenSnapshot {
-                GardenDayscapeView(snapshot: garden)
+                GardenCompactSummary(snapshot: garden, readOnly: true)
                 if garden.harvestThisWeek > 0 {
                     Text("Harvests this week: \(garden.harvestThisWeek)")
                         .font(.caption2)

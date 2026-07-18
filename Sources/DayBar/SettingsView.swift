@@ -21,6 +21,7 @@ struct SettingsView: View {
     @AppStorage(PreferenceKeys.soundEnabled) private var soundEnabled = true
     @AppStorage(PreferenceKeys.tickingSoundEnabled) private var tickingSoundEnabled = false
     @AppStorage(PreferenceKeys.gardenSoundEnabled) private var gardenSoundEnabled = true
+    @AppStorage(PreferenceKeys.gardenActionMode) private var gardenActionMode: GardenActionMode = .automatic
 
     @AppStorage(PreferenceKeys.morningEnabled) private var morningEnabled = true
     @AppStorage(PreferenceKeys.morningHour) private var morningHour = 9
@@ -98,6 +99,19 @@ struct SettingsView: View {
                     Button("Test sound") { AlertSoundPlayer.shared.playTestRing() }
                         .disabled(!soundEnabled)
                     Toggle("Play ticking sound during focus", isOn: $tickingSoundEnabled)
+                }
+
+                Section("Garden") {
+                    Picker("Garden actions", selection: $gardenActionMode) {
+                        Text("Automatic").tag(GardenActionMode.automatic)
+                        Text("Manual").tag(GardenActionMode.manual)
+                    }
+                    .onChange(of: gardenActionMode) { _, _ in appState.refresh() }
+                    Text(gardenActionMode == .automatic
+                         ? "Completed focus sessions plant and harvest for you."
+                         : "Completed sessions grow your crops; you harvest ripe plots and plant empty ones in the Garden tab.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                     Toggle("Play garden growth sounds", isOn: $gardenSoundEnabled)
                         .disabled(!soundEnabled)
                 }

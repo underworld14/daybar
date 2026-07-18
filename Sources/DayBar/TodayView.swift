@@ -19,46 +19,21 @@ struct TodayView: View {
     private let wordmarkFont = Font.system(size: 15, weight: .bold, design: .rounded)
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        @Bindable var appState = appState
+        return VStack(alignment: .leading, spacing: 10) {
             header
-            quickAdd
-            if appState.totalTodayCount > 0 { progressBar }
-            if let garden = appState.gardenSnapshot {
-                GardenDayscapeView(snapshot: garden) {
-                    showGardenShop = true
-                }
+            Picker("View", selection: $appState.selectedPanelTab) {
+                Text("Today").tag(PanelTab.today)
+                Text("Garden").tag(PanelTab.garden)
             }
-            if let banner = appState.ephemeralBanner {
-                HStack(spacing: 8) {
-                    Text(banner.message)
-                        .font(.caption)
-                        .foregroundStyle(.tint)
-                    if let label = banner.undoLabel, let token = banner.undoToken {
-                        Button(label) { appState.performUndo(token: token) }
-                            .font(.caption.weight(.semibold))
-                            .buttonStyle(.plain)
-                            .foregroundStyle(.tint)
-                            .accessibilityLabel(label)
-                    }
-                    Spacer(minLength: 0)
-                }
-                .padding(.vertical, 2)
-                .accessibilityElement(children: .combine)
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .accessibilityLabel("Panel section")
+
+            switch appState.selectedPanelTab {
+            case .today: todayContent
+            case .garden: gardenContent
             }
-            Divider().padding(.top, 2)
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    habitsSection
-                    todaySection
-                    if !appState.tomorrowTodos.isEmpty { tomorrowSection }
-                    if !appState.carriedTodos.isEmpty { carriedSection }
-                }
-                .padding(.vertical, 2)
-            }
-            .frame(maxHeight: .infinity)
-            Divider()
-            LofiRadioStrip()
-            PomodoroStrip(appState: appState)
         }
         .padding(14)
         .frame(width: 360)
@@ -68,6 +43,9 @@ struct TodayView: View {
             Task { await appState.loadRadioChannels() }
         }
         .onChange(of: appState.quickAddFocusSignal) { _, _ in claimQuickAddFocus() }
+        .onChange(of: appState.selectedPanelTab) { _, tab in
+            if tab == .today { DispatchQueue.main.async { claimQuickAddFocus() } }
+        }
         .onChange(of: appState.ephemeralBanner?.id) { _, _ in
             guard let banner = appState.ephemeralBanner else { return }
             let id = banner.id
@@ -114,6 +92,70 @@ struct TodayView: View {
             set: { appState.presentEndOfDayReview = $0 }
         )) {
             EndOfDayReviewView(appState: appState)
+        }
+    }
+
+    // MARK: - Panel tabs
+
+    /// Today: quick-add, garden summary, task lists, radio + Pomodoro. `newTitle`/`addFocused` live
+    /// on this (always-mounted) root, so the quick-add draft survives switching to Garden and back.
+    @ViewBuilder private var todayContent: some View {
+        quickAdd
+        if appState.totalTodayCount > 0 { progressBar }
+        if let garden = appState.gardenSnapshot {
+            GardenCompactSummary(snapshot: garden) { appState.selectedPanelTab = .garden }
+        }
+        if let banner = appState.ephemeralBanner {
+            HStack(spacing: 8) {
+                Text(banner.message)
+                    .font(.caption)
+                    .foregroundStyle(.tint)
+                if let label = banner.undoLabel, let token = banner.undoToken {
+                    Button(label) { appState.performUndo(token: token) }
+                        .font(.caption.weight(.semibold))
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.tint)
+                        .accessibilityLabel(label)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.vertical, 2)
+            .accessibilityElement(children: .combine)
+        }
+        Divider().padding(.top, 2)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                habitsSection
+                todaySection
+                if !appState.tomorrowTodos.isEmpty { tomorrowSection }
+                if !appState.carriedTodos.isEmpty { carriedSection }
+            }
+            .padding(.vertical, 2)
+        }
+        .frame(maxHeight: .infinity)
+        Divider()
+        LofiRadioStrip()
+        PomodoroStrip(appState: appState)
+    }
+
+    /// Garden: the dedicated interactive farm surface.
+    @ViewBuilder private var gardenContent: some View {
+        if let garden = appState.gardenSnapshot {
+            GardenTabView(snapshot: garden) { showGardenShop = true }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        } else {
+            VStack(spacing: 6) {
+                Spacer(minLength: 24)
+                Image(systemName: "leaf")
+                    .font(.largeTitle)
+                    .foregroundStyle(.secondary)
+                Text("Complete a focus session to grow your garden.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                Spacer(minLength: 24)
+            }
+            .frame(maxWidth: .infinity)
         }
     }
 

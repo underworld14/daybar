@@ -183,6 +183,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             _ = appState.totalTodayCount
             _ = appState.tomorrowTodos.count
             _ = appState.carriedTodos.count
+            _ = appState.selectedPanelTab      // Today ⇄ Garden changes the panel height
+            _ = appState.gardenSnapshot        // garden readiness toggles the Today summary
         } onChange: { [weak self] in
             Task { @MainActor in
                 self?.updatePanelHeightIfNeeded()
@@ -217,8 +219,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// Panel height sized to the current habit/task counts so a handful of rows don't force a
     /// scroll; capped to 80% of the screen, then the list scrolls.
     private func desiredPanelHeight() -> CGFloat {
-        var chrome: CGFloat = 248   // header + quick-add + dividers + radio + pomodoro + padding
+        let screenHeight = (statusItem?.button?.window?.screen ?? NSScreen.main)?.visibleFrame.height ?? 800
+        let cap = screenHeight * 0.8
+
+        // Garden tab is a fixed layout (HUD + 320×192 canvas + reward feed), not task-driven.
+        if appState.selectedPanelTab == .garden {
+            return min(486, cap)
+        }
+
+        // Today: header + tab picker + quick-add + garden summary + dividers + radio + pomodoro + padding.
+        var chrome: CGFloat = 258
         if appState.totalTodayCount > 0 { chrome += 28 } // stacked tasks progress bar + legend
+        if appState.gardenSnapshot == nil { chrome -= 44 } // no compact summary until the garden settles
         let rowHeight: CGFloat = 34   // habits may include a cue subtitle
         let sectionHeader: CGFloat = 24
         var rows: CGFloat = 0
@@ -234,8 +246,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         if !appState.carriedTodos.isEmpty {
             rows += sectionHeader + CGFloat(appState.carriedTodos.count) * rowHeight
         }
-        let screenHeight = (statusItem?.button?.window?.screen ?? NSScreen.main)?.visibleFrame.height ?? 800
-        return min(max(chrome + rows, 280), screenHeight * 0.8)
+        return min(max(chrome + rows, 280), cap)
     }
 
     @objc private func togglePanel() {
