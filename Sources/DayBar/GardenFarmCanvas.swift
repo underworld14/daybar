@@ -58,7 +58,7 @@ struct GardenFarmCanvas: View {
             .opacity(isSparkle ? (pulse ? 1 : 0.5) : (wilt >= 2 ? 0.8 : 1))
             .animation(isSparkle && !reduceMotion
                        ? .easeInOut(duration: 0.9).repeatForever(autoreverses: true) : nil, value: pulse)
-            .offset(x: CGFloat(p.col) * cell, y: CGFloat(p.row) * cell)
+            .position(x: CGFloat(p.col) * cell + w / 2, y: CGFloat(p.row) * cell + h / 2)
     }
 
     /// Wilt level for a crop tile (by matching its cell to a plot slot); 0 for non-crop tiles.
@@ -79,7 +79,7 @@ struct GardenFarmCanvas: View {
         }
         .buttonStyle(.plain)
         .frame(width: cell, height: cell)
-        .offset(x: CGFloat(c.col) * cell, y: CGFloat(c.row) * cell)
+        .position(x: CGFloat(c.col) * cell + cell / 2, y: CGFloat(c.row) * cell + cell / 2)
         .help("Open garden shop")
         .accessibilityLabel("Garden companion, \(moodWord). Opens the garden shop")
     }
@@ -105,7 +105,7 @@ struct GardenFarmCanvas: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .offset(x: CGFloat(c.col) * cell, y: CGFloat(c.row) * cell)
+        .position(x: CGFloat(c.col) * cell + cell / 2, y: CGFloat(c.row) * cell + cell / 2)
         .help(plotHelp(slot))
         .accessibilityLabel(plotLabel(i, slot))
         .accessibilityHint(plotHint(slot))

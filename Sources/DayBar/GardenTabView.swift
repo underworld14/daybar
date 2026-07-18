@@ -64,8 +64,14 @@ struct GardenTabView: View {
                 Text("\(have) / \(n.price) · \(n.title)")
                     .font(.caption2).monospacedDigit().foregroundStyle(.secondary)
             }
-            ProgressView(value: Double(have), total: Double(max(1, n.price)))
-                .tint(.orange)
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color.secondary.opacity(0.18))
+                    Capsule().fill(.orange)
+                        .frame(width: max(0, geo.size.width * CGFloat(have) / CGFloat(max(1, n.price))))
+                }
+            }
+            .frame(height: 6)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Next unlock \(n.title): \(have) of \(n.price) coins")
