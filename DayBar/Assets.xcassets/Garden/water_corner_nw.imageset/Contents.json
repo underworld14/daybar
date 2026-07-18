@@ -1,0 +1,25 @@
+{
+  "images": [
+    {
+      "filename": "water_corner_nw.png",
+      "idiom": "universal",
+      "scale": "1x"
+    },
+    {
+      "filename": "water_corner_nw@2x.png",
+      "idiom": "universal",
+      "scale": "2x"
+    },
+    {
+      "idiom": "universal",
+      "scale": "3x"
+    }
+  ],
+  "info": {
+    "author": "xcode",
+    "version": 1
+  },
+  "properties": {
+    "template-rendering-intent": "original"
+  }
+}

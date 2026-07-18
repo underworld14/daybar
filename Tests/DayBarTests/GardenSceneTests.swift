@@ -26,7 +26,10 @@ final class GardenSceneTests: XCTestCase {
         let data = try Data(contentsOf: manifestURL)
         let json = try JSONSerialization.jsonObject(with: data) as! [String: Any]
         let manifestNames = Set((json["sprites"] as! [String: Any]).keys)
-        XCTAssertEqual(GardenTileCatalog.allExpectedNames, manifestNames,
+        // The site scene uses GardenTileCatalog (10×6); the app's roaming farm adds FarmTileCatalog.
+        // The manifest is the union of both.
+        let catalogNames = GardenTileCatalog.allExpectedNames.union(FarmTileCatalog.allExpectedNames)
+        XCTAssertEqual(catalogNames, manifestNames,
                        "Catalog names and manifest sprites drifted — regenerate art or fix the catalog.")
     }
 

@@ -69,6 +69,12 @@ P = {
     "rain":      (182, 216, 244, 210), "rain_dk": (140, 186, 226, 210),
     "spark":     (255, 248, 198, 255), "spark_dk": (255, 226, 122, 255),
     "hl":        (255, 214, 120, 255),
+    # river water (calm blue ramp + foam)
+    "wa_hi":     (150, 205, 232, 255), "wa0": (110, 176, 214, 255), "wa_dk": (78, 140, 188, 255),
+    "wa_foam":   (214, 238, 246, 255),
+    # farmer + barn (used by the programmatic fallbacks when AI is unavailable)
+    "skin":      (232, 196, 160, 255), "skin_dk": (196, 156, 120, 255),
+    "barn_red":  (176, 66, 60, 255),   "barn_dk": (132, 46, 44, 255),
 }
 
 def _new(w=TILE, h=TILE):
@@ -230,6 +236,121 @@ def crop(stage, kind):
                 im.putpixel((bx, by - 1), P["berry_hi"])
     return im
 
+# ---------------------------------------------------------------- water (autotile) + bridge
+def _water_base(im, d):
+    for y in range(TILE):
+        for x in range(TILE):
+            h = _h(x, y, 7)
+            c = "wa0"
+            if h % 19 == 0: c = "wa_hi"
+            elif h % 13 == 3: c = "wa_dk"
+            im.putpixel((x, y), P[c])
+    for (rx, ry) in [(6, 8), (18, 14), (10, 22), (24, 26), (14, 5)]:
+        d.line([(rx, ry), (rx + 4, ry)], fill=P["wa_hi"])
+        d.line([(rx + 1, ry + 1), (rx + 5, ry + 1)], fill=P["wa_dk"])
+
+def water(kind):
+    """Orthogonal autotile. `kind` in center | edge_{n,s,w,e} | corner_{nw,ne,sw,se}.
+    Foam is drawn on the land side(s) so banks read cleanly against grass."""
+    im = _new(); d = ImageDraw.Draw(im)
+    _water_base(im, d)
+    if kind == "center":
+        sides = set()
+    elif kind.startswith("edge_"):
+        sides = {kind.split("_")[1]}
+    else:  # corner_xx
+        sides = set(kind.split("_")[1])  # "nw" -> {"n","w"}
+    if "n" in sides:
+        d.rectangle([0, 0, 31, 1], fill=P["wa_foam"]); d.line([(0, 2), (31, 2)], fill=P["wa_hi"])
+    if "s" in sides:
+        d.rectangle([0, 30, 31, 31], fill=P["wa_foam"]); d.line([(0, 29), (31, 29)], fill=P["wa_hi"])
+    if "w" in sides:
+        d.rectangle([0, 0, 1, 31], fill=P["wa_foam"]); d.line([(2, 0), (2, 31)], fill=P["wa_hi"])
+    if "e" in sides:
+        d.rectangle([30, 0, 31, 31], fill=P["wa_foam"]); d.line([(29, 0), (29, 31)], fill=P["wa_hi"])
+    return im
+
+def bridge(orient):
+    """Wooden plank deck drawn over the water. `h` spans east-west (over a N-S river)."""
+    im = _new(); d = ImageDraw.Draw(im)
+    if orient == "h":
+        d.rectangle([0, 5, 31, 26], fill=P["w0"])
+        d.line([(0, 5), (31, 5)], fill=P["w_hi"]); d.line([(0, 26), (31, 26)], fill=P["w_sh"])
+        for x in range(2, 31, 4):
+            d.line([(x, 6), (x, 25)], fill=P["w_dk"])
+        d.rectangle([0, 3, 31, 4], fill=P["w_dk"]); d.rectangle([0, 27, 31, 28], fill=P["w_dk"])
+    else:
+        d.rectangle([5, 0, 26, 31], fill=P["w0"])
+        d.line([(5, 0), (5, 31)], fill=P["w_hi"]); d.line([(26, 0), (26, 31)], fill=P["w_sh"])
+        for y in range(2, 31, 4):
+            d.line([(6, y), (25, y)], fill=P["w_dk"])
+        d.rectangle([3, 0, 4, 31], fill=P["w_dk"]); d.rectangle([27, 0, 28, 31], fill=P["w_dk"])
+    return im
+
+# ---------------------------------------------------------------- programmatic fallbacks (char/animals/barn)
+# Used when the AI Images API is unavailable so the tileset is always complete + cohesive.
+def char(direction):
+    im = _new(); d = ImageDraw.Draw(im)
+    # legs + boots
+    d.rectangle([12, 24, 15, 29], fill=P["w_sh"]); d.rectangle([17, 24, 20, 29], fill=P["w_sh"])
+    d.rectangle([12, 29, 15, 31], fill=P["ink"]); d.rectangle([17, 29, 20, 31], fill=P["ink"])
+    # torso (green shirt) + arms
+    d.rounded_rectangle([10, 15, 22, 25], radius=3, fill=P["g_dk"], outline=P["g_sh"])
+    d.rectangle([8, 16, 10, 23], fill=P["g_dk"]); d.rectangle([22, 16, 24, 23], fill=P["g_dk"])
+    # head
+    d.ellipse([11, 6, 21, 16], fill=P["skin"], outline=P["skin_dk"])
+    # straw hat (brim + crown)
+    d.ellipse([8, 4, 24, 11], fill=P["cream"], outline=P["cream_dk"])
+    d.ellipse([12, 2, 20, 8], fill=P["cream"], outline=P["cream_dk"])
+    # face by facing
+    if direction == "down":
+        d.point([(14, 11)], fill=P["ink"]); d.point([(18, 11)], fill=P["ink"])
+    elif direction == "left":
+        d.point([(13, 11)], fill=P["ink"])
+    elif direction == "right":
+        d.point([(18, 11)], fill=P["ink"])
+    else:  # up — back of head
+        d.rectangle([12, 12, 20, 15], fill=P["w_sh"])
+    return im
+
+def animal(kind):
+    im = _new(); d = ImageDraw.Draw(im)
+    if kind == "chicken":
+        d.ellipse([9, 12, 23, 27], fill=P["cauli"], outline=P["cauli_dk"])   # body
+        d.ellipse([11, 7, 19, 15], fill=P["cauli"], outline=P["cauli_dk"])   # head
+        d.polygon([(15, 4), (13, 8), (17, 8)], fill=P["berry"])              # comb
+        d.polygon([(19, 10), (23, 11), (19, 12)], fill=P["leaf_au"])         # beak
+        d.point([(16, 10)], fill=P["ink"])                                   # eye
+        d.line([(13, 27), (13, 30)], fill=P["leaf_au"]); d.line([(19, 27), (19, 30)], fill=P["leaf_au"])
+    elif kind == "cow":
+        d.ellipse([7, 12, 25, 28], fill=P["snow"], outline=P["ink"])         # body
+        d.ellipse([9, 15, 15, 21], fill=P["s_au"]); d.ellipse([18, 18, 23, 24], fill=P["s_au"])
+        d.ellipse([11, 7, 21, 16], fill=P["snow"], outline=P["ink"])         # head
+        d.ellipse([13, 11, 19, 16], fill=P["berry_hi"])                      # muzzle
+        d.point([(14, 10)], fill=P["ink"]); d.point([(18, 10)], fill=P["ink"])
+        d.line([(10, 28), (10, 31)], fill=P["ink"]); d.line([(22, 28), (22, 31)], fill=P["ink"])
+    else:  # sheep
+        d.ellipse([7, 11, 25, 28], fill=P["cauli"], outline=P["cauli_dk"])   # fluffy body
+        for (bx, by) in [(10, 13), (15, 11), (20, 13), (9, 20), (22, 20), (15, 25)]:
+            d.ellipse([bx - 3, by - 3, bx + 3, by + 3], fill=P["snow_hi"], outline=P["cauli_dk"])
+        d.ellipse([12, 15, 20, 23], fill=P["ink"])                           # dark face
+        d.point([(14, 18)], fill=P["snow_hi"]); d.point([(18, 18)], fill=P["snow_hi"])
+        d.line([(11, 28), (11, 31)], fill=P["ink"]); d.line([(21, 28), (21, 31)], fill=P["ink"])
+    return im
+
+def barn():
+    im = _new(64, 64); d = ImageDraw.Draw(im)
+    d.polygon([(6, 26), (32, 6), (58, 26)], fill=P["w_sh"], outline=P["ink"])   # gable roof
+    d.rectangle([6, 26, 58, 30], fill=P["ink"])
+    d.rectangle([10, 30, 54, 58], fill=P["barn_red"], outline=P["ink"])         # walls
+    d.line([(10, 30), (54, 30)], fill=P["cauli"])                               # trim
+    d.rectangle([24, 38, 40, 58], fill=P["w_dk"], outline=P["ink"])             # doors
+    d.line([(32, 38), (32, 58)], fill=P["ink"])
+    d.line([(24, 38), (40, 58)], fill=P["w_hi"]); d.line([(40, 38), (24, 58)], fill=P["w_hi"])
+    d.rectangle([28, 15, 36, 23], fill=P["cream"], outline=P["ink"])            # hayloft window
+    d.line([(32, 15), (32, 23)], fill=P["cream_dk"])
+    return im
+
 # ---------------------------------------------------------------- fx + programmatic prop
 def prop_sign():
     im = _new(); d = ImageDraw.Draw(im)
@@ -307,11 +428,81 @@ def ai_sprite(name, prompt, size):
         print(f"  generated {name}")
     return _pixelize(Image.open(io.BytesIO(raw)), size, colors=48)
 
+_AI_OK = True
+
+def ai_or_draw(name, prompt, size, fallback):
+    """Try the AI Images API (using the `_ai_raw` cache); if it's unavailable — e.g. a billing
+    limit — fall back to a programmatic drawing so the tileset is always complete. Once one call
+    fails, later calls skip straight to the fallback (unless a cached raw exists)."""
+    global _AI_OK
+    cached = (AI_CACHE / f"{name}.png").exists()
+    if cached:
+        return ai_sprite(name, prompt, size)
+    if not _AI_OK:
+        return fallback()
+    try:
+        return ai_sprite(name, prompt, size)
+    except Exception as e:
+        print(f"  AI unavailable ({type(e).__name__}: {str(e)[:70]}) — drawing programmatic sprites from here")
+        _AI_OK = False
+        return fallback()
+
 _FOX = ("Top-down pixel-art sprite of a small cozy farm companion: a round chubby orange fox cub "
         "with a cream belly and dark button eyes, seen slightly from above facing the viewer. "
         "16-bit SNES cozy farming game style, soft cel-shading, crisp clean dark outline, chunky "
         "readable silhouette. Centered, fully transparent background, no shadow, no ground, no "
         "border, no text. {mood}")
+
+_FARMER = ("Top-down pixel-art sprite of a cute cozy farmer character: a small round person wearing "
+           "a straw sun hat, a moss-green shirt and brown trousers, seen slightly from above, {facing}. "
+           "16-bit SNES cozy farming game style, soft cel-shading, crisp clean dark outline, chunky "
+           "readable silhouette, standing still with arms at sides. Centered, fully transparent "
+           "background, no shadow, no ground, no border, no text.")
+
+_FARMER_FACING = {
+    "down":  "facing the viewer (south), face visible under the hat brim",
+    "up":    "facing away from the viewer (north), showing the back of the hat and shoulders",
+    "left":  "facing to the left (west) in profile",
+    "right": "facing to the right (east) in profile",
+}
+
+_ANIMAL = {
+    "chicken": "a plump little white hen with a red comb, small orange beak and orange feet",
+    "cow":     "a small chubby cow with white and soft-brown patches and a gentle face",
+    "sheep":   "a round fluffy cream sheep with a woolly coat and a small dark face",
+}
+
+def _walk_frames(idle):
+    """Derive a 4-frame walk cycle (contact, passing-L, contact, passing-R) from one idle sprite:
+    a gentle 1px vertical bob of the torso + an alternating horizontal shuffle of the lower legs."""
+    top = idle.crop((0, 0, TILE, 22))
+    legs = idle.crop((0, 22, TILE, TILE))
+    frames = []
+    for phase in (0, 1, 0, 2):
+        f = _new()
+        if phase == 0:
+            f.alpha_composite(idle)
+        else:
+            f.alpha_composite(top, (0, -1))                       # bob torso up 1px
+            f.alpha_composite(legs, (1 if phase == 1 else -1, 22))  # shuffle legs left/right
+        frames.append(f)
+    return frames
+
+def _animal_ready(idle, kind):
+    """Composite a small product glyph (egg / milk pail / wool puff) onto the idle animal."""
+    im = idle.copy(); d = ImageDraw.Draw(im)
+    if kind == "chicken":       # egg
+        d.ellipse([23, 3, 29, 11], fill=P["cream"], outline=P["cream_dk"])
+        im.putpixel((25, 5), P["snow_hi"])
+    elif kind == "cow":         # milk pail
+        d.rectangle([23, 4, 29, 10], fill=P["snow"], outline=P["w_dk"])
+        d.rectangle([23, 4, 29, 5], fill=P["snow_hi"])
+        d.line([(23, 4), (29, 4)], fill=P["w_dk"])
+    else:                       # wool puff
+        d.ellipse([22, 3, 30, 11], fill=P["snow_hi"], outline=P["cauli_dk"])
+        for (dx, dy) in [(24, 5), (27, 5), (25, 8)]:
+            im.putpixel((dx, dy), P["snow"])
+    return im
 
 # ---------------------------------------------------------------- build
 def build():
@@ -346,6 +537,40 @@ def build():
         "cream timber walls, a small round window and a wooden door, cute 16-bit cozy farming game "
         "style, soft cel-shading, crisp dark outline. Centered, fully transparent background, no "
         "ground, no shadow, no border, no text.", 64)
+
+    # --- Farm v2: river water + bridge (programmatic) ---
+    for k in ("center", "edge_n", "edge_s", "edge_w", "edge_e",
+              "corner_nw", "corner_ne", "corner_sw", "corner_se"):
+        tiles[f"water_{k}"] = water(k)
+    tiles["prop_bridge_h"] = bridge("h")
+    tiles["prop_bridge_v"] = bridge("v")
+
+    # --- Farm v2: farmer character (AI idle x4 dirs -> derived 4-frame walk) ---
+    for d in ("down", "up", "left", "right"):
+        idle = ai_or_draw(f"char_idle_{d}", _FARMER.format(facing=_FARMER_FACING[d]), 32,
+                          lambda d=d: char(d))
+        tiles[f"char_idle_{d}"] = idle
+        for i, frame in enumerate(_walk_frames(idle), start=1):
+            tiles[f"char_walk_{d}_{i}"] = frame
+
+    # --- Farm v2: animals (AI idle x3 -> derived ready variant) ---
+    for kind, desc in _ANIMAL.items():
+        idle = ai_or_draw(
+            f"animal_{kind}_idle",
+            f"Top-down pixel-art sprite of {desc}, seen slightly from above. 16-bit SNES cozy farming "
+            "game style, soft cel-shading, crisp clean dark outline, chunky readable silhouette. "
+            "Centered, fully transparent background, no shadow, no ground, no border, no text.", 32,
+            lambda kind=kind: animal(kind))
+        tiles[f"animal_{kind}_idle"] = idle
+        tiles[f"animal_{kind}_ready"] = _animal_ready(idle, kind)
+
+    # --- Farm v2: barn (AI, 64px 2x2 prop) ---
+    tiles["prop_barn"] = ai_or_draw(
+        "prop_barn",
+        "Top-down pixel-art sprite of a cozy red barn with a dark gabled roof, big double doors and a "
+        "small hayloft window, cute 16-bit cozy farming game style, soft cel-shading, crisp dark "
+        "outline. Centered, fully transparent background, no ground, no shadow, no border, no text.", 64,
+        lambda: barn())
 
     manifest = {"tile": TILE, "sprites": {}}
     for name, im in tiles.items():

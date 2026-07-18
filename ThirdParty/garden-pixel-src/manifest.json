@@ -1,5 +1,135 @@
 {
   "sprites": {
+    "animal_chicken_idle": {
+      "file": "animal_chicken_idle.png",
+      "h": 32,
+      "w": 32
+    },
+    "animal_chicken_ready": {
+      "file": "animal_chicken_ready.png",
+      "h": 32,
+      "w": 32
+    },
+    "animal_cow_idle": {
+      "file": "animal_cow_idle.png",
+      "h": 32,
+      "w": 32
+    },
+    "animal_cow_ready": {
+      "file": "animal_cow_ready.png",
+      "h": 32,
+      "w": 32
+    },
+    "animal_sheep_idle": {
+      "file": "animal_sheep_idle.png",
+      "h": 32,
+      "w": 32
+    },
+    "animal_sheep_ready": {
+      "file": "animal_sheep_ready.png",
+      "h": 32,
+      "w": 32
+    },
+    "char_idle_down": {
+      "file": "char_idle_down.png",
+      "h": 32,
+      "w": 32
+    },
+    "char_idle_left": {
+      "file": "char_idle_left.png",
+      "h": 32,
+      "w": 32
+    },
+    "char_idle_right": {
+      "file": "char_idle_right.png",
+      "h": 32,
+      "w": 32
+    },
+    "char_idle_up": {
+      "file": "char_idle_up.png",
+      "h": 32,
+      "w": 32
+    },
+    "char_walk_down_1": {
+      "file": "char_walk_down_1.png",
+      "h": 32,
+      "w": 32
+    },
+    "char_walk_down_2": {
+      "file": "char_walk_down_2.png",
+      "h": 32,
+      "w": 32
+    },
+    "char_walk_down_3": {
+      "file": "char_walk_down_3.png",
+      "h": 32,
+      "w": 32
+    },
+    "char_walk_down_4": {
+      "file": "char_walk_down_4.png",
+      "h": 32,
+      "w": 32
+    },
+    "char_walk_left_1": {
+      "file": "char_walk_left_1.png",
+      "h": 32,
+      "w": 32
+    },
+    "char_walk_left_2": {
+      "file": "char_walk_left_2.png",
+      "h": 32,
+      "w": 32
+    },
+    "char_walk_left_3": {
+      "file": "char_walk_left_3.png",
+      "h": 32,
+      "w": 32
+    },
+    "char_walk_left_4": {
+      "file": "char_walk_left_4.png",
+      "h": 32,
+      "w": 32
+    },
+    "char_walk_right_1": {
+      "file": "char_walk_right_1.png",
+      "h": 32,
+      "w": 32
+    },
+    "char_walk_right_2": {
+      "file": "char_walk_right_2.png",
+      "h": 32,
+      "w": 32
+    },
+    "char_walk_right_3": {
+      "file": "char_walk_right_3.png",
+      "h": 32,
+      "w": 32
+    },
+    "char_walk_right_4": {
+      "file": "char_walk_right_4.png",
+      "h": 32,
+      "w": 32
+    },
+    "char_walk_up_1": {
+      "file": "char_walk_up_1.png",
+      "h": 32,
+      "w": 32
+    },
+    "char_walk_up_2": {
+      "file": "char_walk_up_2.png",
+      "h": 32,
+      "w": 32
+    },
+    "char_walk_up_3": {
+      "file": "char_walk_up_3.png",
+      "h": 32,
+      "w": 32
+    },
+    "char_walk_up_4": {
+      "file": "char_walk_up_4.png",
+      "h": 32,
+      "w": 32
+    },
     "companion_happy_down": {
       "file": "companion_happy_down.png",
       "h": 32,
@@ -150,6 +280,21 @@
       "h": 32,
       "w": 32
     },
+    "prop_barn": {
+      "file": "prop_barn.png",
+      "h": 64,
+      "w": 64
+    },
+    "prop_bridge_h": {
+      "file": "prop_bridge_h.png",
+      "h": 32,
+      "w": 32
+    },
+    "prop_bridge_v": {
+      "file": "prop_bridge_v.png",
+      "h": 32,
+      "w": 32
+    },
     "prop_home": {
       "file": "prop_home.png",
       "h": 64,
@@ -172,6 +317,51 @@
     },
     "tile_path": {
       "file": "tile_path.png",
+      "h": 32,
+      "w": 32
+    },
+    "water_center": {
+      "file": "water_center.png",
+      "h": 32,
+      "w": 32
+    },
+    "water_corner_ne": {
+      "file": "water_corner_ne.png",
+      "h": 32,
+      "w": 32
+    },
+    "water_corner_nw": {
+      "file": "water_corner_nw.png",
+      "h": 32,
+      "w": 32
+    },
+    "water_corner_se": {
+      "file": "water_corner_se.png",
+      "h": 32,
+      "w": 32
+    },
+    "water_corner_sw": {
+      "file": "water_corner_sw.png",
+      "h": 32,
+      "w": 32
+    },
+    "water_edge_e": {
+      "file": "water_edge_e.png",
+      "h": 32,
+      "w": 32
+    },
+    "water_edge_n": {
+      "file": "water_edge_n.png",
+      "h": 32,
+      "w": 32
+    },
+    "water_edge_s": {
+      "file": "water_edge_s.png",
+      "h": 32,
+      "w": 32
+    },
+    "water_edge_w": {
+      "file": "water_edge_w.png",
       "h": 32,
       "w": 32
     }

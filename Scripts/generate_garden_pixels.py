@@ -65,7 +65,7 @@ def emit_imagesets(imgs):
     print(f"  wrote {len(imgs)} imagesets -> {ASSETS.relative_to(ROOT)}")
 
 
-def emit_web_sheet(imgs, scale=4, sheet_w=256, pad=1):
+def emit_web_sheet(imgs, scale=4, sheet_w=512, pad=1):
     """Shelf-pack into a sheet at `scale` (nearest) and record logical-px frames."""
     WEB.mkdir(parents=True, exist_ok=True)
     order = sorted(imgs.keys(), key=lambda n: (-imgs[n].height, n))
