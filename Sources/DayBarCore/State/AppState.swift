@@ -75,6 +75,10 @@ public final class AppState {
     public var isPanelSheetPresented: Bool = false
     /// Bumped to ask the panel to focus the quick-add field (e.g. from the global hotkey).
     public var quickAddFocusSignal: Int = 0
+    /// Bumped to ask AppKit to open (or focus) the pop-out Garden window.
+    public var openGardenWindowSignal: Int = 0
+    /// True while the pop-out Garden window is open. Written only by the AppKit layer.
+    public var isGardenWindowOpen: Bool = false
 
     public private(set) var radioChannels: [SomaFMChannel] = []
     public private(set) var radioSkipChannels: [SomaFMChannel] = []

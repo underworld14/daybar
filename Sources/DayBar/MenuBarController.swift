@@ -36,6 +36,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private var appState: AppState!
     private var statusItem: NSStatusItem!
     private var panel: FloatingPanel!
+    private var gardenWindowController: GardenWindowController?
     private var outsideClickMonitor: Any?
     private let panelWidth: CGFloat = 360
 
@@ -47,6 +48,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         appState.notifications.requestAuthorization()
         setupStatusItem()
         setupPanel()
+        trackGardenWindowRequests()
         Task { await appState.restoreRadioSession() }
         KeyboardShortcuts.onKeyDown(for: .quickAdd) { [weak self] in
             MainActor.assumeIsolated { self?.revealForQuickAdd() }
@@ -183,7 +185,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             _ = appState.totalTodayCount
             _ = appState.tomorrowTodos.count
             _ = appState.carriedTodos.count
-            _ = appState.selectedPanelTab      // Today ⇄ Garden changes the panel height
             _ = appState.gardenSnapshot        // garden readiness toggles the Today summary
         } onChange: { [weak self] in
             Task { @MainActor in
@@ -191,6 +192,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 self?.trackPanelHeightUpdates()
             }
         }
+    }
+
+    // MARK: - Garden window
+
+    /// Observe `openGardenWindowSignal` and open (or focus) the pop-out Garden window. Kept separate
+    /// from the height tracker so open requests don't run panel-height math. Self-re-arms.
+    private func trackGardenWindowRequests() {
+        withObservationTracking {
+            _ = appState.openGardenWindowSignal
+        } onChange: { [weak self] in
+            Task { @MainActor in
+                self?.openGardenWindow()
+                self?.trackGardenWindowRequests()
+            }
+        }
+    }
+
+    private func openGardenWindow() {
+        if let controller = gardenWindowController {
+            NSApp.activate(ignoringOtherApps: true)
+            controller.showAndFocus()
+            return
+        }
+        // A real resizable window wants a Dock tile + Cmd-Tab; revert to accessory on close.
+        NSApp.setActivationPolicy(.regular)
+        let controller = GardenWindowController(appState: appState) { [weak self] in
+            self?.gardenWindowDidClose()
+        }
+        gardenWindowController = controller
+        appState.isGardenWindowOpen = true
+        hidePanel()   // the panel's job is done; the window is the home of the full garden
+        NSApp.activate(ignoringOtherApps: true)
+        controller.showAndFocus()
+    }
+
+    private func gardenWindowDidClose() {
+        appState.isGardenWindowOpen = false
+        gardenWindowController = nil
+        NSApp.setActivationPolicy(.accessory)
     }
 
     /// Apply `desiredPanelHeight()` only while the panel is visible (no thrash when hidden).
@@ -222,12 +262,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let screenHeight = (statusItem?.button?.window?.screen ?? NSScreen.main)?.visibleFrame.height ?? 800
         let cap = screenHeight * 0.8
 
-        // Garden tab is a fixed layout (HUD + 320×192 canvas + reward feed), not task-driven.
-        if appState.selectedPanelTab == .garden {
-            return min(486, cap)
-        }
-
-        // Today: header + tab picker + quick-add + garden summary + dividers + radio + pomodoro + padding.
+        // Header + quick-add + garden summary + dividers + radio + pomodoro + padding.
         var chrome: CGFloat = 258
         if appState.totalTodayCount > 0 { chrome += 28 } // stacked tasks progress bar + legend
         if appState.gardenSnapshot == nil { chrome -= 44 } // no compact summary until the garden settles

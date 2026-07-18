@@ -14,7 +14,6 @@ struct TodayView: View {
     @State private var showHistory = false
     @State private var addForTomorrow = false
     @State private var detailTodo: DailyTodo?
-    @State private var showGardenShop = false
 
     private let wordmarkFont = Font.system(size: 15, weight: .bold, design: .rounded)
 
@@ -22,18 +21,7 @@ struct TodayView: View {
         @Bindable var appState = appState
         return VStack(alignment: .leading, spacing: 10) {
             header
-            Picker("View", selection: $appState.selectedPanelTab) {
-                Text("Today").tag(PanelTab.today)
-                Text("Garden").tag(PanelTab.garden)
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .accessibilityLabel("Panel section")
-
-            switch appState.selectedPanelTab {
-            case .today: todayContent
-            case .garden: gardenContent
-            }
+            todayContent
         }
         .padding(14)
         .frame(width: 360)
@@ -43,9 +31,6 @@ struct TodayView: View {
             Task { await appState.loadRadioChannels() }
         }
         .onChange(of: appState.quickAddFocusSignal) { _, _ in claimQuickAddFocus() }
-        .onChange(of: appState.selectedPanelTab) { _, tab in
-            if tab == .today { DispatchQueue.main.async { claimQuickAddFocus() } }
-        }
         .onChange(of: appState.ephemeralBanner?.id) { _, _ in
             guard let banner = appState.ephemeralBanner else { return }
             let id = banner.id
@@ -68,24 +53,17 @@ struct TodayView: View {
         .sheet(item: $detailTodo) { todo in
             TodoDetailSheet(appState: appState, todo: todo)
         }
-        .sheet(isPresented: $showGardenShop) {
-            GardenShopSheet()
-                .environment(appState)
-        }
         .onChange(of: showSettings) { _, open in
-            appState.isPanelSheetPresented = open || showStats || showHistory || showGardenShop || detailTodo != nil
+            appState.isPanelSheetPresented = open || showStats || showHistory || detailTodo != nil
         }
         .onChange(of: showStats) { _, open in
-            appState.isPanelSheetPresented = open || showSettings || showHistory || showGardenShop || detailTodo != nil
+            appState.isPanelSheetPresented = open || showSettings || showHistory || detailTodo != nil
         }
         .onChange(of: showHistory) { _, open in
-            appState.isPanelSheetPresented = open || showSettings || showStats || showGardenShop || detailTodo != nil
-        }
-        .onChange(of: showGardenShop) { _, open in
-            appState.isPanelSheetPresented = open || showSettings || showStats || showHistory || detailTodo != nil
+            appState.isPanelSheetPresented = open || showSettings || showStats || detailTodo != nil
         }
         .onChange(of: detailTodo) { _, todo in
-            appState.isPanelSheetPresented = todo != nil || showSettings || showStats || showHistory || showGardenShop
+            appState.isPanelSheetPresented = todo != nil || showSettings || showStats || showHistory
         }
         .sheet(isPresented: Binding(
             get: { appState.presentEndOfDayReview },
@@ -103,7 +81,7 @@ struct TodayView: View {
         quickAdd
         if appState.totalTodayCount > 0 { progressBar }
         if let garden = appState.gardenSnapshot {
-            GardenCompactSummary(snapshot: garden) { appState.selectedPanelTab = .garden }
+            GardenCompactSummary(snapshot: garden) { appState.openGardenWindowSignal += 1 }
         }
         if let banner = appState.ephemeralBanner {
             HStack(spacing: 8) {
@@ -138,27 +116,6 @@ struct TodayView: View {
         PomodoroStrip(appState: appState)
     }
 
-    /// Garden: the dedicated interactive farm surface.
-    @ViewBuilder private var gardenContent: some View {
-        if let garden = appState.gardenSnapshot {
-            GardenTabView(snapshot: garden) { showGardenShop = true }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        } else {
-            VStack(spacing: 6) {
-                Spacer(minLength: 24)
-                Image(systemName: "leaf")
-                    .font(.largeTitle)
-                    .foregroundStyle(.secondary)
-                Text("Complete a focus session to grow your garden.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                Spacer(minLength: 24)
-            }
-            .frame(maxWidth: .infinity)
-        }
-    }
-
     // MARK: - Header
 
     private var header: some View {
@@ -169,6 +126,8 @@ struct TodayView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Menu {
+                Button { appState.openGardenWindowSignal += 1 } label: { Label("Open Garden…", systemImage: "leaf") }
+                Divider()
                 Button { showSettings = true } label: { Label("Settings…", systemImage: "gearshape") }
                 Button { showStats = true } label: { Label("Statistics…", systemImage: "chart.bar") }
                 Button { showHistory = true } label: { Label("Task History…", systemImage: "clock.arrow.circlepath") }

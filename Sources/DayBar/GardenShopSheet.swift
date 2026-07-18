@@ -45,10 +45,38 @@ struct GardenShopSheet: View {
                 }
                 .padding(.vertical, 4)
             }
+
+            Divider().padding(.vertical, 2)
+            HStack {
+                Text("Animals").font(.subheadline.weight(.semibold))
+                Spacer()
+                Text("\(animalCount) / \(GardenAnimalCatalog.maxAnimals)")
+                    .font(.caption).monospacedDigit().foregroundStyle(.secondary)
+            }
+            ForEach(AnimalKind.allCases) { kind in
+                HStack(spacing: 10) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(kind.displayName).font(.subheadline.weight(.medium))
+                        Text("Produces \(kind.productName.lowercased()) every \(kind.productionEnergy) focus sessions · +\(kind.collectValue)c to collect")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button {
+                        _ = appState.buyAnimal(kind)
+                    } label: {
+                        Text("\(kind.price)c").monospacedDigit()
+                    }
+                    .disabled(coins < kind.price || animalCount >= GardenAnimalCatalog.maxAnimals)
+                }
+                .padding(.vertical, 4)
+            }
+
             Button("Done") { dismiss() }
                 .keyboardShortcut(.defaultAction)
         }
         .padding(16)
-        .frame(width: 320)
+        .frame(width: 340)
     }
+
+    private var animalCount: Int { appState.gardenSnapshot?.animals.count ?? 0 }
 }

@@ -29,7 +29,7 @@ struct GardenCompactSummary: View {
             Spacer(minLength: 0)
             if !readOnly {
                 Text("Open Garden").font(.caption2.weight(.medium)).foregroundStyle(.orange)
-                Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.secondary)
+                Image(systemName: "arrow.up.left.and.arrow.down.right").font(.caption2).foregroundStyle(.secondary)
             }
         }
         .padding(.horizontal, 10)
@@ -48,6 +48,6 @@ struct GardenCompactSummary: View {
     }
 
     private var a11yLabel: String {
-        "Focus Garden, \(snapshot.coins) coins, \(readyCount) crops ready" + (readOnly ? "" : ". Opens the Garden tab")
+        "Focus Garden, \(snapshot.coins) coins, \(readyCount) crops ready" + (readOnly ? "" : ". Opens the Garden window")
     }
 }

@@ -109,7 +109,7 @@ struct SettingsView: View {
                     .onChange(of: gardenActionMode) { _, _ in appState.refresh() }
                     Text(gardenActionMode == .automatic
                          ? "Completed focus sessions plant and harvest for you."
-                         : "Completed sessions grow your crops; you harvest ripe plots and plant empty ones in the Garden tab.")
+                         : "Completed sessions grow your crops; you harvest ripe plots and plant empty ones in the Garden window.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Toggle("Play garden growth sounds", isOn: $gardenSoundEnabled)
