@@ -34,11 +34,14 @@
 - **Pomodoro** — customizable focus/break durations, cycles, auto-start; a **live mm:ss
   countdown right in the menu bar**; accurate across sleep/wake (wall-clock based). Optionally
   **skip a break** if you've stepped away long enough (assumes you already rested).
-- **Focus garden** — a small farming game on its own **Garden tab**: completed Pomodoros tend a
-  top-down pixel farm with crop plots, a companion, a coins/streak/next-unlock HUD, and a recent-
-  reward feed. Harvest and plant automatically, or switch to **Manual** mode in Settings and tend it
-  yourself. Soft wilt on misses, one grace day, shop unlocks. Sprites are original DayBar pixel art
-  (CC0, AI-assisted; see `ThirdParty/NOTICE-garden.md`), 32px tiles rendered with nearest-neighbor
+- **Focus garden** — a small farming game you **pop out into its own resizable window** and walk
+  around (click-to-move, powered by SpriteKit): a larger top-down farm with crop beds, a river crossed
+  by a bridge, a cottage, a barn, a companion, and **farm animals** (chickens, cows, sheep) you buy and
+  that give eggs, milk and wool. Everything is still fueled **only by completed focus sessions** — walk
+  up to a ripe plot or a ready animal to collect. A coins/streak/ready HUD, a recent-reward feed, an
+  accessible Actions menu, and a shop round it out. Harvest/plant automatically, or switch to **Manual**
+  mode in Settings. Soft wilt on misses, one grace day, shop unlocks. Sprites are original DayBar pixel
+  art (CC0, AI-assisted; see `ThirdParty/NOTICE-garden.md`), 32px tiles rendered with nearest-neighbor
   scaling. The same sprite sheet drives the app and the landing site so they can't drift.
   Replaces the old Dayscape ink strip; streak milestones at 7 / 30 / 100 remain. Showcased on the
   [product site](https://underworld14.github.io/daybar/).
