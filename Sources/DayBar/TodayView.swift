@@ -51,7 +51,9 @@ struct TodayView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     habitsSection
                     todaySection
-                    if !appState.tomorrowTodos.isEmpty { tomorrowSection }
+                    if TraySectionPolicy.showsTomorrowSection(todoCount: appState.tomorrowTodos.count) {
+                        tomorrowSection
+                    }
                     if !appState.carriedTodos.isEmpty { carriedSection }
                 }
                 .padding(.vertical, 2)
@@ -221,8 +223,7 @@ struct TodayView: View {
 
     private func addCurrent() {
         if addForTomorrow {
-            let tomorrow = DayMath.nextDay(.now)
-            appState.addTodo(title: newTitle, plannedFor: tomorrow)
+            appState.addTodoForTomorrow(title: newTitle)
         } else {
             appState.addTodo(title: newTitle)
         }
@@ -315,9 +316,14 @@ struct TodayView: View {
                 Text("\(appState.tomorrowTodos.count)")
                     .font(.caption2).foregroundStyle(.secondary)
             }
-            ForEach(appState.tomorrowTodos) { todo in
-                TodoRow(appState: appState, todo: todo, onOpenDetails: { detailTodo = todo })
-                    .id("tomorrow-\(todo.id)-\(todo.statusRaw)-\(todo.completedDate?.timeIntervalSince1970 ?? 0)")
+            if appState.tomorrowTodos.isEmpty {
+                Text("Nothing planned for tomorrow yet.")
+                    .font(.caption).foregroundStyle(.secondary).padding(.vertical, 2)
+            } else {
+                ForEach(appState.tomorrowTodos) { todo in
+                    TodoRow(appState: appState, todo: todo, onOpenDetails: { detailTodo = todo })
+                        .id("tomorrow-\(todo.id)-\(todo.statusRaw)-\(todo.completedDate?.timeIntervalSince1970 ?? 0)")
+                }
             }
         }
     }

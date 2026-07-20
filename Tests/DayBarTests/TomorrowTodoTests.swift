@@ -26,6 +26,18 @@ final class TomorrowTodoTests: XCTestCase {
         XCTAssertTrue(state.todayTodos.isEmpty)
     }
 
+    func testAddTodoForTomorrowIntentUsesAppCalendar() {
+        let now = Date(timeIntervalSince1970: 2_000_000_000)
+        let expected = DayMath.nextDay(now, calendar: cal)
+
+        let todo = state.addTodoForTomorrow(title: "Ship build", now: now)
+
+        XCTAssertNotNil(todo)
+        XCTAssertEqual(todo?.plannedForDate, expected)
+        XCTAssertTrue(state.tomorrowTodos.contains(where: { $0.title == "Ship build" }))
+        XCTAssertTrue(state.todayTodos.isEmpty)
+    }
+
     func testTomorrowTodoAppearsInTodayAfterMidnight() {
         let evening = Date(timeIntervalSince1970: 2_000_000_000)
         let tomorrow = DayMath.nextDay(evening, calendar: cal)

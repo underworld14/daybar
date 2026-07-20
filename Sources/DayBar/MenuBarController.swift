@@ -228,9 +228,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             rows += sectionHeader + rowHeight // empty-state line
         }
         rows += sectionHeader + CGFloat(max(appState.totalTodayCount, 1)) * rowHeight
-        if !appState.tomorrowTodos.isEmpty {
-            rows += sectionHeader + CGFloat(appState.tomorrowTodos.count) * rowHeight
-        }
+        // Tomorrow section is always mounted (empty-state row when count is 0).
+        rows += sectionHeader + CGFloat(max(appState.tomorrowTodos.count, 1)) * rowHeight
         if !appState.carriedTodos.isEmpty {
             rows += sectionHeader + CGFloat(appState.carriedTodos.count) * rowHeight
         }

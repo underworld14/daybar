@@ -313,6 +313,17 @@ public final class AppState {
         return todo
     }
 
+    /// Quick-add path for the tray's Tomorrow tab — uses AppState's calendar so the
+    /// planned day matches `reloadLists` (avoid `Calendar.current` drift in the UI).
+    @discardableResult
+    public func addTodoForTomorrow(
+        title: String,
+        priority: Priority = .medium,
+        now: Date = .now
+    ) -> DailyTodo? {
+        addTodo(title: title, priority: priority, plannedFor: DayMath.nextDay(now, calendar: calendar), now: now)
+    }
+
     /// Cycles todo status: to-do → in progress → done → to-do (todos only).
     public func advanceTodo(_ todo: DailyTodo, now: Date = .now) {
         let today = DayMath.startOfDay(now, calendar: calendar)
