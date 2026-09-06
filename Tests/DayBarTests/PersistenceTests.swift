@@ -172,6 +172,29 @@ final class PersistenceTests: XCTestCase {
         XCTAssertEqual(try store.todos(on: now).map(\.title), ["high", "low"])
     }
 
+    func testTodayQuerySortsIncompleteBeforeCompleted() throws {
+        let store = DataStore(inMemory: true)
+        let today = Calendar.current.startOfDay(for: now)
+        let done = DailyTodo(
+            title: "done-high",
+            plannedForDate: today,
+            originalPlannedDate: today,
+            completedDate: now,
+            status: .completed,
+            priority: .high
+        )
+        let open = DailyTodo(
+            title: "open-low",
+            plannedForDate: today,
+            originalPlannedDate: today,
+            priority: .low
+        )
+        store.insert(done)
+        store.insert(open)
+        store.save()
+        XCTAssertEqual(try store.todos(on: now).map(\.title), ["open-low", "done-high"])
+    }
+
     // MARK: - Legacy import (the irreversible Phase-1 → SwiftData migration)
 
     func testLegacyImportRunsOnceThenIsIdempotent() throws {

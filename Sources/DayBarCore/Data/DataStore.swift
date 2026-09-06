@@ -130,7 +130,8 @@ public final class DataStore {
 
     // MARK: - Queries
 
-    /// Non-dropped todos planned for the given calendar day, high priority first.
+    /// Non-dropped todos planned for the given calendar day.
+    /// Incomplete first, then high priority, then oldest created.
     public func todos(on day: Date, calendar: Calendar = .current) throws -> [DailyTodo] {
         let start = calendar.startOfDay(for: day)
         let end = calendar.date(byAdding: .day, value: 1, to: start) ?? start
@@ -138,10 +139,18 @@ public final class DataStore {
         let predicate = #Predicate<DailyTodo> { todo in
             todo.plannedForDate >= start && todo.plannedForDate < end && todo.statusRaw != dropped
         }
-        return try context.fetch(FetchDescriptor(
+        let fetched = try context.fetch(FetchDescriptor(
             predicate: predicate,
             sortBy: [SortDescriptor(\.priorityRaw, order: .reverse), SortDescriptor(\.createdDate)]
         ))
+        // Keep incomplete (incl. in-progress) above completed; preserve priority/createdDate within each group.
+        return fetched.sorted { lhs, rhs in
+            let lhsDone = lhs.completedDate != nil
+            let rhsDone = rhs.completedDate != nil
+            if lhsDone != rhsDone { return !lhsDone && rhsDone }
+            if lhs.priorityRaw != rhs.priorityRaw { return lhs.priorityRaw > rhs.priorityRaw }
+            return lhs.createdDate < rhs.createdDate
+        }
     }
 
     /// Completed, non-dropped todos whose `completedDate` falls in `[start, end)`.

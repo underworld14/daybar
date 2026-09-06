@@ -172,6 +172,8 @@ struct TodayView: View {
                     // even when FocusState is true — draw one while the field is empty.
                     if addFocused && newTitle.isEmpty {
                         BlinkingInsertionCaret()
+                            .padding(.leading, 1)
+                            .allowsHitTesting(false)
                             .accessibilityHidden(true)
                     }
                 }
@@ -187,6 +189,8 @@ struct TodayView: View {
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 5)
+            .contentShape(Rectangle())
+            .onTapGesture { claimQuickAddFocus() }
             .background {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(Color.primary.opacity(addFocused ? 0.08 : 0.04))
@@ -277,7 +281,7 @@ struct TodayView: View {
             } else {
                 ForEach(appState.todayTodos) { todo in
                     TodoRow(appState: appState, todo: todo, onOpenDetails: { detailTodo = todo })
-                        .id("\(todo.id)-\(todo.statusRaw)-\(todo.completedDate?.timeIntervalSince1970 ?? 0)")
+                        .id(todo.id)
                 }
             }
         }
@@ -322,7 +326,7 @@ struct TodayView: View {
             } else {
                 ForEach(appState.tomorrowTodos) { todo in
                     TodoRow(appState: appState, todo: todo, onOpenDetails: { detailTodo = todo })
-                        .id("tomorrow-\(todo.id)-\(todo.statusRaw)-\(todo.completedDate?.timeIntervalSince1970 ?? 0)")
+                        .id(todo.id)
                 }
             }
         }
@@ -337,7 +341,7 @@ private struct BlinkingInsertionCaret: View {
     var body: some View {
         Capsule()
             .fill(Color.accentColor)
-            .frame(width: 1.5, height: 15)
+            .frame(width: 2, height: 16)
             .opacity(visible ? 1 : 0)
             .onAppear {
                 withAnimation(.easeInOut(duration: 0.53).repeatForever(autoreverses: true)) {
