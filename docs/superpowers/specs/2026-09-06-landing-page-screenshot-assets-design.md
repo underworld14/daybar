@@ -1,6 +1,6 @@
 # DayBar Landing-Page Screenshot Assets
 
-**Date:** 2026-09-06  
+**Date:** 2026-09-06
 **Issue:** `daybar-l84`
 
 ## Goal
