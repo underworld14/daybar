@@ -11,7 +11,7 @@ Midnight Native combines a near-black editorial canvas with the quiet depth, rou
 - Glass surface: `rgba(18, 20, 29, 0.72)`
 - Primary text: `#F5F5F2`
 - Secondary text: `#A7A9B2`
-- Muted text: `#70737D`
+- Muted text: `#7C7F89` (5.01:1 against the canvas for small-text accessibility)
 - Hairline: `rgba(255, 255, 255, 0.10)`
 - Soft grid: `rgba(255, 255, 255, 0.035)`
 - DayBar indigo: `#7B82FF`
