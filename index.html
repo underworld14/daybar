@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="DayBar is a native macOS menu-bar app to plan your day, focus with a Pomodoro, and finish what you planned — with gentle carry-over instead of silent disappearances.">
+  <meta name="theme-color" content="#07080b">
+  <meta name="color-scheme" content="dark">
+  <title>DayBar — Plan your day. Finish what you planned.</title>
+  <link rel="icon" type="image/png" href="assets/icon.png">
+  <link rel="preload" href="assets/icon.png" as="image">
+  <link rel="preload" href="assets/screenshots/today-panel-direct.jpg" as="image" fetchpriority="high">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to main content</a>
+  <div class="ambient-grid" aria-hidden="true"></div>
+  <div class="ambient-light" aria-hidden="true"></div>
+
+  <header class="site-header">
+    <div class="shell header-inner">
+      <a class="brand" href="./" translate="no" aria-label="DayBar home">
+        <img src="assets/icon.png" alt="" width="30" height="30" decoding="async">
+        <span class="brand-name">DayBar</span>
+      </a>
+      <nav class="site-nav" aria-label="Primary">
+        <a href="#features">Features</a>
+        <a href="#download">Install</a>
+        <a href="https://github.com/underworld14/daybar" rel="noopener noreferrer">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="hero" aria-labelledby="hero-heading">
+      <div class="shell hero-layout">
+        <div class="hero-copy">
+          <p class="hero-mark" translate="no">
+            <img src="assets/icon.png" alt="" width="44" height="44" fetchpriority="high" decoding="async">
+            <span>DayBar <small>for macOS</small></span>
+          </p>
+          <h1 id="hero-heading" aria-label="Plan your day. Finish what you planned.">
+            <span>Plan your day.</span>
+            <span class="hero-heading-muted">Finish what you planned.</span>
+          </h1>
+          <p class="hero-lede">
+            A calm macOS menu-bar app for habits, todos, and Pomodoro focus —
+            unfinished work carries into tomorrow with a gentle nudge, not a wall of red.
+          </p>
+          <div class="hero-actions">
+            <a class="btn btn-primary" href="https://github.com/underworld14/daybar/releases/latest" rel="noopener noreferrer">
+              Download for macOS
+            </a>
+            <a class="btn btn-secondary" href="https://github.com/underworld14/daybar" rel="noopener noreferrer">
+              View source
+            </a>
+          </div>
+          <p class="hero-meta">macOS&nbsp;14+ <span aria-hidden="true">·</span> Menu-bar native <span aria-hidden="true">·</span> Free &amp; open source</p>
+        </div>
+
+        <div class="hero-visual">
+          <div class="visual-glow" aria-hidden="true"></div>
+          <div class="visual-orbit" aria-hidden="true">
+            <span class="orbit-node orbit-node-a"></span>
+            <span class="orbit-node orbit-node-b"></span>
+          </div>
+          <img
+            class="product-capture"
+            src="assets/screenshots/today-panel-direct.jpg"
+            alt="DayBar Today panel showing habits, todos, carry-over tasks, progress, radio, and focus controls"
+            width="360"
+            height="678"
+            fetchpriority="high"
+            decoding="async">
+        </div>
+      </div>
+    </section>
+
+    <section class="proof-rail" aria-label="Product highlights">
+      <div class="shell proof-inner">
+        <p><strong>Native</strong><span>Lives in your menu bar</span></p>
+        <p><strong>Private</strong><span>Your plan stays on your Mac</span></p>
+        <p><strong>Gentle</strong><span>Carry-over without alarm fatigue</span></p>
+      </div>
+    </section>
+
+    <section id="features" class="features" aria-labelledby="features-heading">
+      <div class="shell">
+        <div class="section-heading">
+          <h2 id="features-heading">A quieter rhythm for getting things done.</h2>
+          <p>Plan, focus, and close the loop without turning your day into a dashboard.</p>
+        </div>
+
+        <article class="feature" aria-labelledby="carry-heading">
+          <div class="feature-copy">
+            <p class="feature-index" aria-hidden="true">01 / CARRY</p>
+            <h3 id="carry-heading">Gentle carry-over</h3>
+            <p>
+              Unfinished tasks roll into tomorrow and age quietly —
+              grey to amber, plus a calm menu-bar count. Never a wall of red.
+            </p>
+          </div>
+          <img
+            class="feature-capture feature-capture-carry"
+            src="assets/screenshots/carry-over-direct.jpg"
+            alt="DayBar carry-over section with unfinished tasks aged one, three, and five days"
+            width="360"
+            height="678"
+            loading="lazy"
+            decoding="async">
+        </article>
+
+        <article class="feature feature-reverse" aria-labelledby="dayscape-heading">
+          <div class="feature-copy">
+            <p class="feature-index" aria-hidden="true">02 / FOCUS</p>
+            <h3 id="dayscape-heading">Dayscape &amp; focus streak</h3>
+            <p>
+              Watch your week fill with quiet ink as Pomodoros finish —
+              a calm focus streak with one grace day, never a harsh reset.
+            </p>
+          </div>
+          <img
+            class="feature-capture feature-capture-dayscape"
+            src="assets/screenshots/dayscape-focus-direct.jpg"
+            alt="DayBar statistics showing focus totals, a fourteen-day streak, Dayscape activity, and planned versus completed tasks"
+            width="460"
+            height="640"
+            loading="lazy"
+            decoding="async">
+        </article>
+
+        <article class="feature" aria-labelledby="review-heading">
+          <div class="feature-copy">
+            <p class="feature-index" aria-hidden="true">03 / REVIEW</p>
+            <h3 id="review-heading">End-of-day review</h3>
+            <p>
+              Ask “Did you finish what you planned?” — triage what’s left,
+              jot a one-line reflection, and optionally tag your mood.
+            </p>
+          </div>
+          <img
+            class="feature-capture feature-capture-review"
+            src="assets/screenshots/end-of-day-review-direct.jpg"
+            alt="DayBar end-of-day review showing open tasks, carry-over choices, and a completed reflection"
+            width="420"
+            height="600"
+            loading="lazy"
+            decoding="async">
+        </article>
+      </div>
+    </section>
+
+    <section id="download" class="install" aria-labelledby="install-heading">
+      <div class="shell install-inner">
+        <div class="install-heading">
+          <h2 id="install-heading">From download to menu bar in a minute.</h2>
+          <p>There is no account or setup wizard. Just the app, where you expect it.</p>
+        </div>
+        <ol class="install-steps">
+          <li>
+            <span class="step-number" aria-hidden="true">01</span>
+            <div>
+              <strong>Download</strong>
+              <p>Get the latest <code translate="no">DayBar-vX.Y.Z-macOS.zip</code> from <a href="https://github.com/underworld14/daybar/releases/latest" rel="noopener noreferrer">Releases</a>.</p>
+            </div>
+          </li>
+          <li>
+            <span class="step-number" aria-hidden="true">02</span>
+            <div>
+              <strong>Move</strong>
+              <p>Extract the archive and drag <span translate="no">DayBar.app</span> into <strong>Applications</strong>.</p>
+            </div>
+          </li>
+          <li>
+            <span class="step-number" aria-hidden="true">03</span>
+            <div>
+              <strong>Open once</strong>
+              <p>In Finder, right-click <span translate="no">DayBar.app</span> → <strong>Open</strong> → confirm <strong>Open</strong>. Release builds are ad-hoc signed, so Gatekeeper may warn on first launch.</p>
+            </div>
+          </li>
+        </ol>
+        <details class="install-alt">
+          <summary>Prefer Terminal instead?</summary>
+          <p>Remove the quarantine flag, then open the app:</p>
+          <pre><code translate="no">xattr -cr /Applications/DayBar.app
+open /Applications/DayBar.app</code></pre>
+        </details>
+        <p class="install-note">Look for the icon in the <strong>menu bar</strong> — there is no Dock icon.</p>
+      </div>
+    </section>
+
+    <section class="trust" aria-labelledby="trust-heading">
+      <div class="shell trust-inner">
+        <h2 id="trust-heading">Your day belongs to you.</h2>
+        <p>
+          Your plan stays on your Mac with SwiftData. Optional mood suggestions use
+          on-device Apple Intelligence when available; nothing leaves the machine.
+        </p>
+        <ul class="trust-points" aria-label="Privacy highlights">
+          <li>No account</li>
+          <li>No cloud sync of your tasks</li>
+          <li>On-device mood suggestions</li>
+        </ul>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="shell footer-inner">
+      <p>
+        <span translate="no">DayBar</span> is
+        <a href="https://github.com/underworld14/daybar/blob/main/LICENSE" rel="noopener noreferrer">MIT</a>
+        licensed.
+        <a href="https://github.com/underworld14/daybar" rel="noopener noreferrer">Source on GitHub</a>.
+      </p>
+      <p class="footer-copy">© 2026 Yusril Izza</p>
+    </div>
+  </footer>
+</body>
+</html>
