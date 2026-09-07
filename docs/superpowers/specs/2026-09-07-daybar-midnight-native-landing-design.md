@@ -46,7 +46,7 @@ The three existing features become numbered editorial chapters:
 2. `02 / FOCUS` — Dayscape and the focus streak.
 3. `03 / REVIEW` — triage, reflection, and optional mood.
 
-Each chapter pairs concise copy with its real screenshot inside a bordered stage. The composition alternates on desktop and remains a single logical reading order on mobile.
+Each chapter pairs concise copy with its real screenshot rendered directly on the page. The screenshot is the only visible surface—there is no bordered stage, light canvas, technical label, or outer card. The composition alternates on desktop and remains a single logical reading order on mobile.
 
 ### Installation
 
@@ -63,7 +63,7 @@ The durable tokens and material rules are recorded in `DESIGN.md`. The core canv
 ## Interaction and Motion
 
 - Buttons lift by only a few pixels and gain a controlled indigo highlight.
-- The hero panel drifts slowly within its stage; geometric accents move at lower amplitude.
+- The hero panel drifts slowly over restrained ambient glow; geometric accents move at lower amplitude.
 - Navigation and disclosure controls keep visible keyboard focus.
 - `prefers-reduced-motion` disables decorative movement and smooth scrolling.
 - No custom cursor, autoplay media, scroll hijacking, or heavy JavaScript dependency is introduced.
@@ -71,7 +71,7 @@ The durable tokens and material rules are recorded in `DESIGN.md`. The core canv
 ## Responsive Behavior
 
 - Desktop uses an expansive two-column hero and alternating feature chapters.
-- Tablet tightens type and stage dimensions without hiding product information.
+- Tablet tightens type and capture dimensions without hiding product information.
 - Mobile uses a single column, full-width CTAs where helpful, reduced atmosphere, no clipped screenshots, and safe-area-aware header spacing.
 - The page must remain usable at 320px width and avoid horizontal scrolling.
 
@@ -80,7 +80,7 @@ The durable tokens and material rules are recorded in `DESIGN.md`. The core canv
 - Preserve semantic landmarks, heading order, skip link, meaningful alt text, and keyboard reachability.
 - Maintain WCAG AA contrast for text and controls.
 - Decorative elements are hidden from assistive technology and never communicate required information.
-- Keep the site self-contained: HTML, CSS, current PNG assets, and no new runtime framework or webfont request.
+- Keep the site self-contained: HTML, CSS, local screenshot assets, and no new runtime framework or webfont request.
 - Existing screenshot dimensions remain declared to prevent layout shift.
 
 ## Verification

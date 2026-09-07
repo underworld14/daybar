@@ -38,9 +38,10 @@ class MidnightNativeLandingTests(unittest.TestCase):
         required_classes = {
             "ambient-grid",
             "hero-layout",
-            "visual-stage",
+            "product-capture",
             "proof-rail",
             "feature-index",
+            "feature-capture",
             "install-steps",
             "trust-inner",
         }
@@ -67,13 +68,33 @@ class MidnightNativeLandingTests(unittest.TestCase):
         self.assertIn("https://github.com/underworld14/daybar", self.document.links)
         self.assertEqual(
             {
-                "assets/screenshots/today-panel.png",
-                "assets/screenshots/carry-over.png",
-                "assets/screenshots/dayscape-focus.png",
-                "assets/screenshots/end-of-day-review.png",
+                "assets/screenshots/today-panel-direct.jpg",
+                "assets/screenshots/carry-over-direct.jpg",
+                "assets/screenshots/dayscape-focus-direct.jpg",
+                "assets/screenshots/end-of-day-review-direct.jpg",
             },
             {src for src in self.document.images if "screenshots/" in src},
         )
+
+    def test_product_captures_have_no_nested_card_chrome(self) -> None:
+        forbidden_classes = {
+            "visual-stage",
+            "stage-corner",
+            "stage-coordinate",
+            "feature-stage",
+            "feature-stage-label",
+        }
+        self.assertFalse(forbidden_classes & self.document.classes)
+
+        forbidden_selectors = (
+            ".visual-stage",
+            ".stage-corner",
+            ".stage-coordinate",
+            ".feature-stage",
+            ".feature-stage-label",
+        )
+        for selector in forbidden_selectors:
+            self.assertNotIn(selector, self.css)
 
     def test_css_uses_approved_tokens_and_has_no_external_runtime(self) -> None:
         required_css = (

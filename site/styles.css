@@ -405,7 +405,10 @@ summary:focus-visible {
 
 .hero-visual {
   position: relative;
+  display: grid;
   min-width: 0;
+  min-height: 700px;
+  place-items: center;
   isolation: isolate;
 }
 
@@ -465,129 +468,15 @@ summary:focus-visible {
   border-color: rgba(121, 215, 202, 0.44);
 }
 
-.visual-stage {
-  position: relative;
-  display: grid;
-  min-height: 680px;
-  margin: 0;
-  padding: 4.2rem 2.4rem 3.5rem;
-  overflow: hidden;
-  place-items: center;
-  border: 1px solid var(--line);
-  border-radius: 28px;
-  background:
-    linear-gradient(90deg, transparent 49.9%, rgba(255,255,255,.025) 50%, transparent 50.1%),
-    linear-gradient(transparent 49.9%, rgba(255,255,255,.025) 50%, transparent 50.1%),
-    linear-gradient(180deg, rgba(255,255,255,.035), rgba(255,255,255,.008));
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  animation: stage-settle 900ms var(--ease) both;
-}
-
-.visual-stage::before {
-  position: absolute;
-  inset: 16px;
-  pointer-events: none;
-  border: 1px solid rgba(255, 255, 255, 0.045);
-  border-radius: 20px;
-  content: "";
-}
-
-.visual-stage::after {
-  position: absolute;
-  top: 16%;
-  right: -8%;
-  width: 10rem;
-  height: 10rem;
-  pointer-events: none;
-  border: 1px solid rgba(123, 130, 255, 0.16);
-  content: "";
-  transform: rotate(26deg);
-}
-
-.stage-corner {
-  position: absolute;
-  z-index: 3;
-  width: 34px;
-  height: 34px;
-  pointer-events: none;
-}
-
-.stage-corner-tl {
-  top: 11px;
-  left: 11px;
-  border-top: 1px solid rgba(157,163,255,.5);
-  border-left: 1px solid rgba(157,163,255,.5);
-}
-
-.stage-corner-br {
-  right: 11px;
-  bottom: 11px;
-  border-right: 1px solid rgba(121,215,202,.38);
-  border-bottom: 1px solid rgba(121,215,202,.38);
-}
-
-.stage-coordinate,
-.feature-stage-label {
-  position: absolute;
-  z-index: 4;
-  color: var(--muted);
-  font-family: var(--font-mono);
-  font-size: 0.61rem;
-  letter-spacing: 0.09em;
-}
-
-.stage-coordinate-top {
-  top: 1.8rem;
-  left: 2rem;
-}
-
-.stage-coordinate-side {
-  top: 50%;
-  right: 1.1rem;
-  transform: translateY(-50%) rotate(90deg);
-}
-
-.shot-hero {
+.product-capture {
   position: relative;
   z-index: 2;
-  width: min(100%, 470px);
-  object-fit: contain;
-  border-radius: 18px;
-  filter: drop-shadow(0 32px 60px rgba(0,0,0,.42));
+  display: block;
+  width: min(100%, 360px);
+  height: auto;
+  border-radius: 20px;
+  box-shadow: 0 38px 90px rgba(0, 0, 0, 0.52);
   animation: panel-drift 8s ease-in-out 1s infinite alternate;
-}
-
-.visual-stage figcaption {
-  position: absolute;
-  right: 1.8rem;
-  bottom: 1.55rem;
-  z-index: 4;
-  display: flex;
-  align-items: center;
-  gap: 0.55rem;
-  margin: 0;
-  color: var(--text-secondary);
-  font-size: 0.7rem;
-}
-
-.live-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--cyan);
-  box-shadow: 0 0 16px rgba(121, 215, 202, 0.6);
-}
-
-@keyframes stage-settle {
-  from {
-    filter: blur(4px);
-    transform: translateY(18px) scale(0.985);
-  }
-  to {
-    filter: blur(0);
-    transform: translateY(0) scale(1);
-  }
 }
 
 @keyframes panel-drift {
@@ -688,7 +577,7 @@ summary:focus-visible {
   order: 2;
 }
 
-.feature-reverse .feature-stage {
+.feature-reverse .feature-capture {
   order: 1;
 }
 
@@ -724,49 +613,26 @@ summary:focus-visible {
   text-wrap: pretty;
 }
 
-.feature-stage {
-  position: relative;
-  min-width: 0;
-  margin: 0;
-  padding: clamp(3rem, 6vw, 5rem) clamp(1.25rem, 4vw, 3.5rem);
-  overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: 16px;
-  background:
-    linear-gradient(rgba(255,255,255,.02) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255,255,255,.02) 1px, transparent 1px),
-    rgba(16, 18, 26, 0.64);
-  background-size: 54px 54px;
-}
-
-.feature-stage::after {
-  position: absolute;
-  top: 23%;
-  right: -3rem;
-  width: 9rem;
-  height: 9rem;
-  border: 1px solid rgba(123, 130, 255, 0.13);
-  content: "";
-  transform: rotate(32deg);
-}
-
-.feature-stage-label {
-  top: 1.25rem;
-  left: 1.4rem;
-}
-
-.shot {
-  position: relative;
-  z-index: 2;
-  width: 100%;
-  border-radius: 14px;
-  object-fit: contain;
-  box-shadow: 0 24px 55px rgba(0,0,0,.3);
+.feature-capture {
+  display: block;
+  width: min(100%, 420px);
+  height: auto;
+  justify-self: center;
+  border-radius: 18px;
+  box-shadow: 0 30px 75px rgba(0, 0, 0, 0.46);
   transition: transform 600ms var(--ease), box-shadow 600ms var(--ease);
 }
 
-.feature-stage:hover .shot {
-  box-shadow: 0 32px 70px rgba(0,0,0,.4);
+.feature-capture-carry {
+  width: min(100%, 360px);
+}
+
+.feature-capture-dayscape {
+  width: min(100%, 460px);
+}
+
+.feature-capture:hover {
+  box-shadow: 0 38px 88px rgba(0, 0, 0, 0.55);
   transform: translateY(-5px) scale(1.008);
 }
 
@@ -1039,9 +905,8 @@ summary:focus-visible {
     font-size: clamp(3.6rem, 6.7vw, 5rem);
   }
 
-  .visual-stage {
-    min-height: 620px;
-    padding-inline: 1.8rem;
+  .hero-visual {
+    min-height: 660px;
   }
 }
 
@@ -1073,10 +938,6 @@ summary:focus-visible {
     margin-inline: auto;
   }
 
-  .visual-stage {
-    min-height: 650px;
-  }
-
   .section-heading,
   .install-heading {
     gap: 1.5rem;
@@ -1093,7 +954,7 @@ summary:focus-visible {
   }
 
   .feature-reverse .feature-copy,
-  .feature-reverse .feature-stage {
+  .feature-reverse .feature-capture {
     order: initial;
   }
 
@@ -1175,32 +1036,12 @@ summary:focus-visible {
     width: 108%;
   }
 
-  .orbit-node,
-  .stage-coordinate-side,
-  .visual-stage::after {
+  .orbit-node {
     display: none;
   }
 
-  .visual-stage {
+  .hero-visual {
     min-height: 0;
-    padding: 3.7rem 0.75rem 3.4rem;
-    border-radius: 20px;
-  }
-
-  .visual-stage::before {
-    inset: 10px;
-    border-radius: 14px;
-  }
-
-  .stage-coordinate-top {
-    top: 1.35rem;
-    left: 1.35rem;
-  }
-
-  .visual-stage figcaption {
-    right: 1.2rem;
-    bottom: 1.2rem;
-    font-size: 0.64rem;
   }
 
   .proof-inner {
@@ -1245,16 +1086,9 @@ summary:focus-visible {
     font-size: clamp(2.2rem, 10vw, 3rem);
   }
 
-  .feature-stage {
-    padding: 3.4rem 0.55rem 2rem;
-  }
-
-  .feature-stage::after {
-    display: none;
-  }
-
-  .shot {
-    border-radius: 10px;
+  .product-capture,
+  .feature-capture {
+    border-radius: 14px;
   }
 
   .install {
@@ -1327,7 +1161,7 @@ summary:focus-visible {
   }
 
   .btn:hover,
-  .feature-stage:hover .shot {
+  .feature-capture:hover {
     transform: none;
   }
 }
