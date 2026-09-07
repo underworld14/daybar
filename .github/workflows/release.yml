@@ -74,7 +74,6 @@ jobs:
             --download-url-prefix "https://github.com/underworld14/daybar/releases/download/${TAG}/" \
             --link "https://underworld14.github.io/daybar/" \
             releases/
-          cp releases/appcast.xml site/appcast.xml
 
       - name: Commit appcast to main
         run: |
@@ -83,6 +82,7 @@ jobs:
           git fetch origin main
           git checkout main
           git pull --rebase origin main
+          cp releases/appcast.xml site/appcast.xml
           git add site/appcast.xml
           if git diff --staged --quiet; then
             echo "Appcast unchanged"
