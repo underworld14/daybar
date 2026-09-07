@@ -37,6 +37,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private var statusItem: NSStatusItem!
     private var panel: FloatingPanel!
     private var outsideClickMonitor: Any?
+    private let appearanceCoordinator = SystemAppearanceCoordinator()
     private let panelWidth: CGFloat = 360
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -59,6 +60,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         // resigning for the sheet would otherwise tear it down mid-edit.
         guard !appState.isPanelSheetPresented, !appState.presentEndOfDayReview else { return }
         hidePanel()
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        appearanceCoordinator.stop()
     }
 
     // MARK: - Status item
@@ -172,6 +177,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         panel.animationBehavior = .utilityWindow
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.contentView = effect
+        appearanceCoordinator.start(panel: panel)
         trackPanelHeightUpdates()
     }
 
@@ -253,6 +259,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     private func showPanel() {
+        appearanceCoordinator.refresh()
         appState.refresh()
         appState.quickAddFocusSignal += 1
         panel.setContentSize(NSSize(width: panelWidth, height: desiredPanelHeight()))
