@@ -1,5 +1,6 @@
 import SwiftUI
 import DayBarCore
+import MarkdownUI
 
 /// Sheet for viewing/editing a task's title, description (`notes`), and local checklist.
 struct TodoDetailSheet: View {
@@ -13,6 +14,7 @@ struct TodoDetailSheet: View {
     @State private var items: [TodoChecklistItem] = []
     @State private var selectedProjectID: UUID?
     @State private var plannedDate = Date.now
+    @State private var showsPreview = false
     @FocusState private var newItemFocused: Bool
     @FocusState private var descriptionFocused: Bool
 
@@ -47,12 +49,23 @@ struct TodoDetailSheet: View {
                 }
 
                 Section {
-                    TextEditor(text: $notes)
-                        .font(.body)
-                        .focused($descriptionFocused)
+                    if showsPreview {
+                        ScrollView {
+                            Markdown(DescriptionMarkdown.autolinked(notes))
+                                .markdownTextStyle {
+                                    ForegroundColor(.primary)
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
                         .frame(minHeight: 120, maxHeight: 180)
-                        .scrollContentBackground(.hidden)
-                        .accessibilityLabel("Description")
+                    } else {
+                        TextEditor(text: $notes)
+                            .font(.body)
+                            .focused($descriptionFocused)
+                            .frame(minHeight: 120, maxHeight: 180)
+                            .scrollContentBackground(.hidden)
+                            .accessibilityLabel("Description")
+                    }
 
                     if !detectedLinks.isEmpty {
                         VStack(alignment: .leading, spacing: 6) {
@@ -68,9 +81,20 @@ struct TodoDetailSheet: View {
                         .padding(.top, 2)
                     }
                 } header: {
-                    Text("Description")
+                    HStack {
+                        Text("Description")
+                        Spacer()
+                        Picker("Mode", selection: $showsPreview) {
+                            Text("Write").tag(false)
+                            Text("Preview").tag(true)
+                        }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
+                        .fixedSize()
+                        .controlSize(.small)
+                    }
                 } footer: {
-                    Text("Line breaks are kept. Valid URLs become clickable links below.")
+                    Text("Markdown supported in Preview. Valid URLs become clickable links below.")
                         .font(.caption2)
                 }
 

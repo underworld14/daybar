@@ -18,6 +18,9 @@ packages:
   Sparkle:
     url: https://github.com/sparkle-project/Sparkle
     from: "2.6.4"
+  MarkdownUI:
+    url: https://github.com/gonzalezreal/swift-markdown-ui
+    from: "2.4.1"
 
 targets:
   DayBarCore:
@@ -45,6 +48,7 @@ targets:
         embed: true
       - package: KeyboardShortcuts
       - package: Sparkle
+      - package: MarkdownUI
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.yusrilizza.DayBar
