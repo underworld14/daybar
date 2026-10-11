@@ -159,16 +159,19 @@ private struct ChecklistRow: View {
 
     @State private var draft = ""
     @State private var isEditing = false
+    @State private var isHovered = false
     @FocusState private var focused: Bool
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 6) {
             Button(action: onToggle) {
                 Image(systemName: item.isCompleted ? "checkmark.circle.fill" : "circle")
-                    .foregroundStyle(item.isCompleted ? Color.accentColor : .secondary)
+                    .font(.system(size: 15))
+                    .frame(width: 26, height: 26)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(item.isCompleted ? "Completed" : "Incomplete")
+            .accessibilityLabel(item.isCompleted ? "Mark incomplete" : "Mark complete")
 
             if isEditing {
                 TextField("Item", text: $draft)
@@ -188,21 +191,47 @@ private struct ChecklistRow: View {
                     .foregroundStyle(item.isCompleted ? .secondary : .primary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
-                    .onTapGesture(count: 2) {
-                        draft = item.title
-                        isEditing = true
-                        focused = true
+                    .onTapGesture {
+                        if !isEditing { onToggle() }
                     }
+            }
+
+            if !isEditing {
+                Button(action: startEditing) {
+                    Image(systemName: "pencil")
+                        .font(.caption)
+                        .frame(width: 22, height: 22)
+                        .contentShape(Rectangle())
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.borderless)
+                .opacity(isHovered ? 1 : 0.45)
+                .accessibilityLabel("Rename checklist item")
             }
 
             Button(role: .destructive, action: onDelete) {
                 Image(systemName: "trash")
                     .font(.caption)
+                    .frame(width: 22, height: 22)
+                    .contentShape(Rectangle())
                     .foregroundStyle(.secondary)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.borderless)
+            .opacity(isHovered ? 1 : 0.45)
             .accessibilityLabel("Delete checklist item")
         }
+        .padding(.vertical, 1)
+        .background(
+            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                .fill(isHovered ? Color.primary.opacity(0.05) : .clear)
+        )
+        .onHover { isHovered = $0 }
+    }
+
+    private func startEditing() {
+        draft = item.title
+        isEditing = true
+        focused = true
     }
 
     private func commitRename() {
