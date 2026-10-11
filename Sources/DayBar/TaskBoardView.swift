@@ -13,6 +13,8 @@ struct TaskBoardView: View {
     @State private var todoPendingDelete: DailyTodo?
     @FocusState private var addFocused: Bool
     @State private var newTitle = ""
+    @State private var composerDate: Date?
+    @State private var showDatePopover = false
 
     private var scopeKey: String { appState.scopeKey(for: scope) }
 
@@ -185,6 +187,31 @@ struct TaskBoardView: View {
                 .textFieldStyle(.plain)
                 .focused($addFocused)
                 .onSubmit(addCurrent)
+            if let planned = composerDate {
+                Button {
+                    composerDate = nil
+                } label: {
+                    Label(
+                        DayLabel.relative(planned, now: .now, calendar: appState.calendar) ?? "Today",
+                        systemImage: "xmark.circle.fill"
+                    )
+                    .font(.caption)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .help("Clear custom date")
+            }
+            Button {
+                showDatePopover.toggle()
+            } label: {
+                Image(systemName: "calendar.badge.plus")
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(composerDate != nil ? Color.accentColor : .secondary)
+            .help("Pick a date")
+            .popover(isPresented: $showDatePopover, arrowEdge: .top) {
+                ComposerDatePopover(scope: scope, calendar: appState.calendar, date: $composerDate)
+            }
             if !newTitle.trimmingCharacters(in: .whitespaces).isEmpty {
                 Button(action: addCurrent) {
                     Image(systemName: "return").font(.system(size: 11, weight: .semibold))
@@ -206,14 +233,23 @@ struct TaskBoardView: View {
     private func addCurrent() {
         let title = newTitle.trimmingCharacters(in: .whitespaces)
         guard !title.isEmpty else { return }
-        let todo = scope == .tomorrow
-            ? appState.addTodoForTomorrow(title: title)
-            : appState.addTodo(title: title)
+        let todo = appState.addTodo(
+            title: title,
+            plannedFor: composerDate ?? scopeDefaultPlannedDate,
+            now: .now
+        )
         if case .project(let id) = scope, let todo {
             appState.assign(todo: todo, to: appState.projects.first(where: { $0.id == id }))
         }
         newTitle = ""
+        composerDate = nil
         addFocused = true
+    }
+
+    private var scopeDefaultPlannedDate: Date {
+        scope == .tomorrow
+            ? DayMath.nextDay(.now, calendar: appState.calendar)
+            : DayMath.startOfDay(.now, calendar: appState.calendar)
     }
 
     // MARK: - Data
@@ -336,6 +372,17 @@ private struct BoardRowView: View {
                     .foregroundStyle(.secondary)
             }
 
+            if !todo.isCompleted,
+               let label = DayLabel.relative(todo.plannedForDate, now: .now, calendar: appState.calendar) {
+                Text(label)
+                    .font(.caption2)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Capsule().fill(Color.primary.opacity(0.06)))
+                    .foregroundStyle(.secondary)
+                    .help("Planned for \(label)")
+            }
+
             PriorityDot(priority: todo.priority)
         }
         .contentShape(Rectangle())
@@ -390,6 +437,8 @@ private struct BoardColumnView: View {
     @State private var isTargeted = false
     @State private var addingTask = false
     @State private var newTitle = ""
+    @State private var composerDate: Date?
+    @State private var showDatePopover = false
     @FocusState private var addFocused: Bool
 
     var body: some View {
@@ -401,6 +450,22 @@ private struct BoardColumnView: View {
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(.secondary)
                 Spacer()
+                if let planned = composerDate {
+                    Text(DayLabel.relative(planned, now: .now, calendar: appState.calendar) ?? "Today")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                Button {
+                    showDatePopover.toggle()
+                } label: {
+                    Image(systemName: "calendar.badge.plus")
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(composerDate != nil ? Color.accentColor : .secondary)
+                .help("Pick a date")
+                .popover(isPresented: $showDatePopover, arrowEdge: .bottom) {
+                    ComposerDatePopover(scope: scope, calendar: appState.calendar, date: $composerDate)
+                }
                 Button {
                     addingTask = true
                     addFocused = true
@@ -488,10 +553,11 @@ private struct BoardColumnView: View {
             addingTask = false
             return
         }
-        // Same add semantics as the scope's bottom field.
-        let todo = scope == .tomorrow
-            ? appState.addTodoForTomorrow(title: title)
-            : appState.addTodo(title: title)
+        let todo = appState.addTodo(
+            title: title,
+            plannedFor: composerDate ?? scopeDefault,
+            now: .now
+        )
         if let todo {
             if case .project(let id) = scope {
                 appState.assign(todo: todo, to: appState.projects.first(where: { $0.id == id }))
@@ -501,7 +567,14 @@ private struct BoardColumnView: View {
             }
         }
         newTitle = ""
+        composerDate = nil
         addFocused = true
+    }
+
+    private var scopeDefault: Date {
+        scope == .tomorrow
+            ? DayMath.nextDay(.now, calendar: appState.calendar)
+            : DayMath.startOfDay(.now, calendar: appState.calendar)
     }
 }
 
@@ -533,6 +606,16 @@ private struct BoardCardView: View {
                         .padding(.vertical, 2)
                         .background(Capsule().fill(Color.primary.opacity(0.06)))
                         .foregroundStyle(.secondary)
+                }
+                if !todo.isCompleted,
+                   let label = DayLabel.relative(todo.plannedForDate, now: .now, calendar: appState.calendar) {
+                    Text(label)
+                        .font(.caption2)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Capsule().fill(Color.primary.opacity(0.06)))
+                        .foregroundStyle(.secondary)
+                        .help("Planned for \(label)")
                 }
                 if todo.hasNotes {
                     Image(systemName: "note.text")
@@ -608,5 +691,42 @@ struct PriorityDot: View {
         case .low: return "Low priority"
         case .none: return "No priority"
         }
+    }
+}
+
+/// Graphical date picker with quick presets, shared by the board composers.
+private struct ComposerDatePopover: View {
+    let scope: TaskScope
+    let calendar: Calendar
+    @Binding var date: Date?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            DatePicker(
+                "Planned for",
+                selection: Binding(
+                    get: { date ?? scopeDefault },
+                    set: { date = $0 }
+                ),
+                displayedComponents: .date
+            )
+            .datePickerStyle(.graphical)
+            HStack {
+                Button("Today") { date = DayMath.startOfDay(.now, calendar: calendar) }
+                Button("Tomorrow") { date = DayMath.nextDay(.now, calendar: calendar) }
+                Spacer()
+                Button("Clear") { date = nil }
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+        }
+        .padding(12)
+        .frame(width: 300)
+    }
+
+    private var scopeDefault: Date {
+        scope == .tomorrow
+            ? DayMath.nextDay(.now, calendar: calendar)
+            : DayMath.startOfDay(.now, calendar: calendar)
     }
 }

@@ -12,6 +12,7 @@ struct TodoDetailSheet: View {
     @State private var newItemTitle = ""
     @State private var items: [TodoChecklistItem] = []
     @State private var selectedProjectID: UUID?
+    @State private var plannedDate = Date.now
     @FocusState private var newItemFocused: Bool
     @FocusState private var descriptionFocused: Bool
 
@@ -39,6 +40,10 @@ struct TodoDetailSheet: View {
                                 .tag(UUID?.some(project.id))
                         }
                     }
+                }
+
+                Section("Planned For") {
+                    DatePicker("Date", selection: $plannedDate, displayedComponents: .date)
                 }
 
                 Section {
@@ -113,6 +118,9 @@ struct TodoDetailSheet: View {
         .onChange(of: selectedProjectID) { _, newID in
             appState.assign(todo: todo, to: appState.projects.first(where: { $0.id == newID }))
         }
+        .onChange(of: plannedDate) { _, newDate in
+            appState.setPlannedDate(todo, to: newDate)
+        }
     }
 
     private var detectedLinks: [URL] {
@@ -123,6 +131,7 @@ struct TodoDetailSheet: View {
         title = todo.title
         notes = todo.notes
         selectedProjectID = todo.projectID
+        plannedDate = todo.plannedForDate
         reloadItems()
     }
 

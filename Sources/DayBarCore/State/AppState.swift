@@ -524,6 +524,21 @@ public final class AppState {
         refresh(now: now)
     }
 
+    /// Move a task's planned day without resurrecting it: completed tasks keep
+    /// their completion; snoozed tasks return to planned. Unlike `reschedule`,
+    /// this never touches `completedDate`.
+    public func setPlannedDate(_ todo: DailyTodo, to day: Date, now: Date = .now) {
+        let planned = DayMath.startOfDay(day, calendar: calendar)
+        guard planned != todo.plannedForDate else { return }
+        todo.plannedForDate = planned
+        todo.snoozedUntil = nil
+        if todo.status == .snoozed { todo.status = .planned }
+        markRemindersTodoLocallyModified(todo, now: now)
+        remindersSync.enqueuePush(for: todo)
+        commitSave()
+        refresh(now: now)
+    }
+
     public func drop(_ todo: DailyTodo, now: Date = .now) {
         todo.status = .dropped
         markRemindersTodoLocallyModified(todo, now: now)
