@@ -106,6 +106,17 @@ final class NotesStoreTests: XCTestCase {
         XCTAssertEqual(folder.lastPathComponent, "abc")
     }
 
+    func testRenameOnlyChangesCaseWithoutDuplicate() throws {
+        let url = try store.createNote(in: nil, titled: "notes")
+        try store.write("abc", to: url)
+
+        let renamed = try store.rename(url, to: "Notes")
+
+        XCTAssertEqual(renamed.lastPathComponent, "Notes.md")
+        XCTAssertEqual(try store.contents(of: renamed), "abc")
+        XCTAssertEqual(try store.notes(in: nil).map(\.title), ["Notes"])
+    }
+
     func testRenameFolderSanitizesAndReturnsNewURL() throws {
         let work = try store.createFolder(named: "Work")
         try store.createNote(in: work, titled: "Plan")

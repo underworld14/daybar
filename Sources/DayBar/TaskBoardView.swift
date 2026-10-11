@@ -10,6 +10,7 @@ struct TaskBoardView: View {
 
     @State private var viewMode: TasksViewMode = .list
     @State private var detailTodo: DailyTodo?
+    @State private var todoPendingDelete: DailyTodo?
     @FocusState private var addFocused: Bool
     @State private var newTitle = ""
 
@@ -38,6 +39,21 @@ struct TaskBoardView: View {
         }
         .sheet(item: $detailTodo) { todo in
             TodoDetailSheet(appState: appState, todo: todo)
+        }
+        .alert(
+            "Delete task “\(todoPendingDelete?.title ?? "")”?",
+            isPresented: Binding(
+                get: { todoPendingDelete != nil },
+                set: { if !$0 { todoPendingDelete = nil } }
+            )
+        ) {
+            Button("Delete Task", role: .destructive) {
+                if let todo = todoPendingDelete { appState.deleteTodo(todo) }
+                todoPendingDelete = nil
+            }
+            Button("Cancel", role: .cancel) { todoPendingDelete = nil }
+        } message: {
+            Text("This permanently removes the task, including its checklist.")
         }
         .animation(.snappy, value: columnIDs)
     }
@@ -75,7 +91,8 @@ struct TaskBoardView: View {
                                 appState: appState,
                                 todo: todo,
                                 showProjectChip: showProjectChips,
-                                onOpenDetails: { detailTodo = todo }
+                                onOpenDetails: { detailTodo = todo },
+                                onDelete: { todoPendingDelete = todo }
                             )
                             .listRowSeparator(.hidden)
                         }
@@ -92,7 +109,8 @@ struct TaskBoardView: View {
                                     appState: appState,
                                     todo: todo,
                                     showProjectChip: showProjectChips,
-                                    onOpenDetails: { detailTodo = todo }
+                                    onOpenDetails: { detailTodo = todo },
+                                    onDelete: { todoPendingDelete = todo }
                                 )
                                 .listRowSeparator(.hidden)
                             }
@@ -125,7 +143,8 @@ struct TaskBoardView: View {
                             todos: toDoTodos,
                             showProjectChip: showProjectChips,
                             findTodo: findTodo,
-                            onOpenDetails: { detailTodo = $0 }
+                            onOpenDetails: { detailTodo = $0 },
+                            onDelete: { todoPendingDelete = $0 }
                         )
                         BoardColumnView(
                             appState: appState,
@@ -134,7 +153,8 @@ struct TaskBoardView: View {
                             todos: inProgressRows,
                             showProjectChip: showProjectChips,
                             findTodo: findTodo,
-                            onOpenDetails: { detailTodo = $0 }
+                            onOpenDetails: { detailTodo = $0 },
+                            onDelete: { todoPendingDelete = $0 }
                         )
                         BoardColumnView(
                             appState: appState,
@@ -143,7 +163,8 @@ struct TaskBoardView: View {
                             todos: doneRows,
                             showProjectChip: showProjectChips,
                             findTodo: findTodo,
-                            onOpenDetails: { detailTodo = $0 }
+                            onOpenDetails: { detailTodo = $0 },
+                            onDelete: { todoPendingDelete = $0 }
                         )
                     }
                     .padding(12)
@@ -233,11 +254,12 @@ struct TaskBoardView: View {
         case .today, .tomorrow:
             return Array(appState.windowTodos(for: scope).filter { $0.completedDate != nil }.prefix(cap))
         case .allTasks:
-            let start = Calendar.current.date(byAdding: .day, value: -7, to: .now) ?? .distantPast
+            let start = appState.calendar.date(byAdding: .day, value: -7, to: .now) ?? .distantPast
             return Array(((try? appState.store.completedTodos(in: start..<Date.now)) ?? []).prefix(cap))
         case .project(let id):
             let completed = ((try? appState.store.todos(inProject: id)) ?? [])
                 .filter { $0.completedDate != nil }
+                .sorted { ($0.completedDate ?? .distantPast) > ($1.completedDate ?? .distantPast) }
             return Array(completed.prefix(cap))
         }
     }
@@ -276,6 +298,7 @@ private struct BoardRowView: View {
     let todo: DailyTodo
     let showProjectChip: Bool
     var onOpenDetails: () -> Void
+    var onDelete: () -> Void = {}
 
     var body: some View {
         HStack(spacing: 8) {
@@ -336,7 +359,7 @@ private struct BoardRowView: View {
             Button("Reset to To Do") { appState.setBoardStatus(.toDo, for: todo) }
         }
         Divider()
-        Button("Delete", role: .destructive) { appState.deleteTodo(todo) }
+        Button("Delete…", role: .destructive) { onDelete() }
     }
 
     private var statusIcon: String {
@@ -362,6 +385,7 @@ private struct BoardColumnView: View {
     let showProjectChip: Bool
     let findTodo: (UUID) -> DailyTodo?
     let onOpenDetails: (DailyTodo) -> Void
+    let onDelete: (DailyTodo) -> Void
 
     @State private var isTargeted = false
     @State private var addingTask = false
@@ -411,7 +435,8 @@ private struct BoardColumnView: View {
                         appState: appState,
                         todo: todo,
                         showProjectChip: showProjectChip,
-                        onOpenDetails: { onOpenDetails(todo) }
+                        onOpenDetails: { onOpenDetails(todo) },
+                        onDelete: { onDelete(todo) }
                     )
                 }
             }
@@ -487,6 +512,7 @@ private struct BoardCardView: View {
     let todo: DailyTodo
     let showProjectChip: Bool
     let onOpenDetails: () -> Void
+    let onDelete: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -545,7 +571,7 @@ private struct BoardCardView: View {
             Button("Reset to To Do") { appState.setBoardStatus(.toDo, for: todo) }
         }
         Divider()
-        Button("Delete", role: .destructive) { appState.deleteTodo(todo) }
+        Button("Delete…", role: .destructive) { onDelete() }
     }
 }
 

@@ -49,9 +49,7 @@ struct MainWindowView: View {
             ProjectSheet(mode: projectSheetMode) { name, symbol, existing in
                 switch existing {
                 case .some(let project):
-                    appState.renameProject(project, to: name)
-                    if project.symbolName != symbol { project.symbolName = symbol }
-                    appState.refresh()
+                    appState.renameProject(project, to: name, symbolName: symbol)
                 case nil:
                     appState.createProject(name: name, symbolName: symbol)
                 }

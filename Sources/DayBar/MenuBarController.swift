@@ -66,6 +66,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
         KeyboardShortcuts.onKeyDown(for: .quickAdd) { [weak self] in
             MainActor.assumeIsolated { self?.revealForQuickAdd() }
         }
+        // Dev/UI-test affordance: present the main window at launch. The normal entry
+        // point stays the tray gear menu ("Open DayBar…").
+        if CommandLine.arguments.contains("--open-window") {
+            presentMainWindow()
+        }
         UpdateController.shared.start()
     }
 

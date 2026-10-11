@@ -26,7 +26,9 @@ public final class AppState {
     @ObservationIgnored private let habitEngine: HabitEngine
     @ObservationIgnored private let somaFM = SomaFMService()
     @ObservationIgnored private let artworkCache = RadioArtworkCache()
-    @ObservationIgnored private var calendar: Calendar
+    /// The app's (injectable) calendar. Views use it for date math so their windows
+    /// match the intents' day boundaries in tests with custom calendars.
+    @ObservationIgnored public private(set) var calendar: Calendar
     @ObservationIgnored private var observers: [any NSObjectProtocol] = []
     @ObservationIgnored private var pendingUndo: PendingUndo?
     @ObservationIgnored private var lastHabitNotifySignature: String?
@@ -462,11 +464,14 @@ public final class AppState {
         return project
     }
 
-    /// Rename a project. No-op for an empty/whitespace or unchanged name.
-    public func renameProject(_ project: Project, to name: String) {
+    /// Rename a project and/or change its symbol. No-op when nothing changes.
+    public func renameProject(_ project: Project, to name: String, symbolName: String? = nil) {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, trimmed != project.name else { return }
-        project.name = trimmed
+        let nameChanged = !trimmed.isEmpty && trimmed != project.name
+        let symbolChanged = symbolName != nil && project.symbolName != symbolName
+        guard nameChanged || symbolChanged else { return }
+        if nameChanged { project.name = trimmed }
+        if let symbolName, project.symbolName != symbolName { project.symbolName = symbolName }
         commitSave()
         refresh()
     }

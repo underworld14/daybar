@@ -32,8 +32,10 @@ struct NotesPaneView: View {
             handleNewNoteSignal()
         }
         .onChange(of: appState.windowNewNoteSignal) { _, _ in handleNewNoteSignal() }
-        .onChange(of: selectedNoteURL) { _, newURL in
-            flushPendingSave()
+        .onChange(of: selectedNoteURL) { oldURL, newURL in
+            // Flush against the OUTGOING url — selectedNoteURL is already the new note
+            // here, and the buffer still holds the previous note's content.
+            flushPendingSave(from: oldURL)
             loadNote(newURL)
         }
         .onChange(of: text) { _, newText in
@@ -258,9 +260,10 @@ struct NotesPaneView: View {
         }
     }
 
-    /// Writes any pending debounced change immediately (view disappears / window closes).
-    private func flushPendingSave() {
-        guard let url = selectedNoteURL else { return }
+    /// Writes any pending debounced change immediately (note switch, view disappear,
+    /// window close). Pass the outgoing URL when the selection is mid-change.
+    private func flushPendingSave(from outgoingURL: URL? = nil) {
+        guard let url = outgoingURL ?? selectedNoteURL else { return }
         saveTask?.cancel()
         saveTask = nil
         let current = (try? appState.notes.contents(of: url)) ?? ""
@@ -294,6 +297,11 @@ struct NotesPaneView: View {
     }
 
     private func move(_ note: NotesStore.NoteFile, to target: URL?) {
+        // A pending debounce still targets the old path and would recreate a stale
+        // copy there after the move — flush it onto the file first.
+        if selectedNoteURL == note.url {
+            flushPendingSave()
+        }
         guard (try? appState.notes.move(note.url, to: target)) != nil else { return }
         reloadNotes()
     }

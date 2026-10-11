@@ -101,6 +101,16 @@ public final class NotesStore {
         let destination = url.deletingLastPathComponent()
             .appendingPathComponent(name + ".md")
         guard destination != url else { return url }
+        // Case-only changes can't move directly onto their own (case-insensitively
+        // identical, already-existing) path — hop through a temp name so the stored
+        // casing still updates.
+        if destination.path.caseInsensitiveCompare(url.path) == .orderedSame {
+            let temp = url.deletingLastPathComponent()
+                .appendingPathComponent(UUID().uuidString + ".md")
+            try FileManager.default.moveItem(at: url, to: temp)
+            try FileManager.default.moveItem(at: temp, to: destination)
+            return destination
+        }
         let resolved = availableURL(for: destination, keepingIfSelf: url)
         try FileManager.default.moveItem(at: url, to: resolved)
         return resolved
