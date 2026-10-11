@@ -40,6 +40,12 @@
   (random station) or pick from a simple list; skip stations, now-playing label, offline channel cache;
   menu-bar waveform while playing; **auto-pauses when a focus session ends**.
 - **Task history** — browse completed tasks grouped by day (last 30 days).
+- **Main window** — open a real app window from the tray's gear menu ("Open DayBar…"): tasks as a
+  **list or kanban board** (To Do / In Progress / Done, drag between columns), grouped by
+  **projects** you define, plus **markdown notes** with folders — plain `.md` files on disk
+  (`~/Library/Application Support/DayBar/Notes/`), no lock-in. While the window is open DayBar
+  shows its Dock icon and full menu bar; closing it returns to menu-bar-only. Projects are
+  included in JSON backups; notes stay as user-owned files.
 - **Analytics (Swift Charts)** — tasks and habits tabs; daily / weekly / monthly trends,
   habit consistency heatmap (28 days), streak leaderboard, focus minutes, and Pomodoro sessions.
 - **Notifications** — morning planning + evening review reminders, a phase-end alert (shows

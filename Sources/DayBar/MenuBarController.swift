@@ -32,22 +32,36 @@ final class PassthroughHostingView<Content: View>: NSHostingView<Content> {
 /// panel is a real key window, so `TextField` focus, `onSubmit`, and SwiftUI re-rendering all
 /// behave normally.
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
-    private var appState: AppState!
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUserNotificationCenterDelegate {
+    /// Injected by `DayBarApp.init` so the tray panel and the main window share one state.
+    /// Non-optional fallback construction happens in `applicationDidFinishLaunching` when
+    /// the app is launched without the SwiftUI scene (tests / old entry paths).
+    var appState: AppState!
     private var statusItem: NSStatusItem!
     private var panel: FloatingPanel!
     private var outsideClickMonitor: Any?
+    private var mainWindow: NSWindow?
     private let appearanceCoordinator = SystemAppearanceCoordinator()
     private let panelWidth: CGFloat = 360
 
+    /// Posted by the tray gear menu ("Open DayBar…") — AppKit-owned entry point.
+    static let openMainWindowNotification = Notification.Name("DayBar.openMainWindow")
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
-        appState = AppState(store: DataStore())
+        if appState == nil {
+            appState = AppState(store: DataStore())
+        }
         appState.notifications.onAuthorizationGranted = { [weak self] in self?.appState.refresh() }
         UNUserNotificationCenter.current().delegate = self
         appState.notifications.requestAuthorization()
         setupStatusItem()
         setupPanel()
+        NotificationCenter.default.addObserver(
+            forName: Self.openMainWindowNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.presentMainWindow() }
+        }
         Task { await appState.restoreRadioSession() }
         KeyboardShortcuts.onKeyDown(for: .quickAdd) { [weak self] in
             MainActor.assumeIsolated { self?.revealForQuickAdd() }
@@ -306,6 +320,49 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             y = max(y, minOriginY)
         }
         panel.setFrameOrigin(NSPoint(x: x, y: y))
+    }
+
+    // MARK: - Main window
+
+    /// Opens (or focuses) the main window. While it is open the app runs as a regular
+    /// Dock application (full menu bar) so text shortcuts work; closing returns to accessory.
+    func presentMainWindow() {
+        hidePanel()
+        // Policy first so the activation doesn't fight the accessory mode.
+        NSApp.setActivationPolicy(.regular)
+        let window: NSWindow
+        if let existing = mainWindow {
+            window = existing
+        } else {
+            window = makeMainWindow()
+            mainWindow = window
+        }
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func makeMainWindow() -> NSWindow {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 1000, height: 640),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "DayBar"
+        window.contentViewController = NSHostingController(
+            rootView: MainWindowView().environment(appState)
+        )
+        window.contentMinSize = NSSize(width: 860, height: 560)
+        window.setFrameAutosaveName("DayBarMainWindow")
+        window.isReleasedWhenClosed = false
+        window.delegate = self
+        return window
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow, window === mainWindow else { return }
+        // Back to menu-bar-only once the window is gone.
+        NSApp.setActivationPolicy(.accessory)
     }
 
     // MARK: - UNUserNotificationCenterDelegate

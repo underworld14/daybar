@@ -11,6 +11,7 @@ struct TodoDetailSheet: View {
     @State private var notes = ""
     @State private var newItemTitle = ""
     @State private var items: [TodoChecklistItem] = []
+    @State private var selectedProjectID: UUID?
     @FocusState private var newItemFocused: Bool
     @FocusState private var descriptionFocused: Bool
 
@@ -29,6 +30,16 @@ struct TodoDetailSheet: View {
 
             Form {
                 TextField("Title", text: $title)
+
+                Section("Project") {
+                    Picker("Project", selection: $selectedProjectID) {
+                        Text("None").tag(UUID?.none)
+                        ForEach(appState.projects) { project in
+                            Label(project.name, systemImage: project.symbolName)
+                                .tag(UUID?.some(project.id))
+                        }
+                    }
+                }
 
                 Section {
                     TextEditor(text: $notes)
@@ -99,6 +110,9 @@ struct TodoDetailSheet: View {
         .frame(width: 400, height: 520)
         .onAppear(perform: load)
         .onDisappear(perform: persistTitleAndNotes)
+        .onChange(of: selectedProjectID) { _, newID in
+            appState.assign(todo: todo, to: appState.projects.first(where: { $0.id == newID }))
+        }
     }
 
     private var detectedLinks: [URL] {
@@ -108,6 +122,7 @@ struct TodoDetailSheet: View {
     private func load() {
         title = todo.title
         notes = todo.notes
+        selectedProjectID = todo.projectID
         reloadItems()
     }
 

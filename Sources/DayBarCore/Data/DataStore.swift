@@ -13,7 +13,7 @@ public final class DataStore {
     public init(inMemory: Bool = false) {
         let schema = Schema([
             DailyTodo.self, AppMeta.self, FocusSession.self, DayLog.self,
-            HabitTemplate.self, HabitLog.self, TodoChecklistItem.self,
+            HabitTemplate.self, HabitLog.self, TodoChecklistItem.self, Project.self,
         ])
         let config: ModelConfiguration
         if inMemory {
@@ -78,6 +78,50 @@ public final class DataStore {
     public func delete(_ todo: DailyTodo) {
         deleteChecklistItems(for: todo.id)
         context.delete(todo)
+    }
+
+    // MARK: - Projects
+
+    @discardableResult
+    public func insert(_ project: Project) -> Project {
+        context.insert(project)
+        return project
+    }
+
+    /// Deletes the project and unassigns its todos (`projectID = nil`) — tasks survive.
+    public func delete(_ project: Project) {
+        let id = project.id
+        let predicate = #Predicate<DailyTodo> { $0.projectID == id }
+        let assigned = (try? context.fetch(FetchDescriptor(predicate: predicate))) ?? []
+        for todo in assigned { todo.projectID = nil }
+        context.delete(project)
+    }
+
+    public func allProjects() throws -> [Project] {
+        try context.fetch(FetchDescriptor<Project>(
+            sortBy: [SortDescriptor(\.sortOrder), SortDescriptor(\.createdDate)]
+        ))
+    }
+
+    /// Non-dropped todos assigned to the project.
+    /// Incomplete first, then high priority, then oldest created (same order as `todos(on:)`).
+    public func todos(inProject id: UUID) throws -> [DailyTodo] {
+        let projectID = id
+        let dropped = TodoStatus.dropped.rawValue
+        let predicate = #Predicate<DailyTodo> { todo in
+            todo.projectID == projectID && todo.statusRaw != dropped
+        }
+        let fetched = try context.fetch(FetchDescriptor(
+            predicate: predicate,
+            sortBy: [SortDescriptor(\.priorityRaw, order: .reverse), SortDescriptor(\.createdDate)]
+        ))
+        return fetched.sorted { lhs, rhs in
+            let lhsDone = lhs.completedDate != nil
+            let rhsDone = rhs.completedDate != nil
+            if lhsDone != rhsDone { return !lhsDone && rhsDone }
+            if lhs.priorityRaw != rhs.priorityRaw { return lhs.priorityRaw > rhs.priorityRaw }
+            return lhs.createdDate < rhs.createdDate
+        }
     }
 
     // MARK: - Checklist
@@ -367,6 +411,7 @@ public final class DataStore {
         let habitLogs = (try? allHabitLogs()) ?? []
         let sessions = (try? allFocusSessions()) ?? []
         let checklist = (try? allChecklistItems()) ?? []
+        let projects = (try? allProjects()) ?? []
         return StoreSnapshotDTO(
             todos: todos.map(TodoDTO.init),
             meta: MetaDTO(
@@ -376,7 +421,8 @@ public final class DataStore {
             habitTemplates: habits.map(HabitTemplateDTO.init),
             habitLogs: habitLogs.map(HabitLogDTO.init),
             focusSessions: sessions.map(FocusSessionDTO.init),
-            checklistItems: checklist.map(ChecklistItemDTO.init)
+            checklistItems: checklist.map(ChecklistItemDTO.init),
+            projects: projects.map(ProjectDTO.init)
         )
     }
 
@@ -391,6 +437,9 @@ public final class DataStore {
         for existing in (try? allTodos()) ?? [] { context.delete(existing) }
         for existing in (try? allHabitTemplates()) ?? [] { context.delete(existing) }
         for existing in (try? allHabitLogs()) ?? [] { context.delete(existing) }
+        for existing in (try? allProjects()) ?? [] { context.delete(existing) }
+        // Projects first so restored todos' `projectID` links resolve against them.
+        for dto in snapshot.projects { context.insert(dto.makeModel()) }
         for dto in snapshot.todos { context.insert(dto.makeModel()) }
         for dto in snapshot.habitTemplates { context.insert(dto.makeModel()) }
         for dto in snapshot.habitLogs { context.insert(dto.makeModel()) }

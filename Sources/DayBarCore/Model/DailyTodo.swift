@@ -30,6 +30,8 @@ public final class DailyTodo {
     public var externalIdentifier: String?
     /// Last known modification time from EventKit (conflict detection).
     public var externalModifiedAt: Date?
+    /// Optional project grouping (see `Project`). nil == unassigned.
+    public var projectID: UUID?
 
     public init(
         id: UUID = UUID(),
@@ -46,7 +48,8 @@ public final class DailyTodo {
         snoozedUntil: Date? = nil,
         pomodoroCount: Int = 0,
         source: TodoSource = .local,
-        externalIdentifier: String? = nil
+        externalIdentifier: String? = nil,
+        projectID: UUID? = nil
     ) {
         self.id = id
         self.title = title
@@ -63,6 +66,7 @@ public final class DailyTodo {
         self.pomodoroCount = pomodoroCount
         self.sourceRaw = source.rawValue
         self.externalIdentifier = externalIdentifier
+        self.projectID = projectID
     }
 }
 

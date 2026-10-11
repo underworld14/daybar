@@ -27,6 +27,28 @@ public enum TodoSource: String, Codable, Sendable {
     case reminders
 }
 
+/// Kanban columns of the main window's task boards. Membership is derived from
+/// `completedDate`/`status`, never stored separately.
+public enum BoardColumn: String, CaseIterable, Sendable {
+    case toDo
+    case inProgress
+    case done
+}
+
+/// Which slice of tasks the main window is showing.
+public enum TaskScope: Hashable, Sendable {
+    case today
+    case tomorrow
+    case allTasks
+    case project(UUID)
+}
+
+/// List vs kanban rendering for a task scope, persisted per scope in Preferences.
+public enum TasksViewMode: String, Sendable {
+    case list
+    case kanban
+}
+
 /// Gentle escalation tier for a carried-over task. Capped intentionally low for the
 /// default ("gentle") intensity so the app never shouts.
 public enum EscalationTier: Int, CaseIterable, Codable, Sendable, Comparable {

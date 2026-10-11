@@ -47,6 +47,10 @@ public enum PreferenceKeys {
     public static let awayEndDate = "away.endDate"
     public static let weeklyDigestEnabled = "notify.weeklyDigestEnabled"
     public static let weeklyDigestLastFiredDay = "notify.weeklyDigestLastFiredDay"
+
+    /// `[String: String]` — window task-scope key ("today" | "tomorrow" | "all" |
+    /// "project:<uuid>") → `TasksViewMode.rawValue` ("list" | "kanban").
+    public static let tasksViewModes = "window.tasksViewModes"
 }
 
 /// Typed reads of the app preferences. Getters bake in the same defaults SettingsView
@@ -250,5 +254,24 @@ public enum Preferences {
             if let enabled = dnd?["dndEnabled"] as? Bool, enabled { return false }
         }
         return true
+    }
+
+    // MARK: - Main window
+
+    /// List/kanban choice for a window task scope. Unknown scope keys (and unknown stored
+    /// values) fall back to `.list`.
+    public static func tasksViewMode(for scopeKey: String) -> TasksViewMode {
+        let modes = privateTasksViewModes()
+        return modes[scopeKey].flatMap(TasksViewMode.init(rawValue:)) ?? .list
+    }
+
+    public static func setTasksMode(_ mode: TasksViewMode, for scopeKey: String) {
+        var modes = privateTasksViewModes()
+        modes[scopeKey] = mode.rawValue
+        defaults.set(modes, forKey: PreferenceKeys.tasksViewModes)
+    }
+
+    private static func privateTasksViewModes() -> [String: String] {
+        defaults.dictionary(forKey: PreferenceKeys.tasksViewModes) as? [String: String] ?? [:]
     }
 }

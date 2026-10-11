@@ -123,6 +123,9 @@ struct TodayView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Menu {
+                Button {
+                    NotificationCenter.default.post(name: AppDelegate.openMainWindowNotification, object: nil)
+                } label: { Label("Open DayBar…", systemImage: "macwindow") }
                 Button { showSettings = true } label: { Label("Settings…", systemImage: "gearshape") }
                 Button { showStats = true } label: { Label("Statistics…", systemImage: "chart.bar") }
                 Button { showHistory = true } label: { Label("Task History…", systemImage: "clock.arrow.circlepath") }

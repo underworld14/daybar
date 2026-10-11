@@ -32,13 +32,15 @@ final class PersistenceTests: XCTestCase {
 
     func testJSONRoundTrip() throws {
         let modified = Date(timeIntervalSince1970: 1_700_000_100)
+        let project = Project(name: "Side Quest", symbolName: "bolt", sortOrder: 3, createdDate: now)
         let model = DailyTodo(
             title: "x",
             plannedForDate: now,
             originalPlannedDate: now,
             status: .carriedOver,
             source: .reminders,
-            externalIdentifier: "ext-json"
+            externalIdentifier: "ext-json",
+            projectID: project.id
         )
         model.externalModifiedAt = modified
         let template = HabitTemplate(title: "Read")
@@ -54,7 +56,8 @@ final class PersistenceTests: XCTestCase {
             habitTemplates: [HabitTemplateDTO(template)],
             habitLogs: [HabitLogDTO(habitLog)],
             focusSessions: [FocusSessionDTO(session)],
-            checklistItems: [checklist]
+            checklistItems: [checklist],
+            projects: [ProjectDTO(project)]
         )
         let data = try JSONStore.encode(snapshot)
         let decoded = try JSONStore.decode(data)
@@ -74,6 +77,14 @@ final class PersistenceTests: XCTestCase {
         XCTAssertEqual(decoded.checklistItems.first?.title, "Step one")
         XCTAssertEqual(decoded.checklistItems.first?.isCompleted, true)
         XCTAssertEqual(decoded.checklistItems.first?.todoId, model.id)
+        XCTAssertEqual(decoded.projects.count, 1)
+        XCTAssertEqual(decoded.projects.first?.name, "Side Quest")
+        XCTAssertEqual(decoded.projects.first?.symbolName, "bolt")
+        XCTAssertEqual(decoded.projects.first?.sortOrder, 3)
+        XCTAssertEqual(decoded.projects.first?.id, project.id)
+        XCTAssertEqual(decoded.todos.first?.projectID, project.id)
+        let restored = decoded.todos.first?.makeModel()
+        XCTAssertEqual(restored?.projectID, project.id)
     }
 
     func testLegacyJSONWithoutHabitsDecodes() throws {
@@ -84,6 +95,22 @@ final class PersistenceTests: XCTestCase {
         XCTAssertTrue(decoded.habitTemplates.isEmpty)
         XCTAssertTrue(decoded.habitLogs.isEmpty)
         XCTAssertNil(decoded.focusSessions)
+    }
+
+    /// Backups from before projects existed: no `projects` key, no per-todo `projectID`.
+    func testPreProjectBackupDecodesWithEmptyProjects() throws {
+        let model = DailyTodo(title: "old", plannedForDate: now, originalPlannedDate: now)
+        let snapshot = StoreSnapshotDTO(todos: [TodoDTO(model)], meta: MetaDTO(lastProcessedDay: now))
+        var raw = try JSONSerialization.jsonObject(with: try JSONStore.encode(snapshot)) as! [String: Any]
+        raw.removeValue(forKey: "projects")
+        var todos = raw["todos"] as! [[String: Any]]
+        todos[0].removeValue(forKey: "projectID")
+        raw["todos"] = todos
+
+        let decoded = try JSONStore.decode(try JSONSerialization.data(withJSONObject: raw))
+        XCTAssertTrue(decoded.projects.isEmpty)
+        XCTAssertNil(decoded.todos.first?.projectID)
+        XCTAssertNil(decoded.todos.first?.makeModel().projectID)
     }
 
     func testImportSnapshotReplacesFocusSessions() throws {

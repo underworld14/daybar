@@ -20,11 +20,21 @@ public struct TodoDTO: Codable, Sendable {
     public var sourceRaw: String
     public var externalIdentifier: String?
     public var externalModifiedAt: Date?
+    /// Missing key (older backups) decodes as `nil`.
+    public var projectID: UUID?
 }
 
 public struct MetaDTO: Codable, Sendable {
     public var lastProcessedDay: Date?
     public var lastHabitMaterializedDay: Date?
+}
+
+public struct ProjectDTO: Codable, Sendable {
+    public var id: UUID
+    public var name: String
+    public var symbolName: String
+    public var sortOrder: Int
+    public var createdDate: Date
 }
 
 public struct HabitTemplateDTO: Codable, Sendable {
@@ -100,6 +110,8 @@ public struct StoreSnapshotDTO: Codable, Sendable {
     public var focusSessions: [FocusSessionDTO]?
     /// Local checklist items; missing key (older backups) decodes as `[]`.
     public var checklistItems: [ChecklistItemDTO]
+    /// Projects; missing key (older backups) decodes as `[]`.
+    public var projects: [ProjectDTO]
 
     public init(
         todos: [TodoDTO],
@@ -107,7 +119,8 @@ public struct StoreSnapshotDTO: Codable, Sendable {
         habitTemplates: [HabitTemplateDTO] = [],
         habitLogs: [HabitLogDTO] = [],
         focusSessions: [FocusSessionDTO]? = nil,
-        checklistItems: [ChecklistItemDTO] = []
+        checklistItems: [ChecklistItemDTO] = [],
+        projects: [ProjectDTO] = []
     ) {
         self.todos = todos
         self.meta = meta
@@ -115,6 +128,7 @@ public struct StoreSnapshotDTO: Codable, Sendable {
         self.habitLogs = habitLogs
         self.focusSessions = focusSessions
         self.checklistItems = checklistItems
+        self.projects = projects
     }
 
     public init(from decoder: Decoder) throws {
@@ -125,6 +139,7 @@ public struct StoreSnapshotDTO: Codable, Sendable {
         habitLogs = try c.decodeIfPresent([HabitLogDTO].self, forKey: .habitLogs) ?? []
         focusSessions = try c.decodeIfPresent([FocusSessionDTO].self, forKey: .focusSessions)
         checklistItems = try c.decodeIfPresent([ChecklistItemDTO].self, forKey: .checklistItems) ?? []
+        projects = try c.decodeIfPresent([ProjectDTO].self, forKey: .projects) ?? []
     }
 }
 
@@ -136,7 +151,7 @@ public extension TodoDTO {
             dueDate: m.dueDate, completedDate: m.completedDate, statusRaw: m.statusRaw,
             priorityRaw: m.priorityRaw, delayCount: m.delayCount, snoozedUntil: m.snoozedUntil,
             pomodoroCount: m.pomodoroCount, sourceRaw: m.sourceRaw, externalIdentifier: m.externalIdentifier,
-            externalModifiedAt: m.externalModifiedAt
+            externalModifiedAt: m.externalModifiedAt, projectID: m.projectID
         )
     }
 
@@ -148,10 +163,27 @@ public extension TodoDTO {
             status: TodoStatus(rawValue: statusRaw) ?? .planned,
             priority: Priority(rawValue: priorityRaw) ?? .medium,
             delayCount: delayCount, snoozedUntil: snoozedUntil, pomodoroCount: pomodoroCount,
-            source: TodoSource(rawValue: sourceRaw) ?? .local, externalIdentifier: externalIdentifier
+            source: TodoSource(rawValue: sourceRaw) ?? .local, externalIdentifier: externalIdentifier,
+            projectID: projectID
         )
         todo.externalModifiedAt = externalModifiedAt
         return todo
+    }
+}
+
+public extension ProjectDTO {
+    init(_ m: Project) {
+        self.init(
+            id: m.id, name: m.name, symbolName: m.symbolName,
+            sortOrder: m.sortOrder, createdDate: m.createdDate
+        )
+    }
+
+    func makeModel() -> Project {
+        Project(
+            id: id, name: name, symbolName: symbolName,
+            sortOrder: sortOrder, createdDate: createdDate
+        )
     }
 }
 

@@ -19,6 +19,8 @@ public final class AppState {
     public let habitRemindersSync: HabitRemindersSyncEngine
     public let radio: RadioPlayerManager
     public let moodChecker: MoodAIAvailabilityChecking
+    /// Markdown notes on disk (window-only feature; the tray panel never touches it).
+    public let notes: NotesStore
 
     @ObservationIgnored private let rollover: RolloverEngine
     @ObservationIgnored private let habitEngine: HabitEngine
@@ -47,6 +49,7 @@ public final class AppState {
     public private(set) var todayTodos: [DailyTodo] = []
     public private(set) var tomorrowTodos: [DailyTodo] = []
     public private(set) var carriedTodos: [DailyTodo] = []
+    public private(set) var projects: [Project] = []
     public private(set) var todayHabits: [TodayHabit] = []
     public private(set) var habitStreakEntries: [HabitStreakEntry] = []
     /// Focus streak + 7-day Dayscape strip (computed from completed Pomodoros).
@@ -71,6 +74,10 @@ public final class AppState {
     public var isPanelSheetPresented: Bool = false
     /// Bumped to ask the panel to focus the quick-add field (e.g. from the global hotkey).
     public var quickAddFocusSignal: Int = 0
+    /// Bumped by the File menu (New Task ⌘N) to focus the main window's add-task field.
+    public var windowAddTaskFocusSignal: Int = 0
+    /// Bumped by the File menu (New Note ⌥⌘N) to create + select a new note in the window.
+    public var windowNewNoteSignal: Int = 0
 
     public private(set) var radioChannels: [SomaFMChannel] = []
     public private(set) var radioSkipChannels: [SomaFMChannel] = []
@@ -85,11 +92,13 @@ public final class AppState {
         remindersProvider: ExternalSourceProvider? = nil,
         moodChecker: MoodAIAvailabilityChecking = LiveMoodAIChecker(),
         schedulesRemindersSync: Bool = true,
-        observeSystemEvents: Bool = true
+        observeSystemEvents: Bool = true,
+        notesRoot: URL? = nil
     ) {
         self.store = store
         self.calendar = calendar
         self.moodChecker = moodChecker
+        self.notes = NotesStore(root: notesRoot)
         self.schedulesRemindersSync = schedulesRemindersSync
         self.observeSystemEvents = observeSystemEvents
         self.rollover = RolloverEngine(store: store, calendar: calendar)
@@ -212,6 +221,7 @@ public final class AppState {
         rollover.performRolloverIfNeeded(now: now)
         habitEngine.materializeIfNeeded(now: now)
         reloadLists(now: now)
+        projects = (try? store.allProjects()) ?? []
         let rawHabits = (try? store.todayHabits(on: now, calendar: calendar)) ?? []
         rebuildHabitCaches(rawHabits: rawHabits, now: now)
         rebuildFocusCache(now: now)
@@ -382,6 +392,108 @@ public final class AppState {
         refresh(now: now)
     }
 
+    // MARK: - Main window board
+
+    /// Sets a task's kanban column: To Do → planned/carried, In Progress, Done.
+    /// Column membership itself stays derived (`completedDate`/`status`) — nothing extra is stored.
+    public func setBoardStatus(_ column: BoardColumn, for todo: DailyTodo, now: Date = .now) {
+        let today = DayMath.startOfDay(now, calendar: calendar)
+        switch column {
+        case .toDo:
+            todo.completedDate = nil
+            todo.status = todo.plannedForDate < today ? .carriedOver : .planned
+        case .inProgress:
+            todo.completedDate = nil
+            todo.status = .inProgress
+        case .done:
+            todo.completedDate = now
+            todo.status = .completed
+            // Keep completed carried-over tasks visible in today's list (same as `advanceTodo`).
+            if todo.plannedForDate < today {
+                todo.plannedForDate = today
+            }
+        }
+        markRemindersTodoLocallyModified(todo, now: now)
+        remindersSync.enqueuePush(for: todo)
+        commitSave()
+        refresh(now: now)
+    }
+
+    /// The task slice shown for a window scope. Done-column membership is handled
+    /// separately by the views (`completedDate != nil`).
+    public func windowTodos(for scope: TaskScope, now: Date = .now) -> [DailyTodo] {
+        switch scope {
+        case .today:
+            return todayTodos
+        case .tomorrow:
+            return tomorrowTodos
+        case .allTasks:
+            return ((try? store.allTodos()) ?? [])
+                .filter { $0.completedDate == nil && $0.status != .dropped }
+                .sorted {
+                    if $0.priorityRaw != $1.priorityRaw { return $0.priorityRaw > $1.priorityRaw }
+                    return $0.createdDate < $1.createdDate
+                }
+        case .project(let id):
+            return (try? store.todos(inProject: id)) ?? []
+        }
+    }
+
+    /// Stable key for per-scope persisted preferences (view mode).
+    public func scopeKey(for scope: TaskScope) -> String {
+        switch scope {
+        case .today: return "today"
+        case .tomorrow: return "tomorrow"
+        case .allTasks: return "all"
+        case .project(let id): return "project:\(id.uuidString)"
+        }
+    }
+
+    // MARK: - Projects
+
+    @discardableResult
+    public func createProject(name: String, symbolName: String = "folder") -> Project? {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let order = (((try? store.allProjects()) ?? []).map(\.sortOrder).max() ?? -1) + 1
+        let project = store.insert(Project(name: trimmed, symbolName: symbolName, sortOrder: order))
+        commitSave()
+        refresh()
+        return project
+    }
+
+    /// Rename a project. No-op for an empty/whitespace or unchanged name.
+    public func renameProject(_ project: Project, to name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed != project.name else { return }
+        project.name = trimmed
+        commitSave()
+        refresh()
+    }
+
+    /// Deletes the project; its tasks keep existing unassigned (store nulls the link).
+    public func deleteProject(_ project: Project) {
+        store.delete(project)
+        commitSave()
+        refresh()
+    }
+
+    public func assign(todo: DailyTodo, to project: Project?) {
+        let newID = project?.id
+        guard todo.projectID != newID else { return }
+        todo.projectID = newID
+        markRemindersTodoLocallyModified(todo, now: .now)
+        remindersSync.enqueuePush(for: todo)
+        commitSave()
+        refresh()
+    }
+
+    /// The project a task is assigned to, if it still exists.
+    public func project(for todo: DailyTodo) -> Project? {
+        guard let id = todo.projectID else { return nil }
+        return projects.first(where: { $0.id == id })
+    }
+
     /// Push a task to tomorrow.
     public func delay(_ todo: DailyTodo, now: Date = .now) {
         todo.delayCount += 1
@@ -416,6 +528,13 @@ public final class AppState {
         let token = todo.id.uuidString
         pendingUndo = PendingUndo(kind: .undropTodo(todo.id))
         showBanner("Task dropped", undoLabel: "Undo", undoToken: token)
+    }
+
+    /// Permanently removes a task (main-window context menu; the tray only ever drops).
+    public func deleteTodo(_ todo: DailyTodo, now: Date = .now) {
+        store.delete(todo)
+        commitSave()
+        refresh(now: now)
     }
 
     public func setPriority(_ todo: DailyTodo, _ priority: Priority, now: Date = .now) {

@@ -9,7 +9,7 @@ final class PreferencesTests: XCTestCase {
         PreferenceKeys.tickingSoundEnabled, PreferenceKeys.moodAIEnabled,
         PreferenceKeys.escalationIntensity, PreferenceKeys.quietHoursEnabled,
         PreferenceKeys.weeklyDigestEnabled, PreferenceKeys.selectedReminderCalendarIDs,
-        PreferenceKeys.selectedHabitReminderCalendarIDs,
+        PreferenceKeys.selectedHabitReminderCalendarIDs, PreferenceKeys.tasksViewModes,
     ]
 
     override func setUp() { keys.forEach { UserDefaults.standard.removeObject(forKey: $0) } }
@@ -70,5 +70,28 @@ final class PreferencesTests: XCTestCase {
 
         UserDefaults.standard.set(["habit-list"], forKey: PreferenceKeys.selectedHabitReminderCalendarIDs)
         XCTAssertEqual(Preferences.effectiveHabitReminderCalendarIDs, ["habit-list"])
+    }
+
+    func testTasksViewModeDefaultsToListForUnknownScopes() {
+        XCTAssertEqual(Preferences.tasksViewMode(for: "today"), .list)
+        XCTAssertEqual(Preferences.tasksViewMode(for: "project:\(UUID().uuidString)"), .list)
+    }
+
+    func testTasksViewModeRoundTripPerScope() {
+        Preferences.setTasksMode(.kanban, for: "today")
+        Preferences.setTasksMode(.list, for: "all")
+
+        XCTAssertEqual(Preferences.tasksViewMode(for: "today"), .kanban)
+        XCTAssertEqual(Preferences.tasksViewMode(for: "all"), .list)
+        // Other scopes keep the default.
+        XCTAssertEqual(Preferences.tasksViewMode(for: "tomorrow"), .list)
+
+        Preferences.setTasksMode(.list, for: "today")
+        XCTAssertEqual(Preferences.tasksViewMode(for: "today"), .list)
+    }
+
+    func testTasksViewModeIgnoresUnknownStoredValue() {
+        UserDefaults.standard.set(["today": "gallery"], forKey: PreferenceKeys.tasksViewModes)
+        XCTAssertEqual(Preferences.tasksViewMode(for: "today"), .list)
     }
 }
