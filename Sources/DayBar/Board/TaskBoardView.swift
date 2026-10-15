@@ -156,7 +156,7 @@ struct TaskBoardView: View {
         HStack(spacing: 8) {
             Image(systemName: "plus.circle")
                 .foregroundStyle(addFocused ? Color.accentColor : .secondary)
-            TextField("Add a task…", text: $newTitle)
+            TextField("Add a task…  (!!! priority, besok, #project)", text: $newTitle)
                 .textFieldStyle(.plain)
                 .focused($addFocused)
                 .onSubmit(addCurrent)
@@ -204,25 +204,13 @@ struct TaskBoardView: View {
     }
 
     private func addCurrent() {
-        let title = newTitle.trimmingCharacters(in: .whitespaces)
-        guard !title.isEmpty else { return }
-        let todo = appState.addTodo(
-            title: title,
-            plannedFor: composerDate ?? scopeDefaultPlannedDate,
-            now: .now
-        )
-        if case .project(let id) = scope, let todo {
-            appState.assign(todo: todo, to: appState.projects.first(where: { $0.id == id }))
-        }
+        guard let draft = BoardComposer.draft(
+            from: newTitle, scope: scope, column: .toDo, pickedDate: composerDate, appState: appState
+        ) else { return }
+        withThemeAnimation(.reorder) { _ = appState.addTodo(draft) }
         newTitle = ""
         composerDate = nil
         addFocused = true
-    }
-
-    private var scopeDefaultPlannedDate: Date {
-        scope == .tomorrow
-            ? DayMath.nextDay(.now, calendar: appState.calendar)
-            : DayMath.startOfDay(.now, calendar: appState.calendar)
     }
 
     // MARK: - Data

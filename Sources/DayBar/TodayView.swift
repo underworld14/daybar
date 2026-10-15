@@ -138,71 +138,22 @@ struct TodayView: View {
 
     // MARK: - Quick add
 
-    private var trimmed: String { newTitle.trimmingCharacters(in: .whitespaces) }
-
     private var quickAdd: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Picker("Plan for", selection: $addForTomorrow) {
-                Text("Today").tag(false)
-                Text("Tomorrow").tag(true)
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-
-            HStack(spacing: 8) {
-                Button(action: claimQuickAddFocus) {
-                    Image(systemName: "plus.circle.fill")
-                        .foregroundStyle(addFocused ? Color.accentColor : .secondary)
-                }
-                .buttonStyle(.plain)
-                .help("Focus quick-add")
-
-                ZStack(alignment: .leading) {
-                    TextField(addForTomorrow ? "Add a task for tomorrow…" : "Add a task for today…", text: $newTitle)
-                        .textFieldStyle(.plain)
-                        .focused($addFocused)
-                        .tint(.accentColor)
-                        .onSubmit(addCurrent)
-
-                    // Borderless nonactivating panels often omit AppKit's insertion point
-                    // even when FocusState is true — draw one while the field is empty.
-                    if addFocused && newTitle.isEmpty {
-                        BlinkingInsertionCaret()
-                            .padding(.leading, 1)
-                            .allowsHitTesting(false)
-                            .accessibilityHidden(true)
-                    }
-                }
-
-                if !trimmed.isEmpty {
-                    Button(action: addCurrent) {
-                        Image(systemName: "return").font(.system(size: 11, weight: .semibold))
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
-                    .help("Add task")
-                }
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
-            .contentShape(Rectangle())
-            .onTapGesture { claimQuickAddFocus() }
-            .background {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Color.primary.opacity(addFocused ? 0.08 : 0.04))
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .strokeBorder(
-                        addFocused ? Color.accentColor : Color.primary.opacity(0.12),
-                        lineWidth: addFocused ? 1.5 : 1
-                    )
-            }
-            .animation(.easeInOut(duration: 0.12), value: addFocused)
-            .onChange(of: addFocused) { _, focused in
-                if focused { ensureQuickAddKeyWindow() }
-            }
+        QuickAddField(
+            text: $newTitle,
+            addForTomorrow: $addForTomorrow,
+            focused: $addFocused,
+            projects: projectRefs,
+            onSubmit: addCurrent,
+            onActivate: claimQuickAddFocus
+        )
+        .onChange(of: addFocused) { _, focused in
+            if focused { ensureQuickAddKeyWindow() }
         }
+    }
+
+    private var projectRefs: [QuickAddParser.ProjectRef] {
+        appState.projects.map { QuickAddParser.ProjectRef(id: $0.id, name: $0.name) }
     }
 
     /// Activate the app, make the floating panel key, then focus the field so typing works
@@ -222,10 +173,16 @@ struct TodayView: View {
     }
 
     private func addCurrent() {
-        if addForTomorrow {
-            appState.addTodoForTomorrow(title: newTitle)
-        } else {
-            appState.addTodo(title: newTitle)
+        guard let parsed = QuickAddParser.parse(newTitle, projects: projectRefs) else { return }
+        let tomorrow = parsed.day.map { $0 == .tomorrow } ?? addForTomorrow
+        let day = tomorrow ? DayMath.nextDay(.now, calendar: appState.calendar) : Date.now
+        withThemeAnimation(.reorder) {
+            _ = appState.addTodo(TodoDraft(
+                title: parsed.title,
+                priority: parsed.priority ?? .none,
+                plannedFor: day,
+                projectID: parsed.projectID
+            ))
         }
         newTitle = ""
         claimQuickAddFocus() // keep the field hot for multi-add
@@ -265,18 +222,47 @@ struct TodayView: View {
             SectionHeader("Today") {
                 todoProgressLabel
             }
-            if appState.todayTodos.isEmpty {
-                Text("Nothing planned yet. What matters today?")
-                    .font(.caption).foregroundStyle(.secondary).padding(.vertical, 2)
-            } else {
-                TaskRowStack {
-                    ForEach(appState.todayTodos) { todo in
-                        TodoRow(appState: appState, todo: todo, section: appState.todayTodos, onOpenDetails: { detailTodo = todo })
-                            .id(todo.id)
+            Group {
+                if appState.todayTodos.isEmpty {
+                    Text("Nothing planned yet. What matters today?")
+                        .font(.caption).foregroundStyle(.secondary).padding(.vertical, 2)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    TaskRowStack {
+                        ForEach(appState.todayTodos) { todo in
+                            TodoRow(appState: appState, todo: todo, section: appState.todayTodos, onOpenDetails: { detailTodo = todo })
+                                .id(todo.id)
+                        }
                     }
                 }
             }
+            .modifier(daySectionDropZone("tray.today", tasks: appState.todayTodos, day: .now))
         }
+    }
+
+    /// Drop target for a day section: reorders within it, or re-plans a task dragged in
+    /// from another section (Today ↔ Tomorrow, Carried → either).
+    private func daySectionDropZone(_ zoneID: String, tasks: [DailyTodo], day: Date) -> TaskDropZone {
+        let open = tasks.filter { $0.completedDate == nil }
+        return TaskDropZone(
+            zoneID: zoneID,
+            orderedIDs: tasks.map(\.id),
+            reorderableCount: open.count,
+            accepts: { id in trayTask(id).map { !$0.isCompleted } ?? false },
+            onDrop: { id, index in
+                guard let todo = trayTask(id), !todo.isCompleted else { return false }
+                if open.contains(where: { $0.id == id }) {
+                    appState.moveTodo(todo, toIndex: index, in: open)
+                } else {
+                    appState.moveTodo(todo, toDay: day, index: index, in: open)
+                }
+                return true
+            }
+        )
+    }
+
+    private func trayTask(_ id: UUID) -> DailyTodo? {
+        (appState.todayTodos + appState.tomorrowTodos + appState.carriedTodos).first(where: { $0.id == id })
     }
 
     private var todoProgressLabel: Text {
@@ -305,6 +291,18 @@ struct TodayView: View {
                     .id(todo.id)
                 }
             }
+            .taskDropZone(
+                "tray.carried",
+                orderedIDs: appState.carriedTodos.map(\.id),
+                reorderableCount: appState.carriedTodos.count,
+                // Carried tasks only reorder among themselves; nothing is dragged into the past.
+                accepts: { id in appState.carriedTodos.contains(where: { $0.id == id }) },
+                onDrop: { id, index in
+                    guard let todo = appState.carriedTodos.first(where: { $0.id == id }) else { return false }
+                    appState.moveTodo(todo, toIndex: index, in: appState.carriedTodos)
+                    return true
+                }
+            )
         }
     }
 
@@ -313,36 +311,25 @@ struct TodayView: View {
             SectionHeader("Tomorrow") {
                 Text("\(appState.tomorrowTodos.count)")
             }
-            if appState.tomorrowTodos.isEmpty {
-                Text("Nothing planned for tomorrow yet.")
-                    .font(.caption).foregroundStyle(.secondary).padding(.vertical, 2)
-            } else {
-                TaskRowStack {
-                    ForEach(appState.tomorrowTodos) { todo in
-                        TodoRow(appState: appState, todo: todo, section: appState.tomorrowTodos, onOpenDetails: { detailTodo = todo })
-                            .id(todo.id)
+            Group {
+                if appState.tomorrowTodos.isEmpty {
+                    Text("Nothing planned for tomorrow yet.")
+                        .font(.caption).foregroundStyle(.secondary).padding(.vertical, 2)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    TaskRowStack {
+                        ForEach(appState.tomorrowTodos) { todo in
+                            TodoRow(appState: appState, todo: todo, section: appState.tomorrowTodos, onOpenDetails: { detailTodo = todo })
+                                .id(todo.id)
+                        }
                     }
                 }
             }
+            .modifier(daySectionDropZone(
+                "tray.tomorrow", tasks: appState.tomorrowTodos,
+                day: DayMath.nextDay(.now, calendar: appState.calendar)
+            ))
         }
-    }
-}
-
-/// Visible typing caret for empty focused fields. AppKit often suppresses the real
-/// insertion point inside borderless nonactivating panels.
-private struct BlinkingInsertionCaret: View {
-    @State private var visible = true
-
-    var body: some View {
-        Capsule()
-            .fill(Color.accentColor)
-            .frame(width: 2, height: 16)
-            .opacity(visible ? 1 : 0)
-            .onAppear {
-                withAnimation(.easeInOut(duration: 0.53).repeatForever(autoreverses: true)) {
-                    visible = false
-                }
-            }
     }
 }
 
@@ -445,12 +432,20 @@ struct TodoRow: View {
     var onOpenDetails: (() -> Void)? = nil
 
     @Environment(TrayInteractionModel.self) private var interaction: TrayInteractionModel?
+    @Environment(TaskDragCoordinator.self) private var dragCoordinator: TaskDragCoordinator?
 
     var body: some View {
         var actions = TaskRowActions.make(todo, appState: appState, openDetails: onOpenDetails)
         let id = todo.id
         actions.hoverChanged = { [interaction] hovering in interaction?.hoverChanged(id, hovering: hovering) }
-        return TaskRowView(
+        return row(actions: actions)
+            .opacity(dragCoordinator?.draggingID == todo.id ? 0.35 : 1)
+            .taskRowFrame(todo.id)
+    }
+
+    @ViewBuilder
+    private func row(actions: TaskRowActions) -> some View {
+        let base = TaskRowView(
             configuration: .make(
                 todo, appState: appState, showsAge: true,
                 isSelected: interaction?.selectedTodoID == todo.id
@@ -461,6 +456,11 @@ struct TodoRow: View {
                 appState: appState, todo: todo, section: section,
                 showReschedule: showReschedule, onOpenDetails: onOpenDetails
             )
+        }
+        if todo.isCompleted {
+            base
+        } else {
+            base.taskDraggable(todo.id, title: todo.title, coordinator: dragCoordinator)
         }
     }
 }

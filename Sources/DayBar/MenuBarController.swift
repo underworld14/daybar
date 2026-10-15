@@ -47,6 +47,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
     private let trayLayout = TrayLayoutModel()
     /// Hovered / keyboard-selected tray row for key shortcuts. Built once `appState` exists.
     private var trayInteraction: TrayInteractionModel!
+    /// One drag in flight at a time, shared by the tray and the main window.
+    private let dragCoordinator = TaskDragCoordinator()
     private var panelKeyMonitor: Any?
     /// Height the panel is currently animating toward (suppresses re-entrant resizes).
     private var panelResizeTarget: CGFloat?
@@ -172,6 +174,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
                 .environment(appState)
                 .environment(trayLayout)
                 .environment(trayInteraction)
+                .environment(dragCoordinator)
         )
         hosting.translatesAutoresizingMaskIntoConstraints = false
         // The panel is sized explicitly from measured content (`trayLayout`); don't let the
@@ -484,7 +487,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
             defer: false
         )
         window.title = "DayBar"
-        let hosting = NSHostingController(rootView: MainWindowView().environment(appState))
+        let hosting = NSHostingController(
+            rootView: MainWindowView().environment(appState).environment(dragCoordinator)
+        )
         // The window is user-sized (autosaved frame, 1000×640 default). Without this the
         // hosting controller shrinks it to SwiftUI's ideal size when no frame is saved yet.
         hosting.sizingOptions = []

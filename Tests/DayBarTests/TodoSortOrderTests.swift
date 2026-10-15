@@ -128,6 +128,34 @@ final class TodoSortOrderTests: XCTestCase {
         XCTAssertEqual(todo.priority, .high)
     }
 
+    func testDragTodayTaskIntoTomorrowCountsAsDelayAndLandsAtIndex() {
+        let tomorrow = DayMath.nextDay(now, calendar: cal)
+        _ = add("T1", day: tomorrow)
+        _ = add("T2", day: tomorrow)
+        let moved = add("Today task")
+        let target = state.tomorrowTodos.filter { $0.completedDate == nil }
+
+        state.moveTodo(moved, toDay: tomorrow, index: 1, in: target, now: now)
+
+        XCTAssertEqual(state.tomorrowTodos.map(\.title), ["T1", "Today task", "T2"])
+        XCTAssertEqual(moved.delayCount, 1)
+        XCTAssertTrue(state.todayTodos.isEmpty)
+    }
+
+    func testDragCarriedTaskIntoTodayRevivesIt() {
+        let yesterday = cal.date(byAdding: .day, value: -1, to: now)!
+        let carried = add("Old", day: yesterday)
+        _ = add("A"); _ = add("B")
+        state.refresh(now: now)
+        XCTAssertEqual(carried.status, .carriedOver)
+
+        state.moveTodo(carried, toDay: now, index: 0, in: state.todayTodos, now: now)
+
+        XCTAssertEqual(todayTitles, ["Old", "A", "B"])
+        XCTAssertEqual(carried.status, .planned)
+        XCTAssertTrue(state.carriedTodos.isEmpty)
+    }
+
     func testUndoDropRestoresOriginalPosition() {
         _ = add("A"); let b = add("B"); _ = add("C")
         let original = b.sortOrder

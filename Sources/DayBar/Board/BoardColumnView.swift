@@ -136,32 +136,15 @@ struct BoardColumnView: View {
     }
 
     private func commitAdd() {
-        let title = newTitle.trimmingCharacters(in: .whitespaces)
-        guard !title.isEmpty else {
+        guard let draft = BoardComposer.draft(
+            from: newTitle, scope: scope, column: column, pickedDate: composerDate, appState: appState
+        ) else {
             addingTask = false
             return
         }
-        let todo = appState.addTodo(
-            title: title,
-            plannedFor: composerDate ?? scopeDefault,
-            now: .now
-        )
-        if let todo {
-            if case .project(let id) = scope {
-                appState.assign(todo: todo, to: appState.projects.first(where: { $0.id == id }))
-            }
-            if column != .toDo {
-                appState.setBoardStatus(column, for: todo)
-            }
-        }
+        withThemeAnimation(.reorder) { _ = appState.addTodo(draft) }
         newTitle = ""
         composerDate = nil
         addFocused = true
-    }
-
-    private var scopeDefault: Date {
-        scope == .tomorrow
-            ? DayMath.nextDay(.now, calendar: appState.calendar)
-            : DayMath.startOfDay(.now, calendar: appState.calendar)
     }
 }

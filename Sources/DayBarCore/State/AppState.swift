@@ -749,6 +749,25 @@ public final class AppState {
         moveTodo(todo, toIndex: 0, in: visible, now: now)
     }
 
+    /// Drag between day sections: re-plan the task for `day` (a push to tomorrow counts as a
+    /// delay; pulling into today revives a carried task), then place it at `index` among
+    /// `visible` — the target day's open tasks as displayed before the drop.
+    public func moveTodo(_ todo: DailyTodo, toDay day: Date, index: Int, in visible: [DailyTodo], now: Date = .now) {
+        let target = DayMath.startOfDay(day, calendar: calendar)
+        let today = DayMath.startOfDay(now, calendar: calendar)
+        let current = DayMath.startOfDay(todo.plannedForDate, calendar: calendar)
+        if current != target {
+            if target == DayMath.nextDay(now, calendar: calendar), current <= today {
+                delay(todo, now: now)
+            } else if target == today {
+                reschedule(todo, to: today, now: now)
+            } else {
+                setPlannedDate(todo, to: target, now: now)
+            }
+        }
+        moveTodo(todo, toIndex: index, in: visible.filter { $0.id != todo.id }, now: now)
+    }
+
     public func setPriority(_ todo: DailyTodo, _ priority: Priority, now: Date = .now) {
         guard todo.priority != priority else { return }
         todo.priority = priority
