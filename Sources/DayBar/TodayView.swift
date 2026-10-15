@@ -31,23 +31,7 @@ struct TodayView: View {
                     graceRemaining: entry.streak.graceRemaining
                 )
             }
-            if let banner = appState.ephemeralBanner {
-                HStack(spacing: 8) {
-                    Text(banner.message)
-                        .font(.caption)
-                        .foregroundStyle(.tint)
-                    if let label = banner.undoLabel, let token = banner.undoToken {
-                        Button(label) { appState.performUndo(token: token) }
-                            .font(.caption.weight(.semibold))
-                            .buttonStyle(.plain)
-                            .foregroundStyle(.tint)
-                            .accessibilityLabel(label)
-                    }
-                    Spacer(minLength: 0)
-                }
-                .padding(.vertical, 2)
-                .accessibilityElement(children: .combine)
-            }
+            UndoToast(appState: appState, style: .inline)
             Divider().padding(.top, 2)
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
@@ -82,16 +66,6 @@ struct TodayView: View {
             Task { await appState.loadRadioChannels() }
         }
         .onChange(of: appState.quickAddFocusSignal) { _, _ in claimQuickAddFocus() }
-        .onChange(of: appState.ephemeralBanner?.id) { _, _ in
-            guard let banner = appState.ephemeralBanner else { return }
-            let id = banner.id
-            Task {
-                try? await Task.sleep(for: .seconds(banner.undoToken == nil ? 3 : 5))
-                if appState.ephemeralBanner?.id == id {
-                    appState.dismissBanner()
-                }
-            }
-        }
         .sheet(isPresented: $showSettings) {
             SettingsView(appState: appState)
         }
@@ -261,12 +235,9 @@ struct TodayView: View {
 
     private var habitsSection: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text("HABITS").font(.caption2.weight(.semibold)).tracking(0.5).foregroundStyle(.secondary)
-                Spacer()
+            SectionHeader("Habits") {
                 if appState.totalHabitsTodayCount > 0 {
                     Text("\(appState.completedHabitsTodayCount)/\(appState.totalHabitsTodayCount)")
-                        .font(.caption2).foregroundStyle(.secondary)
                 }
             }
             if appState.todayHabits.isEmpty {
@@ -282,20 +253,19 @@ struct TodayView: View {
     }
 
     private var todaySection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text("TODAY").font(.caption2.weight(.semibold)).tracking(0.5).foregroundStyle(.secondary)
-                Spacer()
+        VStack(alignment: .leading, spacing: 4) {
+            SectionHeader("Today") {
                 todoProgressLabel
-                    .font(.caption2).foregroundStyle(.secondary)
             }
             if appState.todayTodos.isEmpty {
                 Text("Nothing planned yet. What matters today?")
                     .font(.caption).foregroundStyle(.secondary).padding(.vertical, 2)
             } else {
-                ForEach(appState.todayTodos) { todo in
-                    TodoRow(appState: appState, todo: todo, onOpenDetails: { detailTodo = todo })
-                        .id(todo.id)
+                TaskRowStack {
+                    ForEach(appState.todayTodos) { todo in
+                        TodoRow(appState: appState, todo: todo, onOpenDetails: { detailTodo = todo })
+                            .id(todo.id)
+                    }
                 }
             }
         }
@@ -312,35 +282,34 @@ struct TodayView: View {
     }
 
     private var carriedSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text("CARRIED OVER").font(.caption2.weight(.semibold)).tracking(0.5).foregroundStyle(.secondary)
-                Spacer()
+        VStack(alignment: .leading, spacing: 4) {
+            SectionHeader("Carried over") {
                 if appState.overdueCount > 0 {
-                    Text("\(appState.overdueCount) aging").font(.caption2).foregroundStyle(.orange)
+                    Text("\(appState.overdueCount) aging").foregroundStyle(ThemeColors.aging)
                 }
             }
-            ForEach(appState.carriedTodos) { todo in
-                TodoRow(appState: appState, todo: todo, showReschedule: true, onOpenDetails: { detailTodo = todo })
+            TaskRowStack {
+                ForEach(appState.carriedTodos) { todo in
+                    TodoRow(appState: appState, todo: todo, showReschedule: true, onOpenDetails: { detailTodo = todo })
+                }
             }
         }
     }
 
     private var tomorrowSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text("TOMORROW").font(.caption2.weight(.semibold)).tracking(0.5).foregroundStyle(.secondary)
-                Spacer()
+        VStack(alignment: .leading, spacing: 4) {
+            SectionHeader("Tomorrow") {
                 Text("\(appState.tomorrowTodos.count)")
-                    .font(.caption2).foregroundStyle(.secondary)
             }
             if appState.tomorrowTodos.isEmpty {
                 Text("Nothing planned for tomorrow yet.")
                     .font(.caption).foregroundStyle(.secondary).padding(.vertical, 2)
             } else {
-                ForEach(appState.tomorrowTodos) { todo in
-                    TodoRow(appState: appState, todo: todo, onOpenDetails: { detailTodo = todo })
-                        .id(todo.id)
+                TaskRowStack {
+                    ForEach(appState.tomorrowTodos) { todo in
+                        TodoRow(appState: appState, todo: todo, onOpenDetails: { detailTodo = todo })
+                            .id(todo.id)
+                    }
                 }
             }
         }
@@ -453,162 +422,62 @@ struct HabitRow: View {
     }
 }
 
-/// A single task row: checkbox, title (double-click to rename), optional age pill, and a
-/// hover-revealed actions menu (full edit via Details…).
+/// A tray task row: `TaskRowView` wired to the tray's intents. One click on the ring
+/// completes; the flag sets priority; the ellipsis/context menu holds the rest.
 struct TodoRow: View {
     var appState: AppState
     let todo: DailyTodo
     var showReschedule = false
     var onOpenDetails: (() -> Void)? = nil
 
-    @State private var hovering = false
-    @State private var isEditing = false
-    @State private var draft = ""
-    @FocusState private var fieldFocused: Bool
+    var body: some View {
+        TaskRowView(
+            configuration: .make(todo, appState: appState, showsAge: true),
+            actions: .make(todo, appState: appState, openDetails: onOpenDetails)
+        ) {
+            TrayTaskMenu(appState: appState, todo: todo, showReschedule: showReschedule, onOpenDetails: onOpenDetails)
+        }
+    }
+}
+
+/// Actions for a tray task (ellipsis button + right-click).
+struct TrayTaskMenu: View {
+    var appState: AppState
+    let todo: DailyTodo
+    var showReschedule = false
+    var onOpenDetails: (() -> Void)?
 
     var body: some View {
-        HStack(spacing: 8) {
-            Button {
-                appState.advanceTodo(todo)
-            } label: {
-                Image(systemName: todoStatusIcon)
-                    .foregroundStyle(todoStatusColor)
-            }
-            .buttonStyle(.plain)
-            .help("Tap: to-do → in progress → done")
-            .accessibilityLabel(todo.isCompleted ? "Completed" : (todo.isInProgress ? "In progress" : "To do"))
-            .accessibilityHint("Cycles status")
-
-            if isEditing {
-                TextField("Task", text: $draft)
-                    .textFieldStyle(.plain)
-                    .focused($fieldFocused)
-                    .onSubmit(commitEdit)
-                    .onExitCommand(perform: cancelEdit)
-                    .onChange(of: fieldFocused) { _, focused in
-                        if !focused && isEditing { commitEdit() }
-                    }
+        if todo.isCompleted {
+            Button("Reset to To-Do") { appState.resetTodo(todo) }
+        } else {
+            Button("Complete") { withThemeAnimation(.reorder) { appState.toggleComplete(todo) } }
+            if todo.isInProgress {
+                Button("Move Back to To-Do") { appState.resetTodo(todo) }
             } else {
-                HStack(spacing: 4) {
-                    if todo.source == .reminders {
-                        Image(systemName: "list.bullet")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                            .help("Synced from Apple Reminders")
-                    }
-                    Text(todo.title)
-                        .strikethrough(todo.isCompleted)
-                        .foregroundStyle(todo.isCompleted ? .secondary : .primary)
-                        .fontWeight(todo.isInProgress ? .medium : .regular)
-                        .lineLimit(2)
-                }
-                .contentShape(Rectangle())
-                .onTapGesture(count: 2, perform: beginEdit)
-                .help("Double-click to rename")
+                Button("Start") { appState.startTodo(todo) }
             }
-
-            Spacer(minLength: 4)
-
-            if !isEditing {
-                detailIndicator
-            }
-
-            if !isEditing, let label = todo.ageLabel() {
-                AgePill(text: label, tier: todo.escalationTier(thresholds: appState.thresholds))
-            }
-
-            if !isEditing {
-                Menu {
-                    if todo.isCompleted {
-                        Button("Reset to to-do") { appState.resetTodo(todo) }
-                    } else if todo.isInProgress {
-                        Button("Mark done") { appState.advanceTodo(todo) }
-                        Button("Reset to to-do") { appState.resetTodo(todo) }
-                    } else {
-                        Button("Start") { appState.advanceTodo(todo) }
-                    }
-                    Button("Details…") { onOpenDetails?() }
-                    Menu("Priority") {
-                        Button("None") { appState.setPriority(todo, .none) }
-                        Button("Low") { appState.setPriority(todo, .low) }
-                        Button("Medium") { appState.setPriority(todo, .medium) }
-                        Button("High") { appState.setPriority(todo, .high) }
-                    }
-                    if showReschedule { Button("Bring to today") { appState.reschedule(todo) } }
-                    if !todo.isCompleted {
-                        Button("Delay to tomorrow") { appState.delay(todo) }
-                    }
-                    Button("Drop", role: .destructive) { appState.drop(todo) }
+        }
+        Button("Details…") { onOpenDetails?() }
+        Menu("Priority") {
+            ForEach([Priority.high, .medium, .low, .none], id: \.self) { level in
+                Button {
+                    appState.setPriority(todo, level)
                 } label: {
-                    Image(systemName: "ellipsis").foregroundStyle(.secondary)
-                }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .fixedSize()
-                .opacity(hovering ? 1 : 0.35)
-                .accessibilityLabel("Task actions")
-                .help("Task actions")
-            }
-        }
-        .contentShape(Rectangle())
-        .onHover { hovering = $0 }
-        .accessibilityElement(children: .contain)
-    }
-
-    @ViewBuilder
-    private var detailIndicator: some View {
-        let progress = appState.checklistProgress[todo.id]
-        let hasChecklist = !(progress?.isEmpty ?? true)
-        let hasNotes = todo.hasNotes
-        if hasNotes || hasChecklist {
-            Button {
-                onOpenDetails?()
-            } label: {
-                HStack(spacing: 3) {
-                    if hasNotes {
-                        Image(systemName: "note.text")
-                    }
-                    if let progress, hasChecklist {
-                        Text("\(progress.done)/\(progress.total)")
-                            .font(.caption2.monospacedDigit())
+                    if level == todo.priority {
+                        Label(level.displayName, systemImage: "checkmark")
+                    } else {
+                        Text(level.displayName)
                     }
                 }
-                .font(.caption2)
-                .foregroundStyle(.secondary)
             }
-            .buttonStyle(.plain)
-            .help("Open task details")
-            .accessibilityLabel("Open task details")
         }
-    }
-
-    private func beginEdit() {
-        draft = todo.title
-        isEditing = true
-        fieldFocused = true
-    }
-
-    private func commitEdit() {
-        appState.rename(todo, to: draft)
-        isEditing = false
-        fieldFocused = false
-    }
-
-    private func cancelEdit() {
-        isEditing = false
-        fieldFocused = false
-    }
-
-    private var todoStatusIcon: String {
-        if todo.isCompleted { return "checkmark.circle.fill" }
-        if todo.isInProgress { return "circle.lefthalf.filled" }
-        return "circle"
-    }
-
-    private var todoStatusColor: Color {
-        if todo.isCompleted { return .green }
-        if todo.isInProgress { return .accentColor }
-        return .secondary
+        Divider()
+        if showReschedule { Button("Bring to Today") { appState.reschedule(todo) } }
+        if !todo.isCompleted {
+            Button("Delay to Tomorrow") { appState.delay(todo) }
+        }
+        Button("Drop", role: .destructive) { appState.drop(todo) }
     }
 }
 
@@ -657,31 +526,6 @@ struct StackedTodoProgressBar: View {
             }
             .font(.caption2)
         }
-    }
-}
-
-/// Compact age pill. Grey for fresh slips, amber once aging — never red (gentle default).
-struct AgePill: View {
-    let text: String
-    let tier: EscalationTier
-
-    private var color: Color { tier >= .aging ? .orange : .secondary }
-
-    var body: some View {
-        HStack(spacing: 2) {
-            if tier >= .aging {
-                Image(systemName: "clock.badge.exclamationmark")
-                    .font(.caption2)
-                    .accessibilityHidden(true)
-            }
-            Text(text)
-                .font(.caption2.weight(.medium))
-        }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 2)
-        .background(Capsule().fill(color.opacity(0.18)))
-        .foregroundStyle(color)
-        .accessibilityLabel(tier >= .aging ? "Aging \(text)" : "Waiting \(text)")
     }
 }
 

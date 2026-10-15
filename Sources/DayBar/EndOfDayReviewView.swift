@@ -60,7 +60,7 @@ struct EndOfDayReviewView: View {
                     }
 
                     if !openHabits.isEmpty {
-                        Text("OPEN HABITS").font(.caption2.weight(.semibold)).tracking(0.5).foregroundStyle(.secondary)
+                        SectionHeader("Open habits")
                         ForEach(openHabits) { habit in
                             HStack(spacing: 8) {
                                 Button { appState.toggleHabit(habit.log) } label: {
@@ -77,12 +77,12 @@ struct EndOfDayReviewView: View {
                     if unfinished.isEmpty && openHabits.isEmpty {
                         Text("All clear — nice work. 🎉").font(.subheadline)
                     } else if !unfinished.isEmpty {
-                        Text("STILL OPEN").font(.caption2.weight(.semibold)).tracking(0.5).foregroundStyle(.secondary)
+                        SectionHeader("Still open")
                         ForEach(unfinished) { reviewRow($0) }
                     }
 
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("REFLECTION").font(.caption2.weight(.semibold)).tracking(0.5).foregroundStyle(.secondary)
+                        SectionHeader("Reflection")
                         TextField("One line about today…", text: $reflection, axis: .vertical)
                             .textFieldStyle(.roundedBorder)
                             .lineLimit(1...3)
@@ -137,7 +137,7 @@ struct EndOfDayReviewView: View {
     @ViewBuilder
     private var moodSection: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("MOOD").font(.caption2.weight(.semibold)).tracking(0.5).foregroundStyle(.secondary)
+            SectionHeader("Mood")
             LazyVGrid(columns: moodColumns, spacing: 8) {
                 ForEach(MoodTag.allCases, id: \.self) { tag in
                     moodButton(tag)
@@ -283,12 +283,11 @@ struct EndOfDayReviewView: View {
 
     private func reviewRow(_ todo: DailyTodo) -> some View {
         HStack(spacing: 8) {
-            Button { appState.toggleComplete(todo) } label: {
-                Image(systemName: todo.isCompleted ? "checkmark.circle.fill" : "circle")
-                    .foregroundStyle(todo.isCompleted ? .green : .secondary)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(todo.isCompleted ? "Mark \(todo.title) incomplete" : "Mark \(todo.title) complete")
+            StatusToggle(
+                status: TaskStatus(todo),
+                onToggleComplete: { appState.toggleComplete(todo) },
+                onToggleInProgress: { appState.toggleInProgress(todo) }
+            )
 
             Text(todo.title).lineLimit(1)
 

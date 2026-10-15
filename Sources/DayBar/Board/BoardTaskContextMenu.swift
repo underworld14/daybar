@@ -10,6 +10,30 @@ struct BoardTaskContextMenu: View {
 
     var body: some View {
         Button("Open Details") { onOpenDetails() }
+        Divider()
+        if todo.isCompleted {
+            Button("Reset to To-Do") { withThemeAnimation(.columnMove) { appState.setBoardStatus(.toDo, for: todo) } }
+        } else {
+            Button("Complete") { withThemeAnimation(.columnMove) { appState.setBoardStatus(.done, for: todo) } }
+            if todo.isInProgress {
+                Button("Move Back to To-Do") { withThemeAnimation(.columnMove) { appState.setBoardStatus(.toDo, for: todo) } }
+            } else {
+                Button("Start") { withThemeAnimation(.columnMove) { appState.setBoardStatus(.inProgress, for: todo) } }
+            }
+        }
+        Menu("Priority") {
+            ForEach([Priority.high, .medium, .low, .none], id: \.self) { level in
+                Button {
+                    appState.setPriority(todo, level)
+                } label: {
+                    if level == todo.priority {
+                        Label(level.displayName, systemImage: "checkmark")
+                    } else {
+                        Text(level.displayName)
+                    }
+                }
+            }
+        }
         if !todo.isCompleted {
             Menu("Move to Project") {
                 Button("None") { appState.assign(todo: todo, to: nil) }
@@ -17,10 +41,6 @@ struct BoardTaskContextMenu: View {
                     Button(project.name) { appState.assign(todo: todo, to: project) }
                 }
             }
-            Button("Move to In Progress") { appState.setBoardStatus(.inProgress, for: todo) }
-            Button("Complete") { appState.setBoardStatus(.done, for: todo) }
-        } else {
-            Button("Reset to To Do") { appState.setBoardStatus(.toDo, for: todo) }
         }
         Divider()
         Button("Delete…", role: .destructive) { onDelete() }

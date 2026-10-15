@@ -95,19 +95,17 @@ private struct HistoryTodoRow: View {
     let todo: DailyTodo
     var onOpenDetails: (() -> Void)? = nil
 
-    private var checklistItems: [TodoChecklistItem] {
-        appState.checklistItems(for: todo)
+    private var checklist: ChecklistProgress? {
+        appState.checklistProgress[todo.id].flatMap { $0.isEmpty ? nil : $0 }
     }
 
     private var hasDetails: Bool {
-        todo.hasNotes || !checklistItems.isEmpty
+        todo.hasNotes || checklist != nil
     }
 
     var body: some View {
         HStack(spacing: 8) {
-            Circle()
-                .fill(priorityColor)
-                .frame(width: 6, height: 6)
+            PriorityGlyph(priority: todo.priority)
             Text(todo.title)
                 .lineLimit(2)
                 .foregroundStyle(.primary)
@@ -143,9 +141,8 @@ private struct HistoryTodoRow: View {
                 if todo.hasNotes {
                     Image(systemName: "note.text")
                 }
-                if !checklistItems.isEmpty {
-                    let done = checklistItems.filter(\.isCompleted).count
-                    Text("\(done)/\(checklistItems.count)")
+                if let checklist {
+                    Text("\(checklist.done)/\(checklist.total)")
                         .font(.caption2.monospacedDigit())
                 }
             }
@@ -155,14 +152,5 @@ private struct HistoryTodoRow: View {
         .buttonStyle(.plain)
         .help("View task details")
         .accessibilityLabel("View task details")
-    }
-
-    private var priorityColor: Color {
-        switch todo.priority {
-        case .high: return .orange
-        case .medium: return .secondary.opacity(0.5)
-        case .low: return .secondary.opacity(0.3)
-        case .none: return .clear
-        }
     }
 }

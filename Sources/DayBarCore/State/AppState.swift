@@ -421,6 +421,30 @@ public final class AppState {
         didMutateTodos(now: now, touched: todo)
     }
 
+    /// Marks a todo as being worked on (to-do or done → in progress).
+    public func startTodo(_ todo: DailyTodo, now: Date = .now) {
+        guard todo.status != .dropped, !todo.isInProgress else { return }
+        todo.completedDate = nil
+        todo.status = .inProgress
+        markRemindersTodoLocallyModified(todo, now: now)
+        remindersSync.enqueuePush(for: todo)
+        commitSave()
+        didMutateTodos(now: now, touched: todo)
+    }
+
+    /// ⌥-click on the status ring: in progress ↔ to-do (done tasks start again).
+    public func toggleInProgress(_ todo: DailyTodo, now: Date = .now) {
+        if todo.isInProgress {
+            resetTodo(todo, now: now)
+        } else {
+            startTodo(todo, now: now)
+        }
+    }
+
+    public func cyclePriority(_ todo: DailyTodo, now: Date = .now) {
+        setPriority(todo, todo.priority.next, now: now)
+    }
+
     /// Returns a todo to the to-do state from in progress or done.
     public func resetTodo(_ todo: DailyTodo, now: Date = .now) {
         guard todo.status != .dropped else { return }

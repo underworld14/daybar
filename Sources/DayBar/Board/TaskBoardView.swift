@@ -68,7 +68,7 @@ struct TaskBoardView: View {
     private var toolbar: some View {
         HStack(spacing: 12) {
             Text(scopeName)
-                .font(.system(.title3, design: .rounded).weight(.semibold))
+                .font(ThemeTypography.boardTitle)
             Spacer()
             Picker("View", selection: $viewMode) {
                 Label("List", systemImage: "list.bullet").tag(TasksViewMode.list)
@@ -103,8 +103,7 @@ struct TaskBoardView: View {
                         }
                     } header: {
                         if !snapshot.done.isEmpty {
-                            Text("TASKS").font(.caption2.weight(.semibold)).tracking(0.5)
-                                .foregroundStyle(.secondary)
+                            SectionHeader("Tasks")
                         }
                     }
                     if !snapshot.done.isEmpty {
@@ -120,8 +119,7 @@ struct TaskBoardView: View {
                                 .listRowSeparator(.hidden)
                             }
                         } header: {
-                            Text("COMPLETED").font(.caption2.weight(.semibold)).tracking(0.5)
-                                .foregroundStyle(.secondary)
+                            SectionHeader("Completed")
                         }
                     }
                 }

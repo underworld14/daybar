@@ -409,9 +409,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
             defer: false
         )
         window.title = "DayBar"
-        window.contentViewController = NSHostingController(
-            rootView: MainWindowView().environment(appState)
-        )
+        let hosting = NSHostingController(rootView: MainWindowView().environment(appState))
+        // The window is user-sized (autosaved frame, 1000×640 default). Without this the
+        // hosting controller shrinks it to SwiftUI's ideal size when no frame is saved yet.
+        hosting.sizingOptions = []
+        window.contentViewController = hosting
+        window.setContentSize(NSSize(width: 1000, height: 640))
         window.contentMinSize = NSSize(width: 860, height: 560)
         window.setFrameAutosaveName("DayBarMainWindow")
         window.isReleasedWhenClosed = false
