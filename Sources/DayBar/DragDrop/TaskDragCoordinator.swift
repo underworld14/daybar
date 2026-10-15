@@ -26,6 +26,9 @@ final class TaskDragCoordinator {
     }
 
     func target(zone: String, index: Int) {
+        // AppKit can deliver a last dragging update after the drop; once the drag has
+        // ended it must not resurrect the insertion line.
+        guard draggingID != nil else { return }
         if activeZone != zone { activeZone = zone }
         if insertionIndex != index { insertionIndex = index }
     }

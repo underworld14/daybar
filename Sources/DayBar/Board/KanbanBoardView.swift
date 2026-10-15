@@ -14,14 +14,13 @@ struct KanbanBoardView: View {
 
     @Namespace private var cardNamespace
 
-    static let minColumnWidth: CGFloat = 220
     private let spacing: CGFloat = 12
     private let padding: CGFloat = 12
 
     var body: some View {
         GeometryReader { geo in
             let available = geo.size.width - padding * 2 - spacing * 2
-            let columnWidth = max(Self.minColumnWidth, (available / 3).rounded(.down))
+            let columnWidth = max(ThemeMetrics.minColumnWidth, (available / 3).rounded(.down))
             let fits = columnWidth * 3 + spacing * 2 + padding * 2 <= geo.size.width + 0.5
             ScrollView(.horizontal) {
                 HStack(alignment: .top, spacing: spacing) {

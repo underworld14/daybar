@@ -77,8 +77,12 @@ struct TaskDropZone: ViewModifier {
 
         func performDrop(info: DropInfo) -> Bool {
             let index = zone.index(at: info.location.y)
-            defer { coordinator?.end() }
-            if let id = coordinator?.draggingID {
+            // End the drag state *before* moving: a row re-created by the move (e.g. in
+            // another section) must be built un-faded — the long-lived panel host doesn't
+            // reliably repaint it if the fade is cleared afterwards.
+            let draggedID = coordinator?.draggingID
+            coordinator?.end()
+            if let id = draggedID {
                 guard zone.accepts(id) else { return false }
                 return withThemeAnimation(.reorder) { zone.onDrop(id, index) }
             }

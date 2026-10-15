@@ -27,5 +27,6 @@ enum ThemeMetrics {
     static let rowLeadingInset: CGFloat = rowHorizontalPadding + (statusHitSize - statusRingSize) / 2
 
     static let hairlineWidth: CGFloat = 1
-    static let minColumnWidth: CGFloat = 220
+    /// Narrow enough that three kanban columns fit beside the sidebar and inspector.
+    static let minColumnWidth: CGFloat = 200
 }

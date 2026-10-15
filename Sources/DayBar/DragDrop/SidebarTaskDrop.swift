@@ -21,7 +21,7 @@ struct SidebarTaskDrop: ViewModifier {
                 }
             }
             .dropDestination(for: TaskDragPayload.self) { payloads, _ in
-                defer { coordinator?.end() }
+                coordinator?.end()
                 guard let payload = payloads.first else { return false }
                 return withThemeAnimation(.reorder) { perform(payload.id) }
             } isTargeted: { targeted in
