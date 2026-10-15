@@ -19,10 +19,7 @@ struct LofiRadioStrip: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("LOFI RADIO")
-                .font(.caption2.weight(.semibold))
-                .tracking(0.5)
-                .foregroundStyle(.secondary)
+            SectionHeader("Lofi radio")
 
             HStack(spacing: 8) {
                 leadingIndicator

@@ -18,7 +18,6 @@ struct TodayView: View {
     @State private var addForTomorrow = false
     @State private var detailTodo: DailyTodo?
 
-    private let wordmarkFont = Font.system(size: 15, weight: .bold, design: .rounded)
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -113,7 +112,7 @@ struct TodayView: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            Text("DayBar").font(wordmarkFont)
+            Text("DayBar").font(ThemeTypography.wordmark)
             Spacer()
             Text(Date.now, format: .dateTime.weekday(.abbreviated).day().month(.abbreviated))
                 .font(.caption)
@@ -212,9 +211,11 @@ struct TodayView: View {
                 Text("No habits yet — add one in Settings.")
                     .font(.caption).foregroundStyle(.secondary).padding(.vertical, 2)
             } else {
-                ForEach(appState.todayHabits) { habit in
-                    HabitRow(appState: appState, habit: habit)
-                        .id("\(habit.log.id)-\(habit.log.statusRaw)")
+                TaskRowStack {
+                    ForEach(appState.todayHabits) { habit in
+                        HabitRow(appState: appState, habit: habit)
+                            .id("\(habit.log.id)-\(habit.log.statusRaw)")
+                    }
                 }
             }
         }
@@ -340,27 +341,43 @@ struct TodayView: View {
     }
 }
 
-/// A single habit row: checkbox, title, cue, and streak pill.
+/// A single habit row: status ring (same control as tasks), title, cue, streak chip, and a
+/// hover-revealed actions menu.
 struct HabitRow: View {
     var appState: AppState
     let habit: TodayHabit
 
     @State private var hovering = false
 
+    private var isSkipped: Bool { habit.log.status == .skipped }
+
     var body: some View {
-        HStack(spacing: 8) {
-            Button { appState.toggleHabit(habit.log) } label: {
-                Image(systemName: habitStatusIcon)
-                    .foregroundStyle(habitStatusColor)
+        HStack(spacing: ThemeMetrics.spacingS) {
+            if isSkipped {
+                Button { appState.toggleHabit(habit.log) } label: {
+                    Circle()
+                        .strokeBorder(Color.secondary.opacity(0.6), style: StrokeStyle(lineWidth: 1.5, dash: [2.5, 2]))
+                        .overlay(Rectangle().fill(Color.secondary).frame(width: 7, height: 1.5))
+                        .frame(width: ThemeMetrics.statusRingSize, height: ThemeMetrics.statusRingSize)
+                        .frame(width: ThemeMetrics.statusHitSize, height: ThemeMetrics.statusHitSize)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Skipped today. Click to mark incomplete.")
+                .accessibilityLabel("Skipped habit")
+            } else {
+                StatusToggle(
+                    status: habit.log.isCompleted ? .done : .toDo,
+                    onToggleComplete: { appState.toggleHabit(habit.log) },
+                    onToggleInProgress: { appState.toggleHabit(habit.log) },
+                    allowsInProgress: false
+                )
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel(habitAccessibilityLabel)
-            .help(habitAccessibilityLabel)
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(habit.template.title)
                     .strikethrough(habit.log.isCompleted)
-                    .foregroundStyle(habit.log.isCompleted ? .secondary : .primary)
+                    .foregroundStyle(habit.log.isCompleted || isSkipped ? .secondary : .primary)
                     .lineLimit(1)
                 if !habit.template.cueText.isEmpty {
                     Text(habit.template.cueText)
@@ -370,7 +387,7 @@ struct HabitRow: View {
                 }
             }
 
-            Spacer(minLength: 4)
+            Spacer(minLength: ThemeMetrics.spacingXS)
 
             if habit.template.remindersSyncEnabled, habit.template.externalReminderIdentifier != nil {
                 Image(systemName: "list.bullet")
@@ -380,20 +397,16 @@ struct HabitRow: View {
             }
 
             if habit.currentStreak > 0 {
-                Text("\(habit.currentStreak)d")
-                    .font(.caption2.weight(.medium))
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(Capsule().fill(Color.green.opacity(0.15)))
-                    .foregroundStyle(.green)
+                Chip(text: "\(habit.currentStreak)d", tint: ThemeColors.statusDone)
                     .help(habit.graceRemaining > 0 ? "\(habit.graceRemaining) grace day left this week" : "No grace days left this week")
+                    .accessibilityLabel("Streak \(habit.currentStreak) days")
             }
 
             Menu {
-                if habit.log.isCompleted || habit.log.status == .skipped {
-                    Button("Mark incomplete") { appState.toggleHabit(habit.log) }
+                if habit.log.isCompleted || isSkipped {
+                    Button("Mark Incomplete") { appState.toggleHabit(habit.log) }
                 } else {
-                    Button("Skip today") { appState.skipHabit(habit.log) }
+                    Button("Skip Today") { appState.skipHabit(habit.log) }
                 }
             } label: {
                 Image(systemName: "ellipsis").foregroundStyle(.secondary)
@@ -405,26 +418,15 @@ struct HabitRow: View {
             .accessibilityLabel("Habit actions")
             .help("Habit actions")
         }
+        .padding(.vertical, ThemeMetrics.rowVerticalPadding)
+        .padding(.horizontal, ThemeMetrics.rowHorizontalPadding)
+        .background {
+            RoundedRectangle(cornerRadius: ThemeMetrics.rowRadius, style: .continuous)
+                .fill(hovering ? ThemeColors.rowHover : .clear)
+        }
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
-    }
-
-    private var habitStatusIcon: String {
-        if habit.log.isCompleted { return "checkmark.circle.fill" }
-        if habit.log.status == .skipped { return "minus.circle" }
-        return "circle"
-    }
-
-    private var habitStatusColor: Color {
-        if habit.log.isCompleted { return .green }
-        if habit.log.status == .skipped { return .secondary.opacity(0.7) }
-        return .secondary
-    }
-
-    private var habitAccessibilityLabel: String {
-        if habit.log.isCompleted { return "Completed habit" }
-        if habit.log.status == .skipped { return "Skipped habit" }
-        return "Pending habit"
+        .accessibilityElement(children: .contain)
     }
 }
 

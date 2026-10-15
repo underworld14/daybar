@@ -7,6 +7,8 @@ struct StatusToggle: View {
     let status: TaskStatus
     var onToggleComplete: () -> Void
     var onToggleInProgress: () -> Void
+    /// Habits have no "in progress": ⌥-click then just completes, and no Start action.
+    var allowsInProgress = true
 
     @State private var hovering = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -23,7 +25,7 @@ struct StatusToggle: View {
         .help(helpText)
         .accessibilityLabel(status == .done ? "Mark incomplete" : "Mark complete")
         .accessibilityValue(status.accessibilityValue)
-        .accessibilityAction(named: status == .inProgress ? "Stop" : "Start") { onToggleInProgress() }
+        .modifier(StartActionModifier(enabled: allowsInProgress, name: status == .inProgress ? "Stop" : "Start", action: onToggleInProgress))
     }
 
     private var ring: some View {
@@ -60,7 +62,7 @@ struct StatusToggle: View {
     }
 
     private func handleClick() {
-        if NSEvent.modifierFlags.contains(.option) {
+        if allowsInProgress, NSEvent.modifierFlags.contains(.option) {
             onToggleInProgress()
         } else {
             onToggleComplete()
@@ -68,10 +70,26 @@ struct StatusToggle: View {
     }
 
     private var helpText: String {
+        guard allowsInProgress else { return status == .done ? "Mark incomplete" : "Complete" }
         switch status {
         case .toDo: return "Complete (⌥-click to start)"
         case .inProgress: return "Complete (⌥-click to stop)"
         case .done: return "Mark incomplete"
+        }
+    }
+}
+
+/// The VoiceOver "Start"/"Stop" action, only where in-progress exists.
+private struct StartActionModifier: ViewModifier {
+    let enabled: Bool
+    let name: String
+    let action: () -> Void
+
+    func body(content: Content) -> some View {
+        if enabled {
+            content.accessibilityAction(named: name, action)
+        } else {
+            content
         }
     }
 }
