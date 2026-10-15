@@ -191,6 +191,7 @@ public final class RemindersSyncEngine {
             )
             var seen = Set<String>()
             var changed = false
+            var created: [DailyTodo] = []
             for dto in incoming where !dto.title.isEmpty {
                 seen.insert(dto.externalIdentifier)
                 if let existing = try? store.todo(externalIdentifier: dto.externalIdentifier) {
@@ -199,9 +200,15 @@ public final class RemindersSyncEngine {
                         changed = true
                     }
                 } else {
-                    store.insert(ReminderMapping.makeTodo(from: dto, today: now, calendar: calendar))
-                    changed = true
+                    created.append(ReminderMapping.makeTodo(from: dto, today: now, calendar: calendar))
                 }
+            }
+            // New mirrors go after every local task, priority-first among themselves.
+            let base = store.nextBottomSortOrder()
+            for (offset, todo) in created.sorted(by: TodoOrdering.legacy).enumerated() {
+                todo.sortOrder = base + Double(offset) * SortOrderMath.step
+                store.insert(todo)
+                changed = true
             }
             let reconcileAllSucceeded = await reconcileMirrorsOffPullSet(keeping: seen, now: now, changed: &changed)
             store.save()

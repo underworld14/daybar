@@ -10,11 +10,20 @@ public final class FocusSession {
     public var minutes: Int = 0
     /// true = the focus phase finished naturally; false = skipped early.
     public var completed: Bool = false
+    /// The task this session was focused on, if any.
+    public var todoID: UUID?
 
-    public init(id: UUID = UUID(), endedAt: Date = .now, minutes: Int = 0, completed: Bool = false) {
+    public init(
+        id: UUID = UUID(),
+        endedAt: Date = .now,
+        minutes: Int = 0,
+        completed: Bool = false,
+        todoID: UUID? = nil
+    ) {
         self.id = id
         self.endedAt = endedAt
         self.minutes = minutes
         self.completed = completed
+        self.todoID = todoID
     }
 }

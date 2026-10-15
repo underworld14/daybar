@@ -190,13 +190,13 @@ final class PersistenceTests: XCTestCase {
         XCTAssertEqual(all.first?.title, "after")
     }
 
-    func testTodayQuerySortsByPriority() throws {
+    func testTodayQuerySortsBySortOrderNotPriority() throws {
         let store = DataStore(inMemory: true)
         let today = Calendar.current.startOfDay(for: now)
-        store.insert(DailyTodo(title: "low", plannedForDate: today, originalPlannedDate: today, priority: .low))
-        store.insert(DailyTodo(title: "high", plannedForDate: today, originalPlannedDate: today, priority: .high))
+        store.insert(DailyTodo(title: "low", plannedForDate: today, originalPlannedDate: today, priority: .low, sortOrder: 1))
+        store.insert(DailyTodo(title: "high", plannedForDate: today, originalPlannedDate: today, priority: .high, sortOrder: 2))
         store.save()
-        XCTAssertEqual(try store.todos(on: now).map(\.title), ["high", "low"])
+        XCTAssertEqual(try store.todos(on: now).map(\.title), ["low", "high"])
     }
 
     func testTodayQuerySortsIncompleteBeforeCompleted() throws {

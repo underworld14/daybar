@@ -49,7 +49,10 @@ struct TaskRowView<MenuContent: View>: View {
                 .fill(rowFill)
         }
         .contentShape(Rectangle())
-        .onHover { hovering = $0 }
+        .onHover { isHovering in
+            hovering = isHovering
+            actions.hoverChanged?(isHovering)
+        }
         .contextMenu { menu() }
         .accessibilityElement(children: .contain)
     }

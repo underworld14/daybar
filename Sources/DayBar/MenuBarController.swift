@@ -45,6 +45,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
     private let panelWidth: CGFloat = 360
     /// Measured tray content heights; the panel sizes itself from these.
     private let trayLayout = TrayLayoutModel()
+    /// Hovered / keyboard-selected tray row for key shortcuts. Built once `appState` exists.
+    private var trayInteraction: TrayInteractionModel!
+    private var panelKeyMonitor: Any?
     /// Height the panel is currently animating toward (suppresses re-entrant resizes).
     private var panelResizeTarget: CGFloat?
     /// Bumped per resize animation; a superseded animation's completion must not re-trigger.
@@ -163,7 +166,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
     // MARK: - Panel
 
     private func setupPanel() {
-        let hosting = NSHostingView(rootView: TodayView().environment(appState).environment(trayLayout))
+        trayInteraction = TrayInteractionModel(appState: appState)
+        let hosting = NSHostingView(
+            rootView: TodayView()
+                .environment(appState)
+                .environment(trayLayout)
+                .environment(trayInteraction)
+        )
         hosting.translatesAutoresizingMaskIntoConstraints = false
         // The panel is sized explicitly from measured content (`trayLayout`); don't let the
         // hosting view's ideal/min size constraints fight those frame changes.
@@ -211,6 +220,72 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
         panel.contentView = effect
         appearanceCoordinator.start(panel: panel)
         trackPanelHeightUpdates()
+        installPanelKeyMonitor()
+    }
+
+    // MARK: - Panel keyboard
+
+    /// Row shortcuts for the tray (0–3 priority, ⌘↑/⌘↓ reorder, Space complete, Return
+    /// details, ↑/↓ select, Esc). Inactive while a text field is being edited, except ↓/Esc
+    /// from an empty quick-add, which hand the keyboard over to the list.
+    private func installPanelKeyMonitor() {
+        panelKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            MainActor.assumeIsolated {
+                guard let self, event.window === self.panel else { return event }
+                return self.handlePanelKey(event) ? nil : event
+            }
+        }
+    }
+
+    private func handlePanelKey(_ event: NSEvent) -> Bool {
+        // Arrow keys also carry .function/.numericPad; only real modifiers matter here.
+        let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
+        if let editor = panel.firstResponder as? NSTextView {
+            guard editor.string.isEmpty, modifiers.isEmpty else { return false }
+            switch event.keyCode {
+            case KeyCode.down:
+                panel.makeFirstResponder(nil)
+                return trayInteraction.handle(.down)
+            case KeyCode.escape:
+                panel.makeFirstResponder(nil)
+                return true
+            default:
+                return false
+            }
+        }
+        guard !appState.isPanelSheetPresented else { return false }
+
+        let key: TrayInteractionModel.Key?
+        switch (event.keyCode, modifiers) {
+        case (KeyCode.up, .command): key = .moveUp
+        case (KeyCode.down, .command): key = .moveDown
+        case (KeyCode.up, []): key = .up
+        case (KeyCode.down, []): key = .down
+        case (KeyCode.space, []): key = .complete
+        case (KeyCode.returnKey, []): key = .openDetails
+        case (KeyCode.escape, []): key = .escape
+        default:
+            if modifiers.isEmpty, let digit = event.charactersIgnoringModifiers.flatMap(Int.init), (0...3).contains(digit) {
+                key = .priority(digit)
+            } else {
+                key = nil
+            }
+        }
+        guard let key else { return false }
+        if trayInteraction.handle(key) { return true }
+        if key == .escape {
+            hidePanel()
+            return true
+        }
+        return false
+    }
+
+    private enum KeyCode {
+        static let returnKey: UInt16 = 36
+        static let space: UInt16 = 49
+        static let escape: UInt16 = 53
+        static let down: UInt16 = 125
+        static let up: UInt16 = 126
     }
 
     /// Resize the open panel whenever the tray's measured content changes, so adding or

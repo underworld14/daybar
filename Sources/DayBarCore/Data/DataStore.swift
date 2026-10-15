@@ -45,6 +45,7 @@ public final class DataStore {
                 neutralizeLegacyFile: { _ = PersistencePaths.neutralizeLegacyFileIfPresent() }
             )
         }
+        backfillTodoSortOrderIfNeeded()
     }
 
     /// Last error from `save()`, if any. Cleared on the next successful save.
@@ -103,8 +104,8 @@ public final class DataStore {
         ))
     }
 
-    /// Non-dropped todos assigned to the project.
-    /// Incomplete first, then high priority, then oldest created (same order as `todos(on:)`).
+    /// Non-dropped todos assigned to the project: incomplete first, each group in manual order
+    /// (same order as `todos(on:)`).
     public func todos(inProject id: UUID) throws -> [DailyTodo] {
         let projectID = id
         let dropped = TodoStatus.dropped.rawValue
@@ -113,15 +114,9 @@ public final class DataStore {
         }
         let fetched = try context.fetch(FetchDescriptor(
             predicate: predicate,
-            sortBy: [SortDescriptor(\.priorityRaw, order: .reverse), SortDescriptor(\.createdDate)]
+            sortBy: [SortDescriptor(\.sortOrder), SortDescriptor(\.createdDate)]
         ))
-        return fetched.sorted { lhs, rhs in
-            let lhsDone = lhs.completedDate != nil
-            let rhsDone = rhs.completedDate != nil
-            if lhsDone != rhsDone { return !lhsDone && rhsDone }
-            if lhs.priorityRaw != rhs.priorityRaw { return lhs.priorityRaw > rhs.priorityRaw }
-            return lhs.createdDate < rhs.createdDate
-        }
+        return fetched.sorted(by: TodoOrdering.grouped)
     }
 
     // MARK: - Checklist
@@ -202,16 +197,10 @@ public final class DataStore {
         }
         let fetched = try context.fetch(FetchDescriptor(
             predicate: predicate,
-            sortBy: [SortDescriptor(\.priorityRaw, order: .reverse), SortDescriptor(\.createdDate)]
+            sortBy: [SortDescriptor(\.sortOrder), SortDescriptor(\.createdDate)]
         ))
-        // Keep incomplete (incl. in-progress) above completed; preserve priority/createdDate within each group.
-        return fetched.sorted { lhs, rhs in
-            let lhsDone = lhs.completedDate != nil
-            let rhsDone = rhs.completedDate != nil
-            if lhsDone != rhsDone { return !lhsDone && rhsDone }
-            if lhs.priorityRaw != rhs.priorityRaw { return lhs.priorityRaw > rhs.priorityRaw }
-            return lhs.createdDate < rhs.createdDate
-        }
+        // Incomplete (incl. in-progress) above completed; manual order within each group.
+        return fetched.sorted(by: TodoOrdering.grouped)
     }
 
     /// Completed, non-dropped todos whose `completedDate` falls in `[start, end)`.
@@ -239,8 +228,35 @@ public final class DataStore {
         }
         return try context.fetch(FetchDescriptor(
             predicate: predicate,
-            sortBy: [SortDescriptor(\.originalPlannedDate), SortDescriptor(\.createdDate)]
-        ))
+            sortBy: [SortDescriptor(\.sortOrder), SortDescriptor(\.createdDate)]
+        )).sorted(by: TodoOrdering.manual)
+    }
+
+    // MARK: - Manual order
+
+    /// A `sortOrder` below every existing task — new and rescheduled tasks land at the end.
+    public func nextBottomSortOrder() -> Double {
+        var descriptor = FetchDescriptor<DailyTodo>(sortBy: [SortDescriptor(\.sortOrder, order: .reverse)])
+        descriptor.fetchLimit = 1
+        let maximum = (try? context.fetch(descriptor).first?.sortOrder) ?? 0
+        return maximum + SortOrderMath.step
+    }
+
+    /// Re-space every task (dropped ones included, so an undo returns to its slot) in the
+    /// current manual order. Needed only when repeated midpoints exhaust a gap.
+    public func renormalizeTodoSortOrders() {
+        let ordered = ((try? allTodos()) ?? []).sorted(by: TodoOrdering.manual)
+        for (todo, value) in zip(ordered, SortOrderMath.spaced(count: ordered.count)) {
+            todo.sortOrder = value
+        }
+    }
+
+    /// One-time: give every task a manual order that reproduces the old priority sort.
+    func backfillTodoSortOrderIfNeeded() {
+        guard let meta = try? appMeta(), !meta.didBackfillTodoSortOrder else { return }
+        SortOrderBackfill.assignLegacyOrder(to: (try? allTodos()) ?? [])
+        meta.didBackfillTodoSortOrder = true
+        _ = save()
     }
 
     /// The single metadata row, creating it on first access.
@@ -457,7 +473,12 @@ public final class DataStore {
         for existing in (try? allProjects()) ?? [] { context.delete(existing) }
         // Projects first so restored todos' `projectID` links resolve against them.
         for dto in snapshot.projects { context.insert(dto.makeModel()) }
-        for dto in snapshot.todos { context.insert(dto.makeModel()) }
+        let restored = snapshot.todos.map { $0.makeModel() }
+        for todo in restored { context.insert(todo) }
+        // Backups from before manual ordering carry no `sortOrder`: rebuild it from priority.
+        if snapshot.todos.contains(where: { $0.sortOrder == nil }) {
+            SortOrderBackfill.assignLegacyOrder(to: restored)
+        }
         for dto in snapshot.habitTemplates { context.insert(dto.makeModel()) }
         for dto in snapshot.habitLogs { context.insert(dto.makeModel()) }
         for dto in snapshot.checklistItems { context.insert(dto.makeModel()) }
@@ -468,6 +489,7 @@ public final class DataStore {
         if let meta = try? appMeta() {
             meta.lastProcessedDay = snapshot.meta?.lastProcessedDay
             meta.lastHabitMaterializedDay = snapshot.meta?.lastHabitMaterializedDay
+            meta.didBackfillTodoSortOrder = true
         }
         return save()
     }

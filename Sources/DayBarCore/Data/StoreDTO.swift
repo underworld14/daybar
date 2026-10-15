@@ -22,6 +22,8 @@ public struct TodoDTO: Codable, Sendable {
     public var externalModifiedAt: Date?
     /// Missing key (older backups) decodes as `nil`.
     public var projectID: UUID?
+    /// Missing key (backups from before manual ordering) decodes as `nil` → backfilled.
+    public var sortOrder: Double?
 }
 
 public struct MetaDTO: Codable, Sendable {
@@ -69,12 +71,15 @@ public struct FocusSessionDTO: Codable, Sendable {
     public var endedAt: Date
     public var minutes: Int
     public var completed: Bool
+    /// Missing key (older backups) decodes as `nil`.
+    public var todoID: UUID?
 
-    public init(id: UUID, endedAt: Date, minutes: Int, completed: Bool) {
+    public init(id: UUID, endedAt: Date, minutes: Int, completed: Bool, todoID: UUID? = nil) {
         self.id = id
         self.endedAt = endedAt
         self.minutes = minutes
         self.completed = completed
+        self.todoID = todoID
     }
 }
 
@@ -151,7 +156,8 @@ public extension TodoDTO {
             dueDate: m.dueDate, completedDate: m.completedDate, statusRaw: m.statusRaw,
             priorityRaw: m.priorityRaw, delayCount: m.delayCount, snoozedUntil: m.snoozedUntil,
             pomodoroCount: m.pomodoroCount, sourceRaw: m.sourceRaw, externalIdentifier: m.externalIdentifier,
-            externalModifiedAt: m.externalModifiedAt, projectID: m.projectID
+            externalModifiedAt: m.externalModifiedAt, projectID: m.projectID,
+            sortOrder: m.sortOrder
         )
     }
 
@@ -164,7 +170,7 @@ public extension TodoDTO {
             priority: Priority(rawValue: priorityRaw) ?? .medium,
             delayCount: delayCount, snoozedUntil: snoozedUntil, pomodoroCount: pomodoroCount,
             source: TodoSource(rawValue: sourceRaw) ?? .local, externalIdentifier: externalIdentifier,
-            projectID: projectID
+            projectID: projectID, sortOrder: sortOrder ?? 0
         )
         todo.externalModifiedAt = externalModifiedAt
         return todo
@@ -235,11 +241,11 @@ public extension HabitLogDTO {
 
 public extension FocusSessionDTO {
     init(_ m: FocusSession) {
-        self.init(id: m.id, endedAt: m.endedAt, minutes: m.minutes, completed: m.completed)
+        self.init(id: m.id, endedAt: m.endedAt, minutes: m.minutes, completed: m.completed, todoID: m.todoID)
     }
 
     func makeModel() -> FocusSession {
-        FocusSession(id: id, endedAt: endedAt, minutes: minutes, completed: completed)
+        FocusSession(id: id, endedAt: endedAt, minutes: minutes, completed: completed, todoID: todoID)
     }
 }
 

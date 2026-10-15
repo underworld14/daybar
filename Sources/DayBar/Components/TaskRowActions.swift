@@ -7,4 +7,6 @@ struct TaskRowActions {
     var setPriority: (Priority) -> Void
     var rename: ((String) -> Void)?
     var openDetails: (() -> Void)?
+    /// Reports pointer hover so the owner can target keyboard shortcuts at this row.
+    var hoverChanged: ((Bool) -> Void)?
 }

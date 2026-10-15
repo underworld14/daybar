@@ -32,6 +32,9 @@ public final class DailyTodo {
     public var externalModifiedAt: Date?
     /// Optional project grouping (see `Project`). nil == unassigned.
     public var projectID: UUID?
+    /// Manual position in the one global task order (fractional; see `SortOrderMath`).
+    /// Every list sorts by it; priority no longer reorders tasks.
+    public var sortOrder: Double = 0
 
     public init(
         id: UUID = UUID(),
@@ -49,7 +52,8 @@ public final class DailyTodo {
         pomodoroCount: Int = 0,
         source: TodoSource = .local,
         externalIdentifier: String? = nil,
-        projectID: UUID? = nil
+        projectID: UUID? = nil,
+        sortOrder: Double = 0
     ) {
         self.id = id
         self.title = title
@@ -67,6 +71,7 @@ public final class DailyTodo {
         self.sourceRaw = source.rawValue
         self.externalIdentifier = externalIdentifier
         self.projectID = projectID
+        self.sortOrder = sortOrder
     }
 }
 

@@ -176,11 +176,7 @@ public final class AppState {
         guard let pending = pendingUndo, ephemeralBanner?.undoToken == token else { return }
         switch pending.kind {
         case .undropTodo(let id):
-            if let todo = try? store.todo(id: id) {
-                todo.status = todo.plannedForDate < DayMath.startOfDay(now, calendar: calendar) ? .carriedOver : .planned
-                commitSave()
-                didMutateTodos(now: now, touched: todo)
-            }
+            restoreDropped(id, now: now)
         case .unarchiveHabit(let id):
             if let template = try? store.habitTemplate(id: id) {
                 template.isActive = true
@@ -361,20 +357,33 @@ public final class AppState {
     @discardableResult
     public func addTodo(
         title: String,
-        priority: Priority = .medium,
+        priority: Priority = .none,
         plannedFor day: Date? = nil,
         now: Date = .now
     ) -> DailyTodo? {
-        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        addTodo(TodoDraft(title: title, priority: priority, plannedFor: day), now: now)
+    }
+
+    /// Creates a task in one insert + save: placed at the bottom of the manual order, with
+    /// its project and board column already set.
+    @discardableResult
+    public func addTodo(_ draft: TodoDraft, now: Date = .now) -> DailyTodo? {
+        let trimmed = draft.title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
-        let planned = DayMath.startOfDay(day ?? now, calendar: calendar)
+        let planned = DayMath.startOfDay(draft.plannedFor ?? now, calendar: calendar)
         let todo = DailyTodo(
             title: trimmed,
             plannedForDate: planned,
             originalPlannedDate: planned,
-            status: .planned,
-            priority: priority
+            status: draft.column == .inProgress ? .inProgress : .planned,
+            priority: draft.priority,
+            projectID: draft.projectID,
+            sortOrder: store.nextBottomSortOrder()
         )
+        if draft.column == .done {
+            todo.completedDate = now
+            todo.status = .completed
+        }
         store.insert(todo)
         commitSave()
         if Preferences.remindersPushNewTodos {
@@ -389,7 +398,7 @@ public final class AppState {
     @discardableResult
     public func addTodoForTomorrow(
         title: String,
-        priority: Priority = .medium,
+        priority: Priority = .none,
         now: Date = .now
     ) -> DailyTodo? {
         addTodo(title: title, priority: priority, plannedFor: DayMath.nextDay(now, calendar: calendar), now: now)
@@ -513,11 +522,7 @@ public final class AppState {
         case .tomorrow:
             return tomorrowTodos
         case .allTasks:
-            return ((try? store.openTodos()) ?? [])
-                .sorted {
-                    if $0.priorityRaw != $1.priorityRaw { return $0.priorityRaw > $1.priorityRaw }
-                    return $0.createdDate < $1.createdDate
-                }
+            return ((try? store.openTodos()) ?? []).sorted(by: TodoOrdering.manual)
         case .project(let id):
             return (try? store.todos(inProject: id)) ?? []
         }
@@ -642,6 +647,7 @@ public final class AppState {
         todo.delayCount += 1
         let tomorrow = DayMath.nextDay(now, calendar: calendar)
         todo.plannedForDate = tomorrow
+        todo.sortOrder = store.nextBottomSortOrder()
         todo.snoozedUntil = tomorrow
         todo.status = .snoozed
         markRemindersTodoLocallyModified(todo, now: now)
@@ -653,6 +659,7 @@ public final class AppState {
     /// Bring a carried-over task into today (its age is preserved via originalPlannedDate).
     public func reschedule(_ todo: DailyTodo, to day: Date = .now, now: Date = .now) {
         todo.plannedForDate = DayMath.startOfDay(day, calendar: calendar)
+        todo.sortOrder = store.nextBottomSortOrder()
         todo.snoozedUntil = nil
         todo.completedDate = nil
         todo.status = .planned
@@ -669,6 +676,9 @@ public final class AppState {
         let planned = DayMath.startOfDay(day, calendar: calendar)
         guard planned != todo.plannedForDate else { return }
         todo.plannedForDate = planned
+        if !todo.isCompleted {
+            todo.sortOrder = store.nextBottomSortOrder()
+        }
         todo.snoozedUntil = nil
         if todo.status == .snoozed { todo.status = .planned }
         markRemindersTodoLocallyModified(todo, now: now)
@@ -693,6 +703,50 @@ public final class AppState {
         store.delete(todo)
         commitSave()
         didMutateTodos(now: now)
+    }
+
+    /// Brings a dropped task back exactly where it was (its `sortOrder` never changed).
+    public func restoreDropped(_ id: UUID, now: Date = .now) {
+        guard let todo = try? store.todo(id: id), todo.status == .dropped else { return }
+        todo.status = todo.plannedForDate < DayMath.startOfDay(now, calendar: calendar) ? .carriedOver : .planned
+        markRemindersTodoLocallyModified(todo, now: now)
+        remindersSync.enqueuePush(for: todo)
+        commitSave()
+        didMutateTodos(now: now, touched: todo)
+    }
+
+    // MARK: - Manual order
+
+    /// Moves `todo` to `index` within `visible` (the list as displayed, ascending manual
+    /// order; SwiftUI `onMove` index semantics). Writes only the moved task unless the gap
+    /// between its new neighbours is exhausted, in which case all orders are re-spaced first.
+    public func moveTodo(_ todo: DailyTodo, toIndex index: Int, in visible: [DailyTodo], now: Date = .now) {
+        func slots() -> [ReorderSlot] { visible.map { ReorderSlot(id: $0.id, sortOrder: $0.sortOrder) } }
+        var placement = TodoReorderPlanner.placement(moving: todo.id, toIndex: index, within: slots())
+        var renormalized = false
+        if placement == .needsRenormalize {
+            store.renormalizeTodoSortOrders()
+            renormalized = true
+            placement = TodoReorderPlanner.placement(moving: todo.id, toIndex: index, within: slots())
+        }
+        if case .value(let value) = placement {
+            todo.sortOrder = value
+        } else if !renormalized {
+            return
+        }
+        commitSave()
+        didMutateTodos(now: now)
+    }
+
+    /// Keyboard/menu move: `offset` rows up (negative) or down (positive) within `visible`.
+    public func moveTodo(_ todo: DailyTodo, by offset: Int, in visible: [DailyTodo], now: Date = .now) {
+        let slots = visible.map { ReorderSlot(id: $0.id, sortOrder: $0.sortOrder) }
+        guard let index = TodoReorderPlanner.index(moving: todo.id, by: offset, within: slots) else { return }
+        moveTodo(todo, toIndex: index, in: visible, now: now)
+    }
+
+    public func moveTodoToTop(_ todo: DailyTodo, in visible: [DailyTodo], now: Date = .now) {
+        moveTodo(todo, toIndex: 0, in: visible, now: now)
     }
 
     public func setPriority(_ todo: DailyTodo, _ priority: Priority, now: Date = .now) {

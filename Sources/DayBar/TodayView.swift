@@ -8,6 +8,7 @@ struct TodayView: View {
     @Environment(AppState.self) private var appState
     /// Present when hosted in the menu-bar panel, which sizes itself from these measurements.
     @Environment(TrayLayoutModel.self) private var trayLayout: TrayLayoutModel?
+    @Environment(TrayInteractionModel.self) private var interaction: TrayInteractionModel?
 
     @State private var newTitle = ""
     @FocusState private var addFocused: Bool
@@ -33,6 +34,7 @@ struct TodayView: View {
             }
             UndoToast(appState: appState, style: .inline)
             Divider().padding(.top, 2)
+            ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     habitsSection
@@ -51,6 +53,11 @@ struct TodayView: View {
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
                 trayLayout?.setViewportHeight(height)
             }
+            .onChange(of: interaction?.selectedTodoID) { _, id in
+                guard let id else { return }
+                withThemeAnimation(.snap) { proxy.scrollTo(id) }
+            }
+            }
             Divider()
             LofiRadioStrip()
             PomodoroStrip(appState: appState)
@@ -61,6 +68,7 @@ struct TodayView: View {
             trayLayout?.setRootHeight(height)
         }
         .onAppear {
+            interaction?.openDetails = { detailTodo = $0 }
             appState.refresh()
             DispatchQueue.main.async { claimQuickAddFocus() }
             Task { await appState.loadRadioChannels() }
@@ -263,7 +271,7 @@ struct TodayView: View {
             } else {
                 TaskRowStack {
                     ForEach(appState.todayTodos) { todo in
-                        TodoRow(appState: appState, todo: todo, onOpenDetails: { detailTodo = todo })
+                        TodoRow(appState: appState, todo: todo, section: appState.todayTodos, onOpenDetails: { detailTodo = todo })
                             .id(todo.id)
                     }
                 }
@@ -290,7 +298,11 @@ struct TodayView: View {
             }
             TaskRowStack {
                 ForEach(appState.carriedTodos) { todo in
-                    TodoRow(appState: appState, todo: todo, showReschedule: true, onOpenDetails: { detailTodo = todo })
+                    TodoRow(
+                        appState: appState, todo: todo, section: appState.carriedTodos,
+                        showReschedule: true, onOpenDetails: { detailTodo = todo }
+                    )
+                    .id(todo.id)
                 }
             }
         }
@@ -307,7 +319,7 @@ struct TodayView: View {
             } else {
                 TaskRowStack {
                     ForEach(appState.tomorrowTodos) { todo in
-                        TodoRow(appState: appState, todo: todo, onOpenDetails: { detailTodo = todo })
+                        TodoRow(appState: appState, todo: todo, section: appState.tomorrowTodos, onOpenDetails: { detailTodo = todo })
                             .id(todo.id)
                     }
                 }
@@ -427,15 +439,28 @@ struct HabitRow: View {
 struct TodoRow: View {
     var appState: AppState
     let todo: DailyTodo
+    /// The row's section in display order — the list Move Up/Down/To Top work within.
+    var section: [DailyTodo] = []
     var showReschedule = false
     var onOpenDetails: (() -> Void)? = nil
 
+    @Environment(TrayInteractionModel.self) private var interaction: TrayInteractionModel?
+
     var body: some View {
-        TaskRowView(
-            configuration: .make(todo, appState: appState, showsAge: true),
-            actions: .make(todo, appState: appState, openDetails: onOpenDetails)
+        var actions = TaskRowActions.make(todo, appState: appState, openDetails: onOpenDetails)
+        let id = todo.id
+        actions.hoverChanged = { [interaction] hovering in interaction?.hoverChanged(id, hovering: hovering) }
+        return TaskRowView(
+            configuration: .make(
+                todo, appState: appState, showsAge: true,
+                isSelected: interaction?.selectedTodoID == todo.id
+            ),
+            actions: actions
         ) {
-            TrayTaskMenu(appState: appState, todo: todo, showReschedule: showReschedule, onOpenDetails: onOpenDetails)
+            TrayTaskMenu(
+                appState: appState, todo: todo, section: section,
+                showReschedule: showReschedule, onOpenDetails: onOpenDetails
+            )
         }
     }
 }
@@ -444,8 +469,11 @@ struct TodoRow: View {
 struct TrayTaskMenu: View {
     var appState: AppState
     let todo: DailyTodo
+    var section: [DailyTodo] = []
     var showReschedule = false
     var onOpenDetails: (() -> Void)?
+
+    private var movable: [DailyTodo] { section.filter { $0.completedDate == nil } }
 
     var body: some View {
         if todo.isCompleted {
@@ -471,6 +499,16 @@ struct TrayTaskMenu: View {
                     }
                 }
             }
+        }
+        if !todo.isCompleted, movable.count > 1 {
+            Divider()
+            let index = movable.firstIndex(where: { $0.id == todo.id })
+            Button("Move to Top") { withThemeAnimation(.reorder) { appState.moveTodoToTop(todo, in: movable) } }
+                .disabled(index == 0)
+            Button("Move Up  ⌘↑") { withThemeAnimation(.reorder) { appState.moveTodo(todo, by: -1, in: movable) } }
+                .disabled(index == 0)
+            Button("Move Down  ⌘↓") { withThemeAnimation(.reorder) { appState.moveTodo(todo, by: 1, in: movable) } }
+                .disabled(index == movable.count - 1)
         }
         Divider()
         if showReschedule { Button("Bring to Today") { appState.reschedule(todo) } }
