@@ -12,6 +12,8 @@ struct KanbanBoardView: View {
     let onDelete: (DailyTodo) -> Void
     let onDrop: (DailyTodo) -> Void
 
+    @Namespace private var cardNamespace
+
     static let minColumnWidth: CGFloat = 220
     private let spacing: CGFloat = 12
     private let padding: CGFloat = 12
@@ -33,7 +35,8 @@ struct KanbanBoardView: View {
                             selection: selection,
                             onSelect: onSelect,
                             onDelete: onDelete,
-                            onDrop: onDrop
+                            onDrop: onDrop,
+                            namespace: cardNamespace
                         )
                         .frame(width: columnWidth)
                     }

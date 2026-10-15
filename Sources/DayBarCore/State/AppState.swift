@@ -497,6 +497,44 @@ public final class AppState {
     /// Sets a task's kanban column: To Do → planned/carried, In Progress, Done.
     /// Column membership itself stays derived (`completedDate`/`status`) — nothing extra is stored.
     public func setBoardStatus(_ column: BoardColumn, for todo: DailyTodo, now: Date = .now) {
+        applyBoardStatus(column, to: todo, now: now)
+        markRemindersTodoLocallyModified(todo, now: now)
+        remindersSync.enqueuePush(for: todo)
+        commitSave()
+        didMutateTodos(now: now, touched: todo)
+    }
+
+    /// Kanban drop: change column (if needed) and take position `index` among
+    /// `columnTodos` (the target column as displayed before the drop) — one save. The Done
+    /// column has no manual order (newest first), so drops there only complete the task.
+    public func moveTodo(
+        _ todo: DailyTodo,
+        to column: BoardColumn,
+        index: Int,
+        in columnTodos: [DailyTodo],
+        now: Date = .now
+    ) {
+        let current: BoardColumn = todo.isCompleted ? .done : (todo.isInProgress ? .inProgress : .toDo)
+        if current != column {
+            applyBoardStatus(column, to: todo, now: now)
+            markRemindersTodoLocallyModified(todo, now: now)
+            remindersSync.enqueuePush(for: todo)
+        }
+        if column != .done {
+            func slots() -> [ReorderSlot] { columnTodos.map { ReorderSlot(id: $0.id, sortOrder: $0.sortOrder) } }
+            var placement = TodoReorderPlanner.placement(moving: todo.id, toIndex: index, within: slots())
+            if placement == .needsRenormalize {
+                store.renormalizeTodoSortOrders()
+                placement = TodoReorderPlanner.placement(moving: todo.id, toIndex: index, within: slots())
+            }
+            if case .value(let value) = placement { todo.sortOrder = value }
+        }
+        commitSave()
+        didMutateTodos(now: now, touched: todo)
+    }
+
+    /// Column → status/completion fields, without saving.
+    private func applyBoardStatus(_ column: BoardColumn, to todo: DailyTodo, now: Date) {
         let today = DayMath.startOfDay(now, calendar: calendar)
         switch column {
         case .toDo:
@@ -513,10 +551,6 @@ public final class AppState {
                 todo.plannedForDate = today
             }
         }
-        markRemindersTodoLocallyModified(todo, now: now)
-        remindersSync.enqueuePush(for: todo)
-        commitSave()
-        didMutateTodos(now: now, touched: todo)
     }
 
     /// The task slice shown for a window scope. Done-column membership is handled

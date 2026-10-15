@@ -104,4 +104,51 @@ final class BoardStatusTests: XCTestCase {
         XCTAssertEqual(state.scopeKey(for: .allTasks), "all")
         XCTAssertEqual(state.scopeKey(for: .project(id)), "project:\(id.uuidString)")
     }
+
+    func testMoveToColumnAtIndexSetsStatusAndOrder() {
+        let now = Date(timeIntervalSince1970: 2_000_000_000)
+        let a = makeTodo("A", plannedFor: now, now: now)
+        let b = makeTodo("B", plannedFor: now, now: now)
+        let moving = makeTodo("Moving", plannedFor: now, now: now)
+        state.setBoardStatus(.inProgress, for: a, now: now)
+        state.setBoardStatus(.inProgress, for: b, now: now)
+        let column = state.boardSnapshot(for: .today, now: now).inProgress
+        XCTAssertEqual(column.map(\.title), ["A", "B"])
+
+        state.moveTodo(moving, to: .inProgress, index: 1, in: column, now: now)
+
+        XCTAssertTrue(moving.isInProgress)
+        XCTAssertEqual(state.boardSnapshot(for: .today, now: now).inProgress.map(\.title), ["A", "Moving", "B"])
+    }
+
+    func testReorderInsideAColumnKeepsStatus() {
+        let now = Date(timeIntervalSince1970: 2_000_000_000)
+        _ = makeTodo("A", plannedFor: now, now: now)
+        _ = makeTodo("B", plannedFor: now, now: now)
+        let c = makeTodo("C", plannedFor: now, now: now)
+        let column = state.boardSnapshot(for: .today, now: now).toDo
+
+        state.moveTodo(c, to: .toDo, index: 0, in: column, now: now)
+
+        XCTAssertEqual(state.boardSnapshot(for: .today, now: now).toDo.map(\.title), ["C", "A", "B"])
+        XCTAssertFalse(c.isInProgress)
+    }
+
+    func testDropOnDoneCompletes() {
+        let now = Date(timeIntervalSince1970: 2_000_000_000)
+        let todo = makeTodo("Finish", plannedFor: now, now: now)
+        state.moveTodo(todo, to: .done, index: 0, in: [], now: now)
+        XCTAssertTrue(todo.isCompleted)
+    }
+
+    func testSidebarDropToTodayPlacesAtBottom() {
+        let now = Date(timeIntervalSince1970: 2_000_000_000)
+        let tomorrow = DayMath.nextDay(now, calendar: cal)
+        let later = makeTodo("Later", plannedFor: tomorrow, now: now)
+        _ = makeTodo("Existing", plannedFor: now, now: now)
+
+        state.setPlannedDate(later, to: now, now: now)
+
+        XCTAssertEqual(state.todayTodos.map(\.title), ["Existing", "Later"])
+    }
 }

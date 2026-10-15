@@ -16,6 +16,7 @@ struct TaskBoardView: View {
     @Environment(AppState.self) private var appState
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.undoManager) private var undoManager
+    @Environment(TaskDragCoordinator.self) private var dragCoordinator: TaskDragCoordinator?
 
     @State private var viewMode: TasksViewMode = .list
     @State private var todoPendingDelete: DailyTodo?
@@ -127,9 +128,26 @@ struct TaskBoardView: View {
                         if !snapshot.done.isEmpty {
                             SectionHeader("Tasks").padding(.bottom, ThemeMetrics.spacingXS)
                         }
-                        ForEach(snapshot.open) { todo in
-                            row(todo).id(todo.id)
+                        VStack(spacing: 0) {
+                            ForEach(snapshot.open) { todo in
+                                row(todo)
+                                    .opacity(dragCoordinator?.draggingID == todo.id ? 0.35 : 1)
+                                    .taskRowFrame(todo.id)
+                                    .taskDraggable(todo.id, title: todo.title, coordinator: dragCoordinator)
+                                    .id(todo.id)
+                            }
                         }
+                        .taskDropZone(
+                            "board.list",
+                            orderedIDs: snapshot.open.map(\.id),
+                            reorderableCount: snapshot.open.count,
+                            accepts: { snapshot.open.map(\.id).contains($0) },
+                            onDrop: { id, index in
+                                guard let todo = snapshot.byID[id] else { return false }
+                                appState.moveTodo(todo, toIndex: index, in: snapshot.open)
+                                return true
+                            }
+                        )
                         if !snapshot.done.isEmpty {
                             SectionHeader("Completed")
                                 .padding(.top, ThemeMetrics.spacingL)

@@ -13,10 +13,11 @@ struct BoardColumnView: View {
     let onSelect: (DailyTodo) -> Void
     let onDelete: (DailyTodo) -> Void
     let onDrop: (DailyTodo) -> Void
+    var namespace: Namespace.ID?
 
     @Environment(AppState.self) private var appState
+    @Environment(TaskDragCoordinator.self) private var dragCoordinator: TaskDragCoordinator?
 
-    @State private var isTargeted = false
     @State private var addingTask = false
     @State private var newTitle = ""
     @State private var composerDate: Date?
@@ -55,7 +56,8 @@ struct BoardColumnView: View {
                                 isSelected: selection == todo.id,
                                 onOpenDetails: { onSelect(todo) },
                                 onDrop: { onDrop(todo) },
-                                onDelete: { onDelete(todo) }
+                                onDelete: { onDelete(todo) },
+                                namespace: namespace
                             )
                             .id(todo.id)
                         }
@@ -68,25 +70,33 @@ struct BoardColumnView: View {
         .padding(10)
         .frame(maxHeight: .infinity, alignment: .top)
         .background {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(isTargeted ? Color.accentColor.opacity(0.08) : Color.primary.opacity(0.04))
+            RoundedRectangle(cornerRadius: ThemeMetrics.columnRadius, style: .continuous)
+                .fill(isTargeted ? ThemeColors.dropTarget : ThemeColors.columnFill)
         }
         .overlay {
             if isTargeted {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                RoundedRectangle(cornerRadius: ThemeMetrics.columnRadius, style: .continuous)
                     .strokeBorder(Color.accentColor.opacity(0.5), lineWidth: 1.5)
             }
         }
-        .dropDestination(for: String.self) { payload, _ in
-            guard let idString = payload.first,
-                  let id = UUID(uuidString: idString),
-                  let todo = lookup(id) else { return false }
-            appState.setBoardStatus(column, for: todo)
-            return true
-        } isTargeted: { targeted in
-            isTargeted = targeted
-        }
+        .taskDropZone(
+            zoneID,
+            orderedIDs: todos.map(\.id),
+            // Done is newest-first, not manually ordered: dropping there just completes.
+            reorderableCount: column == .done ? 0 : todos.count,
+            accepts: { lookup($0) != nil },
+            onDrop: { id, index in
+                guard let todo = lookup(id) else { return false }
+                appState.moveTodo(todo, to: column, index: index, in: todos)
+                return true
+            }
+        )
+        .themeAnimation(.reveal, value: isTargeted)
     }
+
+    private var zoneID: String { "board.\(column.rawValue)" }
+
+    private var isTargeted: Bool { dragCoordinator?.activeZone == zoneID }
 
     private var header: some View {
         HStack(spacing: 6) {

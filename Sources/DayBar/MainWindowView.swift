@@ -19,6 +19,8 @@ struct MainWindowView: View {
     /// The board's selected task (by id, never a model reference) and the inspector toggle.
     @State private var selectedTodoID: UUID?
     @State private var inspectorPresented = false
+    /// Sidebar row currently under a dragged task.
+    @State private var dropTarget: SidebarSelection?
     @State private var showProjectSheet = false
     @State private var projectSheetMode: ProjectSheetMode = .create
     @State private var projectPendingDelete: Project?
@@ -110,8 +112,10 @@ struct MainWindowView: View {
             List(selection: $selection) {
                 Section("Tasks") {
                     Label("Today", systemImage: "calendar")
+                        .modifier(taskDrop(.today))
                         .tag(SidebarSelection.today)
                     Label("Tomorrow", systemImage: "calendar.badge.clock")
+                        .modifier(taskDrop(.tomorrow))
                         .tag(SidebarSelection.tomorrow)
                     Label("All Tasks", systemImage: "tray.full")
                         .tag(SidebarSelection.allTasks)
@@ -128,6 +132,7 @@ struct MainWindowView: View {
                                     .foregroundStyle(.secondary)
                             }
                         }
+                        .modifier(taskDrop(.project(project.id)))
                         .tag(SidebarSelection.project(project.id))
                         .contextMenu {
                             Button("Rename…") {
@@ -209,6 +214,31 @@ struct MainWindowView: View {
             Button("Cancel", role: .cancel) { folderPendingDelete = nil }
         } message: {
             Text("The folder and all notes inside move to the Trash.")
+        }
+    }
+
+    /// Dropping a task on Today/Tomorrow re-plans it (bottom of that day); on a project,
+    /// assigns it. The row highlights while a task hovers over it.
+    private func taskDrop(_ target: SidebarSelection) -> SidebarTaskDrop {
+        SidebarTaskDrop(target: target, isTargeted: dropTarget == target) { targeted in
+            if targeted {
+                dropTarget = target
+            } else if dropTarget == target {
+                dropTarget = nil
+            }
+        } perform: { id in
+            guard let todo = try? appState.store.todo(id: id), todo.status != .dropped else { return false }
+            switch target {
+            case .today:
+                appState.setPlannedDate(todo, to: .now)
+            case .tomorrow:
+                appState.setPlannedDate(todo, to: DayMath.nextDay(.now, calendar: appState.calendar))
+            case .project(let projectID):
+                appState.assign(todo: todo, to: appState.projects.first(where: { $0.id == projectID }))
+            default:
+                return false
+            }
+            return true
         }
     }
 
