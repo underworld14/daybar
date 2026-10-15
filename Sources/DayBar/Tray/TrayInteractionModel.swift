@@ -39,15 +39,22 @@ final class TrayInteractionModel {
         }
     }
 
-    /// Tasks in tray display order (Today, Tomorrow, Carried over).
-    private var displayed: [DailyTodo] {
-        appState.todayTodos + appState.tomorrowTodos + appState.carriedTodos
+    /// Tray sections in display order: Now, Today, Tomorrow, Carried over (in-progress tasks
+    /// live in Now only).
+    private var sections: [[DailyTodo]] {
+        [
+            appState.nowTodos,
+            appState.todayTodos.filter { !$0.isInProgress },
+            appState.tomorrowTodos,
+            appState.carriedTodos.filter { !$0.isInProgress },
+        ]
     }
+
+    private var displayed: [DailyTodo] { sections.flatMap { $0 } }
 
     /// The incomplete tasks of the section containing `id` — the list a move happens in.
     private func movableSection(containing id: UUID) -> [DailyTodo]? {
-        for section in [appState.todayTodos, appState.tomorrowTodos, appState.carriedTodos]
-        where section.contains(where: { $0.id == id }) {
+        for section in sections where section.contains(where: { $0.id == id }) {
             return section.filter { $0.completedDate == nil }
         }
         return nil

@@ -20,6 +20,8 @@ struct TaskRowConfiguration {
     var ageTier: EscalationTier = .onPlan
     var hasNotes = false
     var checklist: ChecklistProgress?
+    /// Completed focus sessions credited to the task.
+    var pomodoroCount = 0
     var isSelected = false
     var titleInteraction: TitleInteraction = .renameOnDoubleClick
 }

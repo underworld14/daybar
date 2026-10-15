@@ -24,6 +24,9 @@ struct TodayView: View {
         VStack(alignment: .leading, spacing: 10) {
             header
             quickAdd
+            if TraySectionPolicy.showsNowSection(inProgressCount: appState.nowTodos.count) {
+                NowCard(appState: appState, onOpenDetails: { detailTodo = $0 })
+            }
             if appState.totalTodayCount > 0 { progressBar }
             if let entry = appState.focusStreakEntry {
                 DayscapeStrip(
@@ -229,14 +232,14 @@ struct TodayView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 } else {
                     TaskRowStack {
-                        ForEach(appState.todayTodos) { todo in
-                            TodoRow(appState: appState, todo: todo, section: appState.todayTodos, onOpenDetails: { detailTodo = todo })
+                        ForEach(trayToday) { todo in
+                            TodoRow(appState: appState, todo: todo, section: trayToday, onOpenDetails: { detailTodo = todo })
                                 .id(todo.id)
                         }
                     }
                 }
             }
-            .modifier(daySectionDropZone("tray.today", tasks: appState.todayTodos, day: .now))
+            .modifier(daySectionDropZone("tray.today", tasks: trayToday, day: .now))
         }
     }
 
@@ -261,6 +264,10 @@ struct TodayView: View {
         )
     }
 
+    /// Today's tasks minus the ones in progress (those sit in the Now card).
+    private var trayToday: [DailyTodo] { appState.todayTodos.filter { !$0.isInProgress } }
+    private var trayCarried: [DailyTodo] { appState.carriedTodos.filter { !$0.isInProgress } }
+
     private func trayTask(_ id: UUID) -> DailyTodo? {
         (appState.todayTodos + appState.tomorrowTodos + appState.carriedTodos).first(where: { $0.id == id })
     }
@@ -283,9 +290,9 @@ struct TodayView: View {
                 }
             }
             TaskRowStack {
-                ForEach(appState.carriedTodos) { todo in
+                ForEach(trayCarried) { todo in
                     TodoRow(
-                        appState: appState, todo: todo, section: appState.carriedTodos,
+                        appState: appState, todo: todo, section: trayCarried,
                         showReschedule: true, onOpenDetails: { detailTodo = todo }
                     )
                     .id(todo.id)
@@ -293,13 +300,13 @@ struct TodayView: View {
             }
             .taskDropZone(
                 "tray.carried",
-                orderedIDs: appState.carriedTodos.map(\.id),
-                reorderableCount: appState.carriedTodos.count,
+                orderedIDs: trayCarried.map(\.id),
+                reorderableCount: trayCarried.count,
                 // Carried tasks only reorder among themselves; nothing is dragged into the past.
-                accepts: { id in appState.carriedTodos.contains(where: { $0.id == id }) },
+                accepts: { id in trayCarried.contains(where: { $0.id == id }) },
                 onDrop: { id, index in
-                    guard let todo = appState.carriedTodos.first(where: { $0.id == id }) else { return false }
-                    appState.moveTodo(todo, toIndex: index, in: appState.carriedTodos)
+                    guard let todo = trayCarried.first(where: { $0.id == id }) else { return false }
+                    appState.moveTodo(todo, toIndex: index, in: trayCarried)
                     return true
                 }
             )
@@ -577,7 +584,15 @@ struct PomodoroStrip: View {
         let pomo = appState.pomodoro
         HStack(spacing: 8) {
             Image(systemName: pomo.phase.isBreak ? "cup.and.saucer" : "timer").foregroundStyle(.tint)
-            Text(pomo.phase == .idle ? "Focus" : pomo.phase.displayName).font(.subheadline)
+            Group {
+                if pomo.phase == .work, let task = appState.focusTodo {
+                    Text("Focus · \(task.title)")
+                } else {
+                    Text(pomo.phase == .idle ? "Focus" : pomo.phase.displayName)
+                }
+            }
+            .font(.subheadline)
+            .lineLimit(1)
 
             Spacer()
 

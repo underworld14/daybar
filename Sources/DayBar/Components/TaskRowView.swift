@@ -101,6 +101,10 @@ struct TaskRowView<MenuContent: View>: View {
             if let age = configuration.ageLabel {
                 AgePill(text: age, tier: configuration.ageTier)
             }
+            if configuration.pomodoroCount > 0 {
+                Chip(text: "\(configuration.pomodoroCount)", systemImage: "timer")
+                    .help("\(configuration.pomodoroCount) focus session\(configuration.pomodoroCount == 1 ? "" : "s")")
+            }
 
             if hovering && configuration.status != .done {
                 Button(action: actions.toggleInProgress) {

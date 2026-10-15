@@ -28,6 +28,7 @@ extension TaskRowConfiguration {
             ageTier: age == nil ? .onPlan : todo.escalationTier(thresholds: appState.thresholds, calendar: appState.calendar),
             hasNotes: todo.hasNotes,
             checklist: appState.checklistProgress[todo.id],
+            pomodoroCount: todo.pomodoroCount,
             isSelected: isSelected,
             titleInteraction: titleInteraction
         )

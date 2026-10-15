@@ -13,4 +13,11 @@ public enum TraySectionPolicy {
         _ = todoCount
         return true
     }
+
+    /// Whether the "Now" card (in-progress tasks + focus timer) is in the view tree.
+    /// Always `true` for the same reason as Tomorrow; an empty card renders at zero height.
+    public static func showsNowSection(inProgressCount: Int) -> Bool {
+        _ = inProgressCount
+        return true
+    }
 }

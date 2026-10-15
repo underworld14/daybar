@@ -46,6 +46,9 @@ struct TaskCardView<MenuContent: View>: View {
                     if let age = configuration.ageLabel {
                         AgePill(text: age, tier: configuration.ageTier)
                     }
+                    if configuration.pomodoroCount > 0 {
+                        Chip(text: "\(configuration.pomodoroCount)", systemImage: "timer")
+                    }
                     if configuration.hasNotes {
                         Image(systemName: "note.text")
                             .font(.caption2)
@@ -92,6 +95,7 @@ struct TaskCardView<MenuContent: View>: View {
             || (configuration.dateLabel != nil && configuration.status != .done)
             || configuration.ageLabel != nil
             || configuration.hasNotes
+            || configuration.pomodoroCount > 0
             || !(configuration.checklist?.isEmpty ?? true)
     }
 }

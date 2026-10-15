@@ -50,6 +50,8 @@ public final class AppState {
     @ObservationIgnored private var boardSnapshotMemoDay: Date?
     @ObservationIgnored private var projectOpenCounts: [UUID: Int] = [:]
     @ObservationIgnored private var projectOpenCountsRevision = -1
+    /// The focus session most recently written by `handlePhaseEnd` (for "Undo" on stop).
+    @ObservationIgnored private var lastRecordedFocusSessionID: UUID?
 
     public private(set) var remindersLastSyncedAt: Date?
     public private(set) var remindersLastSyncError: String?
@@ -65,6 +67,8 @@ public final class AppState {
     public private(set) var todosRevision = 0
     /// Checklist done/total per task id, rebuilt with the lists (one fetch, not one per row).
     public private(set) var checklistProgress: [UUID: ChecklistProgress] = [:]
+    /// The task the running focus session is credited to (survives breaks while open).
+    public private(set) var focusTodoID: UUID?
     public private(set) var projects: [Project] = []
     public private(set) var todayHabits: [TodayHabit] = []
     public private(set) var habitStreakEntries: [HabitStreakEntry] = []
@@ -223,6 +227,19 @@ public final class AppState {
 
     public var worstTier: EscalationTier {
         carriedTodos.map { $0.escalationTier(thresholds: thresholds, calendar: calendar) }.max() ?? .onPlan
+    }
+
+    /// Tasks being worked on right now (today + carried over), in manual order — the tray's
+    /// "Now" card.
+    public var nowTodos: [DailyTodo] {
+        (todayTodos + carriedTodos).filter(\.isInProgress).sorted(by: TodoOrdering.manual)
+    }
+
+    /// The task bound to the focus session, if it still exists.
+    public var focusTodo: DailyTodo? {
+        guard let focusTodoID else { return nil }
+        return (todayTodos + carriedTodos + tomorrowTodos).first(where: { $0.id == focusTodoID })
+            ?? (try? store.todo(id: focusTodoID))
     }
 
     public var completedTodayCount: Int { todayTodos.filter(\.isCompleted).count }
@@ -1106,24 +1123,47 @@ public final class AppState {
     public func stopPomodoro(now: Date = .now) {
         guard pomodoro.phase != .idle else { return }
         let wasWork = pomodoro.phase == .work
+        lastRecordedFocusSessionID = nil
         pomodoro.stop(now: now)
-        if wasWork {
-            // handlePhaseEnd already inserted FocusSession; offer undo for a few seconds.
-            if let session = (try? store.focusSessions(
-                in: now.addingTimeInterval(-2)..<now.addingTimeInterval(2)
-            ))?.last {
-                let token = session.id.uuidString
-                pendingUndo = PendingUndo(kind: .undoFocusSession(session.id))
-                showBanner("Focus session stopped", undoLabel: "Undo", undoToken: token)
-                return
-            }
+        focusTodoID = nil
+        if wasWork, let sessionID = lastRecordedFocusSessionID {
+            // handlePhaseEnd already inserted the FocusSession; offer undo for a few seconds.
+            pendingUndo = PendingUndo(kind: .undoFocusSession(sessionID))
+            showBanner("Focus session stopped", undoLabel: "Undo", undoToken: sessionID.uuidString)
+            return
         }
         showBanner("Focus session stopped")
+    }
+
+    /// Focus on a task: marks it in progress, binds the session to it, and starts a focus
+    /// phase — or, if one is already running/paused, re-credits that phase to this task.
+    public func startFocus(on todo: DailyTodo, now: Date = .now) {
+        guard todo.status != .dropped else { return }
+        if !todo.isInProgress { startTodo(todo, now: now) }
+        focusTodoID = todo.id
+        switch pomodoro.phase {
+        case .work:
+            if !pomodoro.isRunning { pomodoro.resume(now: now) }
+        case .idle:
+            pomodoro.startWork(now: now)
+        case .shortBreak, .longBreak:
+            skipBreakAndStartWork(now: now)
+        }
+    }
+
+    /// Drops the task binding before a new focus phase if the task is finished or gone.
+    private func validateFocusBinding() {
+        guard let focusTodoID else { return }
+        let todo = try? store.todo(id: focusTodoID)
+        if todo == nil || todo?.isCompleted == true || todo?.status == .dropped {
+            self.focusTodoID = nil
+        }
     }
 
     /// One-button Pomodoro control: start when idle, pause when running, resume when paused.
     public func togglePomodoro() {
         if pomodoro.phase == .idle {
+            validateFocusBinding()
             pomodoro.startWork()
         } else if pomodoro.isRunning {
             pomodoro.pause()
@@ -1434,6 +1474,7 @@ public final class AppState {
         guard pomodoro.phase.isBreak else { return }
         if silent { suppressNextPhaseEndFeedback = true }
         pomodoro.skip(now: now)
+        validateFocusBinding()
         pomodoro.start(.work, now: now)
         breakArmedAt = nil
     }
@@ -1449,8 +1490,16 @@ public final class AppState {
             let minutes = Int((elapsed / 60).rounded())
             if minutes > 0 {
                 let priorStreak = focusStreakEntry?.streak.current ?? 0
-                store.insert(FocusSession(endedAt: endedAt, minutes: minutes, completed: completedNaturally))
+                let session = FocusSession(
+                    endedAt: endedAt, minutes: minutes, completed: completedNaturally, todoID: focusTodoID
+                )
+                store.insert(session)
+                lastRecordedFocusSessionID = session.id
+                if completedNaturally, let todo = focusTodo {
+                    todo.pomodoroCount += 1
+                }
                 commitSave()
+                if completedNaturally, focusTodoID != nil { didMutateTodos(now: endedAt) }
                 rebuildFocusCache(now: endedAt)
                 if completedNaturally {
                     let newStreak = focusStreakEntry?.streak.current ?? 0
@@ -1467,6 +1516,7 @@ public final class AppState {
             maybePromptEndOfDayReview(now: endedAt, focusSessionRunning: false)
         } else if phase.isBreak {
             breakArmedAt = nil
+            validateFocusBinding()
         }
         guard !suppressNextPhaseEndFeedback else {
             suppressNextPhaseEndFeedback = false
