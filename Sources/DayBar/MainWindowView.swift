@@ -21,6 +21,7 @@ struct MainWindowView: View {
     @State private var inspectorPresented = false
     /// Sidebar row currently under a dragged task.
     @State private var dropTarget: SidebarSelection?
+    @Environment(\.controlActiveState) private var controlActiveState
     @State private var showProjectSheet = false
     @State private var projectSheetMode: ProjectSheetMode = .create
     @State private var projectPendingDelete: Project?
@@ -41,7 +42,7 @@ struct MainWindowView: View {
                     get: { inspectorPresented && isTaskScope },
                     set: { inspectorPresented = $0 }
                 )) {
-                    TaskInspectorView(appState: appState, selectedID: selectedTodoID)
+                    TaskInspectorView(appState: appState, scope: taskScope, selectedID: selectedTodoID)
                         .inspectorColumnWidth(min: 280, ideal: 320, max: 440)
                 }
         }
@@ -50,7 +51,9 @@ struct MainWindowView: View {
             reloadFolders()
         }
         // Folders can change outside the app (Finder, sync): re-read when a window activates.
-        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { note in
+            // Only real windows (not the tray panel, sheets, or popovers).
+            guard let window = note.object as? NSWindow, !(window is NSPanel), window.sheetParent == nil else { return }
             reloadFolders()
         }
         .onChange(of: appState.projects) { _, projects in
@@ -63,7 +66,9 @@ struct MainWindowView: View {
             selectedTodoID = nil
         }
         .onChange(of: appState.windowCommand) { _, request in
-            if request?.command == .toggleInspector, isTaskScope { inspectorPresented.toggle() }
+            if request?.command == .toggleInspector, isTaskScope, controlActiveState == .key {
+                inspectorPresented.toggle()
+            }
         }
         .onChange(of: appState.windowNewNoteSignal) { _, _ in
             // Route to the notes pane; NotesPaneView itself creates the note.
@@ -234,9 +239,9 @@ struct MainWindowView: View {
             guard let todo = try? appState.store.todo(id: id), todo.status != .dropped else { return false }
             switch target {
             case .today:
-                appState.setPlannedDate(todo, to: .now)
+                appState.plan(todo, for: .now)
             case .tomorrow:
-                appState.setPlannedDate(todo, to: DayMath.nextDay(.now, calendar: appState.calendar))
+                appState.plan(todo, for: DayMath.nextDay(.now, calendar: appState.calendar))
             case .project(let projectID):
                 appState.assign(todo: todo, to: appState.projects.first(where: { $0.id == projectID }))
             default:
@@ -256,10 +261,15 @@ struct MainWindowView: View {
         TaskBoardView(scope: scope, selection: $selectedTodoID, inspectorPresented: $inspectorPresented)
     }
 
-    private var isTaskScope: Bool {
+    private var isTaskScope: Bool { taskScope != nil }
+
+    private var taskScope: TaskScope? {
         switch selection {
-        case .today, .tomorrow, .allTasks, .project: return true
-        case .allNotes, .folder, nil: return false
+        case .today: return .today
+        case .tomorrow: return .tomorrow
+        case .allTasks: return .allTasks
+        case .project(let id): return .project(id)
+        case .allNotes, .folder, nil: return nil
         }
     }
 

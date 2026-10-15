@@ -21,17 +21,7 @@ struct PriorityFlag: View {
         .buttonStyle(.plain)
         .help("Priority: \(priority.displayName). Click to change, or press 0–3.")
         .contextMenu {
-            ForEach([Priority.high, .medium, .low, .none], id: \.self) { level in
-                Button {
-                    onSet(level)
-                } label: {
-                    if level == priority {
-                        Label(level.displayName, systemImage: "checkmark")
-                    } else {
-                        Text(level.displayName)
-                    }
-                }
-            }
+            PriorityMenuItems(current: priority, onSet: onSet)
         }
         .accessibilityElement()
         .accessibilityLabel("Priority")

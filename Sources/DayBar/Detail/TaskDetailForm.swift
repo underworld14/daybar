@@ -67,10 +67,10 @@ struct TaskDetailForm: View {
                     HStack(spacing: ThemeMetrics.spacingS) {
                         DatePicker("Planned for", selection: dateBinding, displayedComponents: .date)
                             .labelsHidden()
-                        Button("Today") { appState.setPlannedDate(todo, to: .now) }
+                        Button("Today") { appState.plan(todo, for: .now) }
                             .disabled(isPlanned(on: .now))
                         Button("Tomorrow") {
-                            appState.setPlannedDate(todo, to: DayMath.nextDay(.now, calendar: appState.calendar))
+                            appState.plan(todo, for: DayMath.nextDay(.now, calendar: appState.calendar))
                         }
                         .disabled(isPlanned(on: DayMath.nextDay(.now, calendar: appState.calendar)))
                     }

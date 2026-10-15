@@ -227,8 +227,11 @@ struct TodayView: View {
                 todoProgressLabel
             }
             Group {
-                if appState.todayTodos.isEmpty {
-                    Text("Nothing planned yet. What matters today?")
+                if trayToday.isEmpty {
+                    // Also the drop target when every task today is in progress (in Now).
+                    Text(appState.todayTodos.isEmpty
+                         ? "Nothing planned yet. What matters today?"
+                         : "Everything planned for today is in progress.")
                         .font(.caption).foregroundStyle(.secondary).padding(.vertical, 2)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 } else {
@@ -497,17 +500,7 @@ struct TrayTaskMenu: View {
         }
         Button("Details…") { onOpenDetails?() }
         Menu("Priority") {
-            ForEach([Priority.high, .medium, .low, .none], id: \.self) { level in
-                Button {
-                    appState.setPriority(todo, level)
-                } label: {
-                    if level == todo.priority {
-                        Label(level.displayName, systemImage: "checkmark")
-                    } else {
-                        Text(level.displayName)
-                    }
-                }
-            }
+            PriorityMenuItems(current: todo.priority) { appState.setPriority(todo, $0) }
         }
         if !todo.isCompleted, movable.count > 1 {
             Divider()

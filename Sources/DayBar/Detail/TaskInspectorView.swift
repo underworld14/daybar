@@ -4,11 +4,11 @@ import DayBarCore
 /// The main window's right-hand inspector: live details of the selected task.
 struct TaskInspectorView: View {
     var appState: AppState
+    /// The board's scope: its memoized snapshot resolves the selection without a fetch.
+    let scope: TaskScope?
     let selectedID: UUID?
 
     var body: some View {
-        // Read the revision so a task changed elsewhere (tray, Reminders) re-resolves here.
-        let _ = appState.todosRevision
         if let todo = selectedTodo {
             TaskDetailForm(appState: appState, todo: todo)
                 .id(todo.id)
@@ -22,8 +22,7 @@ struct TaskInspectorView: View {
     }
 
     private var selectedTodo: DailyTodo? {
-        guard let selectedID, let todo = try? appState.store.todo(id: selectedID),
-              todo.status != .dropped else { return nil }
-        return todo
+        guard let selectedID, let scope else { return nil }
+        return appState.boardSnapshot(for: scope).byID[selectedID]
     }
 }

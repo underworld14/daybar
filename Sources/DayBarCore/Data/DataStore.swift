@@ -529,7 +529,11 @@ public final class DataStore {
         // File present but unreadable/corrupt → leave the guard unset and retry next launch.
         guard let snapshot else { return }
 
-        for dto in snapshot.todos { context.insert(dto.makeModel()) }
+        let imported = snapshot.todos.map { $0.makeModel() }
+        for todo in imported { context.insert(todo) }
+        // The one-time backfill may already have run on the then-empty store (an earlier
+        // launch couldn't read the file), so order these here.
+        SortOrderBackfill.assignLegacyOrder(to: imported)
         if let last = snapshot.meta?.lastProcessedDay { meta.lastProcessedDay = last }
         settleLegacyImport(meta: meta, neutralizeLegacyFile: neutralizeLegacyFile)
     }

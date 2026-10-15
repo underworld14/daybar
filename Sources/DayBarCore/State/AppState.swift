@@ -808,24 +808,50 @@ public final class AppState {
         moveTodo(todo, toIndex: 0, in: visible, now: now)
     }
 
-    /// Drag between day sections: re-plan the task for `day` (a push to tomorrow counts as a
-    /// delay; pulling into today revives a carried task), then place it at `index` among
-    /// `visible` — the target day's open tasks as displayed before the drop.
+    /// Drag between day sections: re-plan the task for `day` (see `plan(_:for:)`), then place
+    /// it at `index` among `visible` — the target day's open tasks as displayed before the
+    /// drop. One save.
     public func moveTodo(_ todo: DailyTodo, toDay day: Date, index: Int, in visible: [DailyTodo], now: Date = .now) {
+        let planned = applyPlan(todo, for: day, now: now)
+        let moved = place(todo, at: index, in: visible.filter { $0.id != todo.id })
+        guard planned || moved else { return }
+        commitSave()
+        didMutateTodos(now: now, touched: todo)
+    }
+
+    /// "Move to <day>" with one meaning everywhere (tray drag, sidebar drop, Task menu,
+    /// inspector buttons). The task lands at the bottom of that day.
+    public func plan(_ todo: DailyTodo, for day: Date, now: Date = .now) {
+        guard applyPlan(todo, for: day, now: now) else { return }
+        commitSave()
+        didMutateTodos(now: now, touched: todo)
+    }
+
+    /// Re-plans without saving. Pushing an open, not-started task from today (or earlier) to
+    /// tomorrow counts as a delay; pulling a not-started task into today revives it; an
+    /// in-progress or completed task keeps its status and only changes day.
+    private func applyPlan(_ todo: DailyTodo, for day: Date, now: Date) -> Bool {
         let target = DayMath.startOfDay(day, calendar: calendar)
         let today = DayMath.startOfDay(now, calendar: calendar)
         let current = DayMath.startOfDay(todo.plannedForDate, calendar: calendar)
-        if current != target {
-            if target == DayMath.nextDay(now, calendar: calendar), current <= today {
-                delay(todo, now: now)
-            } else if target == today, !todo.isInProgress {
-                // Revives a carried/snoozed task; an in-progress one keeps its status below.
-                reschedule(todo, to: today, now: now)
+        guard current != target, todo.status != .dropped else { return false }
+        todo.plannedForDate = target
+        if todo.isCompleted {
+            todo.snoozedUntil = nil
+        } else {
+            if target == DayMath.nextDay(now, calendar: calendar), current <= today, !todo.isInProgress {
+                todo.delayCount += 1
+                todo.snoozedUntil = target
+                todo.status = .snoozed
             } else {
-                setPlannedDate(todo, to: target, now: now)
+                todo.snoozedUntil = nil
+                if !todo.isInProgress, target >= today { todo.status = .planned }
             }
+            todo.sortOrder = store.nextBottomSortOrder()
         }
-        moveTodo(todo, toIndex: index, in: visible.filter { $0.id != todo.id }, now: now)
+        markRemindersTodoLocallyModified(todo, now: now)
+        remindersSync.enqueuePush(for: todo)
+        return true
     }
 
     public func setPriority(_ todo: DailyTodo, _ priority: Priority, now: Date = .now) {

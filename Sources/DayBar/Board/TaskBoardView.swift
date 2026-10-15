@@ -17,6 +17,9 @@ struct TaskBoardView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.undoManager) private var undoManager
     @Environment(TaskDragCoordinator.self) private var dragCoordinator: TaskDragCoordinator?
+    /// `.key` only while the main window is the key window — menu commands must not touch a
+    /// hidden selection while the user types in the tray or a sheet.
+    @Environment(\.controlActiveState) private var controlActiveState
 
     @State private var viewMode: TasksViewMode = .list
     @State private var todoPendingDelete: DailyTodo?
@@ -62,7 +65,8 @@ struct TaskBoardView: View {
             addFocused = true
         }
         .onChange(of: appState.windowCommand) { _, request in
-            if let request { perform(request.command, snapshot: appState.boardSnapshot(for: scope)) }
+            guard let request, controlActiveState == .key else { return }
+            perform(request.command, snapshot: appState.boardSnapshot(for: scope))
         }
         .onChange(of: snapshot.orderedIDs) { _, ids in
             // A task that left this scope (dropped, moved, deleted) can't stay selected.
@@ -316,9 +320,9 @@ struct TaskBoardView: View {
         case .setPriority(let priority):
             appState.setPriority(todo, priority)
         case .moveSelectedToToday:
-            appState.setPlannedDate(todo, to: .now)
+            withThemeAnimation(.reorder) { appState.plan(todo, for: .now) }
         case .moveSelectedToTomorrow:
-            appState.setPlannedDate(todo, to: DayMath.nextDay(.now, calendar: appState.calendar))
+            withThemeAnimation(.reorder) { appState.plan(todo, for: DayMath.nextDay(.now, calendar: appState.calendar)) }
         case .dropSelected:
             dropTask(todo, snapshot: snapshot)
         case .toggleInspector:

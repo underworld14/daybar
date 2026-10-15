@@ -14,14 +14,14 @@ struct QuickAddField: View {
 
     @Environment(\.colorSchemeContrast) private var contrast
 
-    private var parsed: QuickAddResult? { QuickAddParser.parse(text, projects: projects) }
-
     /// The day the task will land on: typed syntax wins over the chip.
-    private var effectiveTomorrow: Bool {
+    private func effectiveTomorrow(_ parsed: QuickAddResult?) -> Bool {
         parsed?.day.map { $0 == .tomorrow } ?? addForTomorrow
     }
 
     var body: some View {
+        // Parsed once per render and handed to the pieces that need it.
+        let parsed = QuickAddParser.parse(text, projects: projects)
         VStack(alignment: .leading, spacing: ThemeMetrics.spacingS) {
             HStack(spacing: ThemeMetrics.spacingM) {
                 Button(action: onActivate) {
@@ -50,7 +50,7 @@ struct QuickAddField: View {
                     }
                 }
 
-                dayChip
+                dayChip(parsed)
 
                 if parsed != nil {
                     Button(action: onSubmit) {
@@ -88,12 +88,13 @@ struct QuickAddField: View {
     }
 
     /// Today/Tomorrow toggle. Shows the typed day (tinted) when the syntax overrides it.
-    private var dayChip: some View {
+    private func dayChip(_ parsed: QuickAddResult?) -> some View {
         let overridden = parsed?.day != nil
+        let tomorrow = effectiveTomorrow(parsed)
         return Button {
             addForTomorrow.toggle()
         } label: {
-            Text(effectiveTomorrow ? "Tomorrow" : "Today")
+            Text(tomorrow ? "Tomorrow" : "Today")
                 .font(.caption.weight(.medium))
                 .padding(.horizontal, 7)
                 .padding(.vertical, 2)
@@ -103,7 +104,7 @@ struct QuickAddField: View {
         .buttonStyle(.plain)
         .disabled(overridden)
         .help(overridden ? "Set by what you typed" : "Click to switch between today and tomorrow")
-        .accessibilityLabel("Plan for \(effectiveTomorrow ? "tomorrow" : "today")")
+        .accessibilityLabel("Plan for \(tomorrow ? "tomorrow" : "today")")
     }
 
     private func tokenChips(_ tokens: [QuickAddToken]) -> some View {

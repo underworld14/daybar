@@ -166,4 +166,34 @@ final class TodoSortOrderTests: XCTestCase {
         XCTAssertEqual(b.sortOrder, original)
         XCTAssertEqual(todayTitles, ["A", "B", "C"])
     }
+
+    func testPlanHasOneMeaningEverywhere() {
+        let tomorrow = DayMath.nextDay(now, calendar: cal)
+        let yesterday = cal.date(byAdding: .day, value: -1, to: now)!
+        let carried = add("Carried", day: yesterday)
+        let open = add("Open")
+        let started = add("Started")
+        state.startTodo(started, now: now)
+        state.refresh(now: now)
+
+        state.plan(carried, for: now, now: now)
+        state.plan(open, for: tomorrow, now: now)
+        state.plan(started, for: tomorrow, now: now)
+
+        XCTAssertEqual(carried.status, .planned, "pulled into today: revived")
+        XCTAssertEqual(open.delayCount, 1, "pushed to tomorrow: counts as a delay")
+        XCTAssertEqual(open.status, .snoozed)
+        XCTAssertTrue(started.isInProgress, "in progress keeps its status")
+        XCTAssertEqual(started.delayCount, 0)
+    }
+
+    func testCrossDayDragSavesOnce() {
+        let tomorrow = DayMath.nextDay(now, calendar: cal)
+        let moved = add("Moved")
+        let before = state.todosRevision
+
+        state.moveTodo(moved, toDay: tomorrow, index: 0, in: state.tomorrowTodos, now: now)
+
+        XCTAssertEqual(state.todosRevision, before + 1)
+    }
 }

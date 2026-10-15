@@ -477,4 +477,17 @@ final class PersistenceTests: XCTestCase {
         XCTAssertEqual(logs.count, 2)
         XCTAssertEqual(Set(logs.map(\.moodTag)), [.happy, .tired])
     }
+
+    func testRetriedLegacyImportStillGetsAnOrder() throws {
+        let store = DataStore(inMemory: true) // backfill already ran on the empty store
+        let today = Calendar.current.startOfDay(for: now)
+        let snapshot = StoreSnapshotDTO(todos: [
+            TodoDTO(DailyTodo(title: "low", createdDate: now, plannedForDate: today, originalPlannedDate: today, priority: .low)),
+            TodoDTO(DailyTodo(title: "high", createdDate: now.addingTimeInterval(1), plannedForDate: today, originalPlannedDate: today, priority: .high)),
+        ])
+
+        store.performLegacyImport(snapshot: snapshot, legacyFileExists: true)
+
+        XCTAssertEqual(try store.todos(on: now).map(\.title), ["high", "low"])
+    }
 }

@@ -30,7 +30,9 @@ struct TaskDropZone: ViewModifier {
 
     @ViewBuilder
     private var indicator: some View {
-        if let coordinator, coordinator.activeZone == zoneID, let index = coordinator.insertionIndex,
+        // No line where there is no manual order (Done): the column highlight is enough.
+        if reorderableCount > 0,
+           let coordinator, coordinator.activeZone == zoneID, let index = coordinator.insertionIndex,
            let y = DropInsertionMath.indicatorY(for: index, rowFrames: orderedFrames) {
             InsertionIndicator()
                 .offset(y: y - 3.5)
