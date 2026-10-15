@@ -266,9 +266,14 @@ public enum PersistencePaths {
             ?? FileManager.default.temporaryDirectory
     }
 
-    /// `~/Library/Application Support/DayBar/`
+    /// `~/Library/Application Support/DayBar/`, or `$DAYBAR_DATA_DIR` when set — a dev
+    /// affordance so a debug build can run against a throwaway store and notes folder
+    /// without touching (or schema-migrating) the live data.
     public static var dayBarDirectory: URL {
-        applicationSupportDirectory.appendingPathComponent("DayBar", isDirectory: true)
+        if let override = ProcessInfo.processInfo.environment["DAYBAR_DATA_DIR"], !override.isEmpty {
+            return URL(fileURLWithPath: (override as NSString).expandingTildeInPath, isDirectory: true)
+        }
+        return applicationSupportDirectory.appendingPathComponent("DayBar", isDirectory: true)
     }
 
     /// Pinned SwiftData store: `…/DayBar/daybar.store`
@@ -299,6 +304,11 @@ public enum PersistencePaths {
         applicationSupport: URL? = nil,
         dayBarDirectory overrideDayBar: URL? = nil
     ) -> Bool {
+        // A `DAYBAR_DATA_DIR` dev store never adopts the real legacy `default.store`.
+        if applicationSupport == nil, overrideDayBar == nil,
+           ProcessInfo.processInfo.environment["DAYBAR_DATA_DIR"]?.isEmpty == false {
+            return false
+        }
         let appSupport = applicationSupport ?? applicationSupportDirectory
         let dayBar = overrideDayBar ?? appSupport.appendingPathComponent("DayBar", isDirectory: true)
         let destination = dayBar.appendingPathComponent("daybar.store")

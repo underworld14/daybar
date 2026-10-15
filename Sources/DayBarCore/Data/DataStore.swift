@@ -160,6 +160,23 @@ public final class DataStore {
         try context.fetch(FetchDescriptor<DailyTodo>(sortBy: [SortDescriptor(\.createdDate)]))
     }
 
+    /// Incomplete, non-dropped todos across every day (All Tasks + project counts).
+    public func openTodos() throws -> [DailyTodo] {
+        let dropped = TodoStatus.dropped.rawValue
+        let predicate = #Predicate<DailyTodo> { todo in
+            todo.completedDate == nil && todo.statusRaw != dropped
+        }
+        return try context.fetch(FetchDescriptor(predicate: predicate, sortBy: [SortDescriptor(\.createdDate)]))
+    }
+
+    public func todo(id: UUID) throws -> DailyTodo? {
+        let target = id
+        let predicate = #Predicate<DailyTodo> { $0.id == target }
+        var descriptor = FetchDescriptor(predicate: predicate)
+        descriptor.fetchLimit = 1
+        return try context.fetch(descriptor).first
+    }
+
     public func todo(externalIdentifier: String) throws -> DailyTodo? {
         let id = externalIdentifier
         let predicate = #Predicate<DailyTodo> { $0.externalIdentifier == id }

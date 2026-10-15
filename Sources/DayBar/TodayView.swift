@@ -6,6 +6,8 @@ import DayBarCore
 /// control strip. Multi-add quick-add (Return adds and keeps focus) is the morning ritual.
 struct TodayView: View {
     @Environment(AppState.self) private var appState
+    /// Present when hosted in the menu-bar panel, which sizes itself from these measurements.
+    @Environment(TrayLayoutModel.self) private var trayLayout: TrayLayoutModel?
 
     @State private var newTitle = ""
     @FocusState private var addFocused: Bool
@@ -57,14 +59,23 @@ struct TodayView: View {
                     if !appState.carriedTodos.isEmpty { carriedSection }
                 }
                 .padding(.vertical, 2)
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+                    trayLayout?.setContentHeight(height)
+                }
             }
             .frame(maxHeight: .infinity)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+                trayLayout?.setViewportHeight(height)
+            }
             Divider()
             LofiRadioStrip()
             PomodoroStrip(appState: appState)
         }
         .padding(14)
         .frame(width: 360)
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+            trayLayout?.setRootHeight(height)
+        }
         .onAppear {
             appState.refresh()
             DispatchQueue.main.async { claimQuickAddFocus() }
@@ -546,8 +557,8 @@ struct TodoRow: View {
 
     @ViewBuilder
     private var detailIndicator: some View {
-        let items = appState.checklistItems(for: todo)
-        let hasChecklist = !items.isEmpty
+        let progress = appState.checklistProgress[todo.id]
+        let hasChecklist = !(progress?.isEmpty ?? true)
         let hasNotes = todo.hasNotes
         if hasNotes || hasChecklist {
             Button {
@@ -557,9 +568,8 @@ struct TodoRow: View {
                     if hasNotes {
                         Image(systemName: "note.text")
                     }
-                    if hasChecklist {
-                        let done = items.filter(\.isCompleted).count
-                        Text("\(done)/\(items.count)")
+                    if let progress, hasChecklist {
+                        Text("\(progress.done)/\(progress.total)")
                             .font(.caption2.monospacedDigit())
                     }
                 }

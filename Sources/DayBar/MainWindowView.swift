@@ -22,6 +22,8 @@ struct MainWindowView: View {
     @State private var showNewFolderSheet = false
     @State private var pendingFolderRename: NotesStore.Folder?
     @State private var folderPendingDelete: NotesStore.Folder?
+    /// Cached so the sidebar doesn't hit the disk on every render.
+    @State private var folders: [NotesStore.Folder] = []
 
     var body: some View {
         NavigationSplitView {
@@ -31,7 +33,10 @@ struct MainWindowView: View {
         } detail: {
             detail
         }
-        .onAppear { appState.refresh() }
+        .onAppear {
+            appState.refresh()
+            reloadFolders()
+        }
         .onChange(of: appState.projects) { _, projects in
             // A deleted project must not leave a dead selection.
             if case .project(let id) = selection, !projects.contains(where: { $0.id == id }) {
@@ -62,6 +67,7 @@ struct MainWindowView: View {
                 initialText: ""
             ) { name in
                 _ = try? appState.notes.createFolder(named: name)
+                reloadFolders()
             }
         }
         .alert(
@@ -99,7 +105,7 @@ struct MainWindowView: View {
                             Label(project.name, systemImage: project.symbolName)
                                 .lineLimit(1)
                             Spacer(minLength: 4)
-                            let count = incompleteProjectCount(project.id)
+                            let count = appState.openTaskCount(forProject: project.id)
                             if count > 0 {
                                 Text("\(count)")
                                     .font(.caption2.monospacedDigit())
@@ -166,6 +172,7 @@ struct MainWindowView: View {
                     initialText: folder.name
                 ) { name in
                     _ = try? appState.notes.renameFolder(folder.url, to: name)
+                    reloadFolders()
                 }
             }
         }
@@ -179,6 +186,7 @@ struct MainWindowView: View {
             Button("Delete Folder", role: .destructive) {
                 if let folder = folderPendingDelete {
                     try? appState.notes.trash(folder.url)
+                    reloadFolders()
                 }
                 folderPendingDelete = nil
             }
@@ -188,12 +196,8 @@ struct MainWindowView: View {
         }
     }
 
-    private var folders: [NotesStore.Folder] {
-        (try? appState.notes.folders()) ?? []
-    }
-
-    private func incompleteProjectCount(_ id: UUID) -> Int {
-        appState.windowTodos(for: .project(id)).filter { $0.completedDate == nil }.count
+    private func reloadFolders() {
+        folders = (try? appState.notes.folders()) ?? []
     }
 
     // MARK: - Detail

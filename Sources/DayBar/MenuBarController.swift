@@ -43,6 +43,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
     private var mainWindow: NSWindow?
     private let appearanceCoordinator = SystemAppearanceCoordinator()
     private let panelWidth: CGFloat = 360
+    /// Measured tray content heights; the panel sizes itself from these.
+    private let trayLayout = TrayLayoutModel()
+    /// Height the panel is currently animating toward (suppresses re-entrant resizes).
+    private var panelResizeTarget: CGFloat?
+    /// Bumped per resize animation; a superseded animation's completion must not re-trigger.
+    private var panelResizeGeneration = 0
+    private var panelShownAt: Date?
 
     /// Posted by the tray gear menu ("Open DayBar…") — AppKit-owned entry point.
     static let openMainWindowNotification = Notification.Name("DayBar.openMainWindow")
@@ -53,6 +60,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
             appState = AppState(store: DataStore())
         }
         appState.notifications.onAuthorizationGranted = { [weak self] in self?.appState.refresh() }
+        #if DEBUG
+        DebugDemoSeeder.seedIfRequested(appState)
+        #endif
         UNUserNotificationCenter.current().delegate = self
         appState.notifications.requestAuthorization()
         setupStatusItem()
@@ -153,8 +163,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
     // MARK: - Panel
 
     private func setupPanel() {
-        let hosting = NSHostingView(rootView: TodayView().environment(appState))
+        let hosting = NSHostingView(rootView: TodayView().environment(appState).environment(trayLayout))
         hosting.translatesAutoresizingMaskIntoConstraints = false
+        // The panel is sized explicitly from measured content (`trayLayout`); don't let the
+        // hosting view's ideal/min size constraints fight those frame changes.
+        hosting.sizingOptions = []
         let contentSize = NSSize(width: panelWidth, height: desiredPanelHeight())
 
         // Frosted, rounded background so the panel reads like a native menu-bar popover
@@ -200,14 +213,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
         trackPanelHeightUpdates()
     }
 
-    /// Resize the open panel when habit/task counts change so adding/removing rows
-    /// doesn't force a ScrollView until the next remount. Self-re-arms like `trackStatusUpdates()`.
+    /// Resize the open panel whenever the tray's measured content changes, so adding or
+    /// completing rows grows/shrinks it smoothly instead of forcing a scroll. Self-re-arms
+    /// like `trackStatusUpdates()`.
     private func trackPanelHeightUpdates() {
         withObservationTracking {
-            _ = appState.totalHabitsTodayCount
-            _ = appState.totalTodayCount
-            _ = appState.tomorrowTodos.count
-            _ = appState.carriedTodos.count
+            _ = trayLayout.rootHeight
+            _ = trayLayout.viewportHeight
+            _ = trayLayout.contentHeight
         } onChange: { [weak self] in
             Task { @MainActor in
                 self?.updatePanelHeightIfNeeded()
@@ -216,13 +229,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
         }
     }
 
-    /// Apply `desiredPanelHeight()` only while the panel is visible (no thrash when hidden).
+    /// The panel height to use now: measured content when available, else the estimate.
+    private func targetPanelHeight() -> CGFloat {
+        let screenHeight = (statusItem?.button?.window?.screen ?? NSScreen.main)?.visibleFrame.height ?? 800
+        if let measured = trayLayout.desiredHeight(screenHeight: screenHeight) {
+            return CGFloat(measured)
+        }
+        return desiredPanelHeight()
+    }
+
+    /// Apply the target height only while the panel is visible (no thrash when hidden).
+    /// Animates top-anchored under the status item; snaps right after opening and under
+    /// Reduce Motion.
     private func updatePanelHeightIfNeeded() {
         guard panel.isVisible else { return }
-        let height = desiredPanelHeight()
+        let height = targetPanelHeight()
         guard abs(panel.frame.height - height) > 0.5 else { return }
-        panel.setContentSize(NSSize(width: panelWidth, height: height))
-        positionPanel()
+        if let target = panelResizeTarget, abs(target - height) <= 0.5 { return }
+        let frame = panelFrame(forHeight: height)
+        let justShown = panelShownAt.map { Date().timeIntervalSince($0) < 0.3 } ?? true
+        panelResizeGeneration &+= 1
+        if justShown || NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            panelResizeTarget = nil
+            panel.setFrame(frame, display: true)
+            return
+        }
+        let generation = panelResizeGeneration
+        panelResizeTarget = height
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.18
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            panel.animator().setFrame(frame, display: true)
+        } completionHandler: { [weak self] in
+            MainActor.assumeIsolated {
+                // A newer resize superseded this one; it owns the follow-up check.
+                guard let self, self.panelResizeGeneration == generation else { return }
+                self.panelResizeTarget = nil
+                self.updatePanelHeightIfNeeded()
+            }
+        }
     }
 
     /// A stretchable rounded-rect mask so the visual-effect view rounds cleanly — avoids the
@@ -281,8 +326,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
         appearanceCoordinator.refresh()
         appState.refresh()
         appState.quickAddFocusSignal += 1
-        panel.setContentSize(NSSize(width: panelWidth, height: desiredPanelHeight()))
+        panelResizeTarget = nil
+        panel.setContentSize(NSSize(width: panelWidth, height: targetPanelHeight()))
         positionPanel()
+        panelShownAt = Date()
         NSApp.activate(ignoringOtherApps: true)
         panel.makeKeyAndOrderFront(nil)
         if let monitor = outsideClickMonitor {
@@ -303,10 +350,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
     }
 
     private func positionPanel() {
-        guard let button = statusItem.button, let buttonWindow = button.window else { return }
+        panel.setFrame(panelFrame(forHeight: panel.frame.height), display: true)
+    }
+
+    /// Frame for a panel of the given height, centered under the status item and kept
+    /// inside the visible desktop (top edge stays put as the height changes).
+    private func panelFrame(forHeight height: CGFloat) -> NSRect {
+        let panelSize = NSSize(width: panelWidth, height: height)
+        guard let button = statusItem.button, let buttonWindow = button.window else {
+            return NSRect(origin: panel.frame.origin, size: panelSize)
+        }
         let inWindow = button.convert(button.bounds, to: nil)
         let buttonRect = buttonWindow.convertToScreen(inWindow)
-        let panelSize = panel.frame.size
         let margin: CGFloat = 8
         let gapBelowButton: CGFloat = 8
 
@@ -324,7 +379,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
             y = min(y, maxOriginY)
             y = max(y, minOriginY)
         }
-        panel.setFrameOrigin(NSPoint(x: x, y: y))
+        return NSRect(x: x, y: y, width: panelSize.width, height: panelSize.height)
     }
 
     // MARK: - Main window
