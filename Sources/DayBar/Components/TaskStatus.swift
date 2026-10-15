@@ -5,12 +5,10 @@ enum TaskStatus: Equatable {
     case toDo, inProgress, done
 
     init(_ todo: DailyTodo) {
-        if todo.isCompleted {
-            self = .done
-        } else if todo.isInProgress {
-            self = .inProgress
-        } else {
-            self = .toDo
+        switch todo.boardColumn {
+        case .done: self = .done
+        case .inProgress: self = .inProgress
+        case .toDo: self = .toDo
         }
     }
 

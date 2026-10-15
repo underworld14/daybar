@@ -23,9 +23,9 @@ struct TodayView: View {
         VStack(alignment: .leading, spacing: 10) {
             header
             quickAdd
-            if TraySectionPolicy.showsNowSection(inProgressCount: appState.nowTodos.count) {
-                NowCard(appState: appState, onOpenDetails: { detailTodo = $0 })
-            }
+            // Always mounted (an empty card has no height) so the first started task shows
+            // up in place inside the long-lived panel host, like the Tomorrow section.
+            NowCard(appState: appState, onOpenDetails: { detailTodo = $0 })
             if appState.totalTodayCount > 0 { progressBar }
             if let entry = appState.focusStreakEntry {
                 DayscapeStrip(

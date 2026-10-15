@@ -16,9 +16,4 @@ final class TraySectionPolicyTests: XCTestCase {
         XCTAssertTrue(TraySectionPolicy.showsTomorrowSection(todoCount: 1))
         XCTAssertTrue(TraySectionPolicy.showsTomorrowSection(todoCount: 3))
     }
-
-    func testNowSectionStaysMountedEvenWhenEmpty() {
-        XCTAssertTrue(TraySectionPolicy.showsNowSection(inProgressCount: 0))
-        XCTAssertTrue(TraySectionPolicy.showsNowSection(inProgressCount: 3))
-    }
 }

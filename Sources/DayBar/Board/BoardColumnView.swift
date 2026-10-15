@@ -40,7 +40,9 @@ struct BoardColumnView: View {
             }
 
             ScrollView(.vertical) {
-                LazyVStack(spacing: 8) {
+                // Not lazy: every card must report its frame so drop positions map to the
+                // right task even when the column is scrolled (columns are capped at 50 done).
+                VStack(spacing: 8) {
                     if todos.isEmpty {
                         Text("Nothing here.")
                             .font(.caption)

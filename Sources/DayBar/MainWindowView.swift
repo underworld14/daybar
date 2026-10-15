@@ -49,6 +49,10 @@ struct MainWindowView: View {
             appState.refresh()
             reloadFolders()
         }
+        // Folders can change outside the app (Finder, sync): re-read when a window activates.
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
+            reloadFolders()
+        }
         .onChange(of: appState.projects) { _, projects in
             // A deleted project must not leave a dead selection.
             if case .project(let id) = selection, !projects.contains(where: { $0.id == id }) {

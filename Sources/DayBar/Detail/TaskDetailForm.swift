@@ -12,6 +12,11 @@ struct TaskDetailForm: View {
 
     @State private var title = ""
     @State private var notes = ""
+    /// What the fields held when last loaded or saved. Only text that differs from these was
+    /// typed here, so only that is ever written back — a newer edit made elsewhere (tray,
+    /// Reminders pull) is never overwritten by a stale copy.
+    @State private var loadedTitle = ""
+    @State private var loadedNotes = ""
     @State private var newItemTitle = ""
     @State private var items: [TodoChecklistItem] = []
     @State private var showsPreview = false
@@ -84,6 +89,8 @@ struct TaskDetailForm: View {
         .onAppear(perform: load)
         .onDisappear(perform: flush)
         .onChange(of: notes) { _, _ in scheduleNotesSave() }
+        .onChange(of: todo.title) { _, newValue in adoptExternalTitle(newValue) }
+        .onChange(of: todo.notes) { _, newValue in adoptExternalNotes(newValue) }
         .onChange(of: appState.checklistProgress[todo.id]) { _, _ in reloadItems() }
     }
 
@@ -172,7 +179,7 @@ struct TaskDetailForm: View {
 
     private var statusBinding: Binding<BoardColumn> {
         Binding(
-            get: { todo.isCompleted ? .done : (todo.isInProgress ? .inProgress : .toDo) },
+            get: { todo.boardColumn },
             set: { column in withThemeAnimation(.columnMove) { appState.setBoardStatus(column, for: todo) } }
         )
     }
@@ -200,8 +207,26 @@ struct TaskDetailForm: View {
 
     private func load() {
         title = todo.title
+        loadedTitle = title
         notes = todo.notes
+        loadedNotes = notes
         reloadItems()
+    }
+
+    /// The task was renamed elsewhere: show it, unless the user is mid-edit here.
+    private func adoptExternalTitle(_ newValue: String) {
+        guard !titleFocused, title == loadedTitle, newValue != title else { return }
+        title = newValue
+        loadedTitle = newValue
+    }
+
+    /// The description changed elsewhere: show it, unless there are unsaved edits here. Our
+    /// own save comes back trimmed; that echo must not rewrite the editor under the cursor.
+    private func adoptExternalNotes(_ newValue: String) {
+        guard notes == loadedNotes,
+              newValue != notes.trimmingCharacters(in: .whitespacesAndNewlines) else { return }
+        notes = newValue
+        loadedNotes = newValue
     }
 
     private func reloadItems() {
@@ -209,16 +234,26 @@ struct TaskDetailForm: View {
     }
 
     private func commitTitle() {
+        guard title != loadedTitle else { return }
         appState.rename(todo, to: title)
+        title = todo.title
+        loadedTitle = title
     }
 
     private func scheduleNotesSave() {
         notesSave?.cancel()
+        guard notes != loadedNotes else { return }
         notesSave = Task {
             try? await Task.sleep(for: .milliseconds(500))
             guard !Task.isCancelled else { return }
-            appState.updateNotes(todo, to: notes)
+            saveNotes()
         }
+    }
+
+    private func saveNotes() {
+        guard notes != loadedNotes else { return }
+        appState.updateNotes(todo, to: notes)
+        loadedNotes = notes
     }
 
     /// Saves pending edits when the form goes away (task switch, sheet close, window close).
@@ -226,8 +261,8 @@ struct TaskDetailForm: View {
         notesSave?.cancel()
         // A permanently deleted task must not be touched (its backing data is gone).
         guard !todo.isDeleted, todo.modelContext != nil else { return }
-        appState.rename(todo, to: title)
-        appState.updateNotes(todo, to: notes)
+        commitTitle()
+        saveNotes()
     }
 
     private func addItem() {

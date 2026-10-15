@@ -93,6 +93,12 @@ public extension DailyTodo {
 
     var isInProgress: Bool { status == .inProgress }
 
+    /// The kanban column this task sits in (derived, never stored).
+    var boardColumn: BoardColumn {
+        if isCompleted { return .done }
+        return isInProgress ? .inProgress : .toDo
+    }
+
     var hasNotes: Bool { !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
     /// Days since the task was first planned (clamped at 0), computed live from the

@@ -62,6 +62,9 @@ public final class AppState {
     public private(set) var todayTodos: [DailyTodo] = []
     public private(set) var tomorrowTodos: [DailyTodo] = []
     public private(set) var carriedTodos: [DailyTodo] = []
+    /// Tasks being worked on right now (today + carried over), in manual order — the tray's
+    /// "Now" card. Rebuilt with the lists.
+    public private(set) var nowTodos: [DailyTodo] = []
     /// Bumped every time the task lists reload. Board snapshots and per-project counts are
     /// memoized against it, and views that read it re-render after any task change.
     public private(set) var todosRevision = 0
@@ -229,11 +232,6 @@ public final class AppState {
         carriedTodos.map { $0.escalationTier(thresholds: thresholds, calendar: calendar) }.max() ?? .onPlan
     }
 
-    /// Tasks being worked on right now (today + carried over), in manual order — the tray's
-    /// "Now" card.
-    public var nowTodos: [DailyTodo] {
-        (todayTodos + carriedTodos).filter(\.isInProgress).sorted(by: TodoOrdering.manual)
-    }
 
     /// The task bound to the focus session, if it still exists.
     public var focusTodo: DailyTodo? {
@@ -257,6 +255,7 @@ public final class AppState {
         habitEngine.materializeIfNeeded(now: now)
         lastFullRefreshDay = DayMath.startOfDay(now, calendar: calendar)
         reloadTodoLists(now: now)
+        rebuildChecklistProgress()
         projects = (try? store.allProjects()) ?? []
         let rawHabits = (try? store.todayHabits(on: now, calendar: calendar)) ?? []
         rebuildHabitCaches(rawHabits: rawHabits, now: now)
@@ -286,7 +285,7 @@ public final class AppState {
         let tomorrow = DayMath.nextDay(now, calendar: calendar)
         tomorrowTodos = (try? store.todos(on: tomorrow, calendar: calendar)) ?? []
         carriedTodos = (try? store.overdueIncompleteTodos(before: now, calendar: calendar)) ?? []
-        rebuildChecklistProgress()
+        nowTodos = (todayTodos + carriedTodos).filter(\.isInProgress).sorted(by: TodoOrdering.manual)
         todosRevision &+= 1
     }
 
@@ -319,6 +318,7 @@ public final class AppState {
         if touched?.source == .reminders {
             scheduleRemindersSync(now: now)
         }
+        maybePromptEndOfDayReview(now: now)
     }
 
     private func didMutateChecklist(now: Date) {
@@ -531,21 +531,14 @@ public final class AppState {
         in columnTodos: [DailyTodo],
         now: Date = .now
     ) {
-        let current: BoardColumn = todo.isCompleted ? .done : (todo.isInProgress ? .inProgress : .toDo)
-        if current != column {
+        let statusChanged = todo.boardColumn != column
+        if statusChanged {
             applyBoardStatus(column, to: todo, now: now)
             markRemindersTodoLocallyModified(todo, now: now)
             remindersSync.enqueuePush(for: todo)
         }
-        if column != .done {
-            func slots() -> [ReorderSlot] { columnTodos.map { ReorderSlot(id: $0.id, sortOrder: $0.sortOrder) } }
-            var placement = TodoReorderPlanner.placement(moving: todo.id, toIndex: index, within: slots())
-            if placement == .needsRenormalize {
-                store.renormalizeTodoSortOrders()
-                placement = TodoReorderPlanner.placement(moving: todo.id, toIndex: index, within: slots())
-            }
-            if case .value(let value) = placement { todo.sortOrder = value }
-        }
+        let moved = column != .done && place(todo, at: index, in: columnTodos)
+        guard statusChanged || moved else { return }
         commitSave()
         didMutateTodos(now: now, touched: todo)
     }
@@ -757,9 +750,11 @@ public final class AppState {
 
     /// Permanently removes a task (main-window context menu; the tray only ever drops).
     public func deleteTodo(_ todo: DailyTodo, now: Date = .now) {
+        let wasReminders = todo.source == .reminders
         store.delete(todo)
         commitSave()
         didMutateTodos(now: now)
+        if wasReminders { scheduleRemindersSync(now: now) }
     }
 
     /// Brings a dropped task back exactly where it was (its `sortOrder` never changed).
@@ -778,6 +773,15 @@ public final class AppState {
     /// order; SwiftUI `onMove` index semantics). Writes only the moved task unless the gap
     /// between its new neighbours is exhausted, in which case all orders are re-spaced first.
     public func moveTodo(_ todo: DailyTodo, toIndex index: Int, in visible: [DailyTodo], now: Date = .now) {
+        guard place(todo, at: index, in: visible) else { return }
+        commitSave()
+        didMutateTodos(now: now)
+    }
+
+    /// Writes `todo.sortOrder` for position `index` in `visible` (re-spacing every order first
+    /// if the gap is exhausted). Returns whether anything changed; does not save.
+    @discardableResult
+    private func place(_ todo: DailyTodo, at index: Int, in visible: [DailyTodo]) -> Bool {
         func slots() -> [ReorderSlot] { visible.map { ReorderSlot(id: $0.id, sortOrder: $0.sortOrder) } }
         var placement = TodoReorderPlanner.placement(moving: todo.id, toIndex: index, within: slots())
         var renormalized = false
@@ -788,11 +792,9 @@ public final class AppState {
         }
         if case .value(let value) = placement {
             todo.sortOrder = value
-        } else if !renormalized {
-            return
+            return true
         }
-        commitSave()
-        didMutateTodos(now: now)
+        return renormalized
     }
 
     /// Keyboard/menu move: `offset` rows up (negative) or down (positive) within `visible`.
@@ -816,7 +818,8 @@ public final class AppState {
         if current != target {
             if target == DayMath.nextDay(now, calendar: calendar), current <= today {
                 delay(todo, now: now)
-            } else if target == today {
+            } else if target == today, !todo.isInProgress {
+                // Revives a carried/snoozed task; an in-progress one keeps its status below.
                 reschedule(todo, to: today, now: now)
             } else {
                 setPlannedDate(todo, to: target, now: now)

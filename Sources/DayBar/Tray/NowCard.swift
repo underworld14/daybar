@@ -7,19 +7,17 @@ struct NowCard: View {
     var appState: AppState
     var onOpenDetails: (DailyTodo) -> Void
 
-    private let visibleLimit = 2
-
     var body: some View {
+        // Every in-progress task lives here (Today/Carried leave them out), so none are capped.
         let tasks = appState.nowTodos
         VStack(alignment: .leading, spacing: ThemeMetrics.spacingXS) {
             if !tasks.isEmpty {
                 SectionHeader("Now") {
-                    if tasks.count > visibleLimit {
-                        Text("+\(tasks.count - visibleLimit) more")
-                    }
+                    if tasks.count > 1 { Text("\(tasks.count)") }
                 }
-                ForEach(tasks.prefix(visibleLimit)) { todo in
+                ForEach(tasks) { todo in
                     NowRow(appState: appState, todo: todo, onOpenDetails: { onOpenDetails(todo) })
+                        .id(todo.id)
                 }
             }
         }
@@ -44,6 +42,8 @@ private struct NowRow: View {
     var appState: AppState
     let todo: DailyTodo
     var onOpenDetails: () -> Void
+
+    @Environment(TrayInteractionModel.self) private var interaction: TrayInteractionModel?
 
     private let digitFont = Font.system(.callout, design: .rounded).weight(.semibold).monospacedDigit()
 
@@ -108,6 +108,17 @@ private struct NowRow: View {
                 .help("Start a focus session on this task")
             }
         }
+        .padding(.vertical, 2)
+        .padding(.horizontal, 4)
+        .background {
+            if interaction?.selectedTodoID == todo.id {
+                RoundedRectangle(cornerRadius: ThemeMetrics.rowRadius, style: .continuous)
+                    .fill(ThemeColors.rowSelected)
+            }
+        }
+        .padding(.horizontal, -4)
+        .contentShape(Rectangle())
+        .onHover { hovering in interaction?.hoverChanged(todo.id, hovering: hovering) }
         .contextMenu {
             Button("Focus on This") { appState.startFocus(on: todo) }
             Button("Complete") { appState.toggleComplete(todo) }

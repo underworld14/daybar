@@ -288,15 +288,14 @@ struct TaskBoardView: View {
         switch key {
         case .upArrow, .downArrow:
             guard !todo.isCompleted else { return false }
-            let group = viewMode == .kanban ? snapshot.todos(in: todo.isInProgress ? .inProgress : .toDo) : snapshot.open
+            let group = viewMode == .kanban ? snapshot.todos(in: todo.boardColumn) : snapshot.open
             withThemeAnimation(.reorder) {
                 appState.moveTodo(todo, by: key == .upArrow ? -1 : 1, in: group)
             }
             return true
         case .leftArrow, .rightArrow:
             let columns = BoardColumn.allCases
-            let current = todo.isCompleted ? BoardColumn.done : (todo.isInProgress ? .inProgress : .toDo)
-            guard let index = columns.firstIndex(of: current) else { return false }
+            guard let index = columns.firstIndex(of: todo.boardColumn) else { return false }
             let target = index + (key == .leftArrow ? -1 : 1)
             guard columns.indices.contains(target) else { return true }
             withThemeAnimation(.columnMove) { appState.setBoardStatus(columns[target], for: todo) }

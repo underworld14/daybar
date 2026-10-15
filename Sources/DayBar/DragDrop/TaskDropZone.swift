@@ -31,20 +31,22 @@ struct TaskDropZone: ViewModifier {
     @ViewBuilder
     private var indicator: some View {
         if let coordinator, coordinator.activeZone == zoneID, let index = coordinator.insertionIndex,
-           let y = DropInsertionMath.indicatorY(for: index, rowFrames: orderedFrames.map { ($0.minY, $0.maxY) }) {
+           let y = DropInsertionMath.indicatorY(for: index, rowFrames: orderedFrames) {
             InsertionIndicator()
                 .offset(y: y - 3.5)
                 .transition(.opacity)
         }
     }
 
-    fileprivate var orderedFrames: [CGRect] {
-        orderedIDs.compactMap { rowFrames[$0] }
+    /// One entry per row in display order; `nil` where a row hasn't reported a frame, so
+    /// indices stay aligned with `orderedIDs`.
+    fileprivate var orderedFrames: [DropInsertionMath.RowFrame?] {
+        orderedIDs.map { id in rowFrames[id].map { (Double($0.minY), Double($0.maxY)) } }
     }
 
     fileprivate func index(at y: CGFloat) -> Int {
         let frames = Array(orderedFrames.prefix(reorderableCount))
-        let raw = DropInsertionMath.insertionIndex(locationY: y, rowMidYs: frames.map { $0.midY })
+        let raw = DropInsertionMath.insertionIndex(locationY: Double(y), rowFrames: frames)
         return DropInsertionMath.clamp(raw, toSegmentCount: reorderableCount)
     }
 

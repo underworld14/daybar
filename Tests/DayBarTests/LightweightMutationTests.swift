@@ -95,4 +95,26 @@ final class LightweightMutationTests: XCTestCase {
         XCTAssertEqual(state.openTaskCount(forProject: project.id), 1)
         XCTAssertEqual(state.openTaskCount(forProject: UUID()), 0)
     }
+
+    func testEveningMutationStillPromptsTheReview() {
+        let morning = cal.date(bySettingHour: 9, minute: 0, second: 0, of: now)!
+        let lateEvening = cal.date(bySettingHour: 23, minute: 30, second: 0, of: now)!
+        state.refresh(now: morning)
+        XCTAssertFalse(state.presentEndOfDayReview)
+
+        _ = state.addTodo(title: "Late add", plannedFor: lateEvening, now: lateEvening)
+
+        XCTAssertTrue(state.presentEndOfDayReview)
+    }
+
+    func testDraggingAnInProgressTomorrowTaskIntoTodayKeepsItInProgress() {
+        let tomorrow = DayMath.nextDay(now, calendar: cal)
+        let started = state.addTodo(title: "Started early", plannedFor: tomorrow, now: now)!
+        state.startTodo(started, now: now)
+
+        state.moveTodo(started, toDay: now, index: 0, in: [], now: now)
+
+        XCTAssertTrue(started.isInProgress)
+        XCTAssertEqual(state.nowTodos.map(\.id), [started.id])
+    }
 }
