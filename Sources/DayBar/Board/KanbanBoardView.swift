@@ -7,8 +7,10 @@ struct KanbanBoardView: View {
     let scope: TaskScope
     let snapshot: BoardSnapshot
     let showProjectChip: Bool
-    let onOpenDetails: (DailyTodo) -> Void
+    let selection: UUID?
+    let onSelect: (DailyTodo) -> Void
     let onDelete: (DailyTodo) -> Void
+    let onDrop: (DailyTodo) -> Void
 
     static let minColumnWidth: CGFloat = 220
     private let spacing: CGFloat = 12
@@ -28,8 +30,10 @@ struct KanbanBoardView: View {
                             todos: snapshot.todos(in: column),
                             showProjectChip: showProjectChip,
                             lookup: { snapshot.byID[$0] },
-                            onOpenDetails: onOpenDetails,
-                            onDelete: onDelete
+                            selection: selection,
+                            onSelect: onSelect,
+                            onDelete: onDelete,
+                            onDrop: onDrop
                         )
                         .frame(width: columnWidth)
                     }

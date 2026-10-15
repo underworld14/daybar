@@ -43,6 +43,35 @@ struct DayBarCommands: Commands {
             Button("Close Window") { NSApp.keyWindow?.performClose(nil) }
                 .keyboardShortcut("w")
         }
+        CommandGroup(after: .sidebar) {
+            Button("Show/Hide Inspector") { appState.sendWindowCommand(.toggleInspector) }
+                .keyboardShortcut("i", modifiers: [.command, .option])
+        }
+        CommandMenu("Task") {
+            Button("Complete") { appState.sendWindowCommand(.completeSelected) }
+                .keyboardShortcut("k")
+            Button("Start / Stop") { appState.sendWindowCommand(.toggleStartSelected) }
+                .keyboardShortcut("k", modifiers: [.command, .option])
+            Menu("Priority") {
+                Button("High") { appState.sendWindowCommand(.setPriority(.high)) }
+                    .keyboardShortcut("3")
+                Button("Medium") { appState.sendWindowCommand(.setPriority(.medium)) }
+                    .keyboardShortcut("2")
+                Button("Low") { appState.sendWindowCommand(.setPriority(.low)) }
+                    .keyboardShortcut("1")
+                Button("None") { appState.sendWindowCommand(.setPriority(.none)) }
+                    .keyboardShortcut("0")
+            }
+            Divider()
+            Button("Move to Today") { appState.sendWindowCommand(.moveSelectedToToday) }
+                .keyboardShortcut("t", modifiers: [.command, .control])
+            Button("Move to Tomorrow") { appState.sendWindowCommand(.moveSelectedToTomorrow) }
+                .keyboardShortcut("t", modifiers: [.command, .control, .shift])
+            Divider()
+            // No ⌘⌫ equivalent: it would fire while editing text in the inspector. Plain
+            // Delete drops when the board has focus.
+            Button("Drop") { appState.sendWindowCommand(.dropSelected) }
+        }
         CommandGroup(after: .windowArrangement) {
             Button("Open DayBar Window") {
                 NotificationCenter.default.post(name: AppDelegate.openMainWindowNotification, object: nil)

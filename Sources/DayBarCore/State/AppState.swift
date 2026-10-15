@@ -94,6 +94,8 @@ public final class AppState {
     public var windowAddTaskFocusSignal: Int = 0
     /// Bumped by the File menu (New Note ⌥⌘N) to create + select a new note in the window.
     public var windowNewNoteSignal: Int = 0
+    /// Latest Task-menu command for the main window's board (see `WindowCommand`).
+    public private(set) var windowCommand: WindowCommandRequest?
 
     public private(set) var radioChannels: [SomaFMChannel] = []
     public private(set) var radioSkipChannels: [SomaFMChannel] = []
@@ -139,6 +141,10 @@ public final class AppState {
         refreshRemindersAccessStatus()
         refresh()
         if observeSystemEvents { observeSystem() }
+    }
+
+    public func sendWindowCommand(_ command: WindowCommand) {
+        windowCommand = WindowCommandRequest(command: command)
     }
 
     public func refreshRemindersAccessStatus() {

@@ -16,6 +16,9 @@ struct MainWindowView: View {
     @Environment(AppState.self) private var appState
 
     @State private var selection: SidebarSelection? = .today
+    /// The board's selected task (by id, never a model reference) and the inspector toggle.
+    @State private var selectedTodoID: UUID?
+    @State private var inspectorPresented = false
     @State private var showProjectSheet = false
     @State private var projectSheetMode: ProjectSheetMode = .create
     @State private var projectPendingDelete: Project?
@@ -32,6 +35,13 @@ struct MainWindowView: View {
                 .navigationTitle("DayBar")
         } detail: {
             detail
+                .inspector(isPresented: Binding(
+                    get: { inspectorPresented && isTaskScope },
+                    set: { inspectorPresented = $0 }
+                )) {
+                    TaskInspectorView(appState: appState, selectedID: selectedTodoID)
+                        .inspectorColumnWidth(min: 280, ideal: 320, max: 440)
+                }
         }
         .onAppear {
             appState.refresh()
@@ -42,6 +52,12 @@ struct MainWindowView: View {
             if case .project(let id) = selection, !projects.contains(where: { $0.id == id }) {
                 selection = .today
             }
+        }
+        .onChange(of: selection) { _, _ in
+            selectedTodoID = nil
+        }
+        .onChange(of: appState.windowCommand) { _, request in
+            if request?.command == .toggleInspector, isTaskScope { inspectorPresented.toggle() }
         }
         .onChange(of: appState.windowNewNoteSignal) { _, _ in
             // Route to the notes pane; NotesPaneView itself creates the note.
@@ -202,17 +218,28 @@ struct MainWindowView: View {
 
     // MARK: - Detail
 
+    private func board(_ scope: TaskScope) -> some View {
+        TaskBoardView(scope: scope, selection: $selectedTodoID, inspectorPresented: $inspectorPresented)
+    }
+
+    private var isTaskScope: Bool {
+        switch selection {
+        case .today, .tomorrow, .allTasks, .project: return true
+        case .allNotes, .folder, nil: return false
+        }
+    }
+
     @ViewBuilder
     private var detail: some View {
         switch selection {
         case .today:
-            TaskBoardView(scope: .today).id(SidebarSelection.today)
+            board(.today).id(SidebarSelection.today)
         case .tomorrow:
-            TaskBoardView(scope: .tomorrow).id(SidebarSelection.tomorrow)
+            board(.tomorrow).id(SidebarSelection.tomorrow)
         case .allTasks:
-            TaskBoardView(scope: .allTasks).id(SidebarSelection.allTasks)
+            board(.allTasks).id(SidebarSelection.allTasks)
         case .project(let id):
-            TaskBoardView(scope: .project(id)).id(SidebarSelection.project(id))
+            board(.project(id)).id(SidebarSelection.project(id))
         case .allNotes:
             NotesPaneView(folder: nil).id(SidebarSelection.allNotes)
         case .folder(let url):

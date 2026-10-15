@@ -9,8 +9,10 @@ struct BoardColumnView: View {
     let todos: [DailyTodo]
     let showProjectChip: Bool
     let lookup: (UUID) -> DailyTodo?
-    let onOpenDetails: (DailyTodo) -> Void
+    let selection: UUID?
+    let onSelect: (DailyTodo) -> Void
     let onDelete: (DailyTodo) -> Void
+    let onDrop: (DailyTodo) -> Void
 
     @Environment(AppState.self) private var appState
 
@@ -50,9 +52,12 @@ struct BoardColumnView: View {
                                 appState: appState,
                                 todo: todo,
                                 showProjectChip: showProjectChip,
-                                onOpenDetails: { onOpenDetails(todo) },
+                                isSelected: selection == todo.id,
+                                onOpenDetails: { onSelect(todo) },
+                                onDrop: { onDrop(todo) },
                                 onDelete: { onDelete(todo) }
                             )
+                            .id(todo.id)
                         }
                     }
                 }

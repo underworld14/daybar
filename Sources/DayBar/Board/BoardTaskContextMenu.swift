@@ -6,10 +6,11 @@ struct BoardTaskContextMenu: View {
     var appState: AppState
     let todo: DailyTodo
     let onOpenDetails: () -> Void
+    let onDrop: () -> Void
     let onDelete: () -> Void
 
     var body: some View {
-        Button("Open Details") { onOpenDetails() }
+        Button("Show in Inspector") { onOpenDetails() }
         Divider()
         if todo.isCompleted {
             Button("Reset to To-Do") { withThemeAnimation(.columnMove) { appState.setBoardStatus(.toDo, for: todo) } }
@@ -41,8 +42,16 @@ struct BoardTaskContextMenu: View {
                     Button(project.name) { appState.assign(todo: todo, to: project) }
                 }
             }
+            Button("Move to Today") { appState.setPlannedDate(todo, to: .now) }
+            Button("Move to Tomorrow") {
+                appState.setPlannedDate(todo, to: DayMath.nextDay(.now, calendar: appState.calendar))
+            }
         }
         Divider()
-        Button("Delete…", role: .destructive) { onDelete() }
+        Button("Drop") { onDrop() }
+        // Reminders mirrors would come back on the next pull; Drop syncs instead.
+        if todo.source != .reminders {
+            Button("Delete Permanently…", role: .destructive) { onDelete() }
+        }
     }
 }
