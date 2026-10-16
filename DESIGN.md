@@ -1,49 +1,69 @@
 # DayBar Visual System
 
-## Direction: Midnight Native
+## Direction: Native+ web
 
-Midnight Native combines a near-black editorial canvas with the quiet depth, rounded geometry, and legibility of a native macOS utility. It borrows the reference's atmosphere—grid, glow, technical rhythm, and spatial composition—without copying its interactive cube scene or turning DayBar into a generic AI landing page.
+The landing page should feel like the app it sells. DayBar is a native macOS menu-bar planner, so the
+page uses the Mac's own type, follows the visitor's light or dark setting, and keeps its surfaces quiet.
+Real screenshots and one working piece of the product (the quick-add field) carry the page. Nothing is
+decorated for its own sake.
+
+Dial: ENERGY 2 / RHYTHM 2 / MOTION 1
+
+- ENERGY 2: one bold element (the live quick-add demo in the hero). Everything around it is calm.
+- RHYTHM 2: every section shares the same left edge, heading style and gutter. The composition changes
+  where the content needs it: split hero, two-column ledger, full-bleed board, asymmetric pair.
+- MOTION 1: motion only answers the visitor (focus rings, a 150ms chip change in the demo). No scroll
+  reveals, no ambient animation. Everything stops under `prefers-reduced-motion`.
 
 ## Color
 
-- Canvas: `#07080B`
-- Raised surface: `#10121A`
-- Glass surface: `rgba(18, 20, 29, 0.72)`
-- Primary text: `#F5F5F2`
-- Secondary text: `#A7A9B2`
-- Muted text: `#7C7F89` (5.01:1 against the canvas for small-text accessibility)
-- Hairline: `rgba(255, 255, 255, 0.10)`
-- Soft grid: `rgba(255, 255, 255, 0.035)`
-- DayBar indigo: `#7B82FF`
-- Indigo glow: `rgba(123, 130, 255, 0.24)`
-- Supporting cyan: `#79D7CA`
-- Existing green and amber remain reserved for real product states shown inside screenshots.
+| Token | Light | Dark | Use |
+|---|---|---|---|
+| `--canvas` | `#F6F6F8` | `#1C1C1F` | Page. A cool grey like a macOS window, never cream, never `#111`. |
+| `--surface` | `#FFFFFF` | `#26262A` | Inputs, code, keycaps, the details panel. |
+| `--text` | `#17181C` | `#F2F2F4` | Headings and body. |
+| `--secondary` | `#5B5E69` | `#A6A8B2` | Supporting copy. AA on canvas and surface. |
+| `--hairline` | 10% text | 12% text | Dividers and field borders. |
+| `--ink` | `#4F55E3` | `#8C91FF` | The only accent: priority bars, links, the primary button, focus rings. |
+
+Green, blue and amber appear only inside screenshots, where they are real product states.
 
 ## Typography
 
-Use the native system stack so the page feels at home on macOS and loads without a font dependency. Display headlines use medium weight, very tight tracking, and compact line height. Labels use small uppercase text with generous tracking. Body copy stays comfortably sized and never becomes low-contrast decoration.
+The system stack (`-apple-system`, SF Pro on a Mac) so the page reads like the screenshots next to it and
+loads no font files. Display 600 with tight tracking (-0.022em); body 17px on 1.55 leading, lines under
+65 characters. Monospace appears only for text a person types: quick-add syntax and Terminal commands.
+Sentence case everywhere, no uppercase labels, no eyebrows.
 
-## Geometry and Material
+## Shape
 
-- A 72–80px page grid fades before the footer and never competes with text.
-- Structural surfaces use thin white hairlines, restrained blur, and subtle inset highlights.
-- Corners remain rounded like macOS panels, generally 18–28px.
-- Indigo glow identifies important product areas; it is not sprayed across every card.
-- Lightweight orbital lines echo the reference's spatial language behind real screenshots.
-- Product captures are the only visible surface in their visual column: never place a screenshot inside another card, canvas, frame, or labeled stage.
-- Noise is nearly imperceptible and implemented inline without another asset request.
+- Buttons and inputs: 8px radius. Keycaps and code: 6px.
+- Chips: full pill, the same shape the app uses for its quick-add chips.
+- Window screenshots keep their own macOS corners (alpha masked); strips cropped from inside a window
+  get a 12px radius and a hairline so they read as a cut-out of the panel.
+- Shadow only on whole-window screenshots, because those windows float on macOS too.
+
+## Identity motif
+
+The three priority bars (one, two or three filled in ink). They appear where priority is real: the demo's
+priority chip and the legend that explains them. They never become ornament.
 
 ## Composition
 
-The hero pairs a bold, multiline promise with a direct native screenshot floating over ambient glow. Subsequent sections alternate copy and unframed UI evidence across a numbered technical rail. Installation is a practical sequence, and privacy closes the narrative as a confident statement rather than a generic feature tile.
-
-## Motion
-
-Motion communicates depth: a slow hero drift, subtle glow breathing, and small hover translation on actionable elements. There is no custom cursor and no heavy 3D runtime. All non-essential motion stops under `prefers-reduced-motion`.
+1. Header: logo, Features, Install, GitHub.
+2. Hero, split: headline, one-line lede, the live quick-add field, download. The tray screenshot on the right.
+3. Ledger rows (heading left, content right): manual order with the priority legend, then the Now card and focus.
+4. Full-bleed board screenshot with a short caption above it.
+5. Asymmetric pair: carry-over strip and copy on the left, the end-of-day review on the right.
+6. Keyboard: two lists of real shortcuts, panel and main window.
+7. Install: three numbered steps (a real sequence), the Terminal alternative, update and backup notes.
+8. Privacy: only claims the code supports.
+9. Footer: license, source, appearance switch (Auto, Light, Dark).
 
 ## Boundaries
 
-- Never recolor, distort, or obscure the real DayBar screenshots.
-- Never introduce invented metrics, testimonials, integrations, or platform claims.
-- Avoid neon cyberpunk, excessive glass blur, dense dashboards, or glowing every border.
-- Preserve semantic HTML, keyboard focus, responsive reading order, and static hosting.
+- No em or en dashes in copy. At most one middle dot per line.
+- No grid, glow, orbit, noise, gradient wash or glass.
+- No invented numbers, testimonials, integrations or platform claims.
+- Never recolor, distort or mock up the screenshots. Recapture them from the app (see `.build/qa.sh`).
+- Static hosting: no framework, no external runtime, no font requests.
