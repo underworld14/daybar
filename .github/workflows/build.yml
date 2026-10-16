@@ -1,0 +1,43 @@
+name: Build
+
+# Compiles the Release configuration on the same runner image as release.yml, so a
+# toolchain difference (local Xcode vs. the runner's) shows up before a tag is pushed.
+on:
+  push:
+    branches-ignore:
+      - gh-pages
+    paths-ignore:
+      - "site/**"
+      - "**.md"
+      - ".beads/**"
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Build Release
+        run: |
+          xcodebuild -version
+          xcodebuild -project DayBar.xcodeproj -scheme DayBar \
+            -configuration Release \
+            -destination 'platform=macOS' \
+            -derivedDataPath build/DerivedData \
+            build
