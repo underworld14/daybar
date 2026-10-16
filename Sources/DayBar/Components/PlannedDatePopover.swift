@@ -64,6 +64,7 @@ struct PlannedDatePopover: View {
         HStack {
             Text(monthTitle)
                 .font(.headline)
+                .foregroundStyle(.primary)
                 .accessibilityAddTraits(.isHeader)
             Spacer()
             Button {
@@ -146,6 +147,7 @@ private struct PresetRow: View {
         Button(action: action) {
             HStack {
                 Text(title)
+                    .foregroundStyle(.primary)
                 Spacer()
                 Text(detail).foregroundStyle(.secondary)
                 if isSelected {
