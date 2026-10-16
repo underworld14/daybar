@@ -43,7 +43,21 @@ enum DebugDemoSeeder {
         _ = add("Organize the research notes", daysAgo(5), .medium, work)
         _ = add("Book a quiet focus block", daysAgo(3), .none)
         _ = add("Call the landlord about the AC", daysAgo(1), .high, home)
+
+        _ = appState.addHabitTemplate(title: "Morning stretch", cueText: "After the first glass of water")
+        _ = appState.addHabitTemplate(title: "Read for 20 minutes", cueText: "Before opening messages")
+        // A week of focus history so the Dayscape strip and streak have something to show.
+        for daysBack in 1...6 where daysBack != 4 {
+            for session in 0..<(daysBack % 3 + 1) {
+                let ended = calendar.date(byAdding: .hour, value: 10 + session * 2, to: daysAgo(daysBack)) ?? today
+                appState.store.insert(FocusSession(endedAt: ended, minutes: 25, completed: true))
+            }
+        }
+        appState.store.save()
         appState.refresh()
+        if let stretch = appState.todayHabits.first(where: { $0.template.title == "Morning stretch" }) {
+            appState.toggleHabit(stretch.log)
+        }
     }
 }
 #endif

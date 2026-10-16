@@ -67,6 +67,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
         appState.notifications.onAuthorizationGranted = { [weak self] in self?.appState.refresh() }
         #if DEBUG
         DebugDemoSeeder.seedIfRequested(appState)
+        DebugScreenshotSupport.applyAppearanceOverride()
         #endif
         UNUserNotificationCenter.current().delegate = self
         appState.notifications.requestAuthorization()
@@ -410,6 +411,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
         panelShownAt = Date()
         NSApp.activate(ignoringOtherApps: true)
         panel.makeKeyAndOrderFront(nil)
+        #if DEBUG
+        DebugScreenshotSupport.placeBackdrop(behind: panel)
+        #endif
         if let monitor = outsideClickMonitor {
             NSEvent.removeMonitor(monitor)
             outsideClickMonitor = nil
@@ -477,6 +481,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
         }
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+        #if DEBUG
+        DebugScreenshotSupport.placeBackdrop(behind: window)
+        #endif
     }
 
     private func makeMainWindow() -> NSWindow {
