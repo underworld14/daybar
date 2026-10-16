@@ -62,7 +62,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         if appState == nil {
-            appState = AppState(store: DataStore())
+            appState = AppState(store: StoreRecovery.openStore())
         }
         appState.notifications.onAuthorizationGranted = { [weak self] in self?.appState.refresh() }
         #if DEBUG

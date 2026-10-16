@@ -10,35 +10,63 @@ public final class DataStore {
     public let container: ModelContainer
     public var context: ModelContext { container.mainContext }
 
-    public init(inMemory: Bool = false) {
-        let schema = Schema([
-            DailyTodo.self, AppMeta.self, FocusSession.self, DayLog.self,
-            HabitTemplate.self, HabitLog.self, TodoChecklistItem.self, Project.self,
-        ])
-        let config: ModelConfiguration
+    static let schema = Schema([
+        DailyTodo.self, AppMeta.self, FocusSession.self, DayLog.self,
+        HabitTemplate.self, HabitLog.self, TodoChecklistItem.self, Project.self,
+    ])
+
+    /// An in-memory store (tests, previews). For the real store use `openLive()`.
+    public convenience init(inMemory: Bool = false) {
         if inMemory {
-            config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
-        } else {
-            PersistencePaths.migrateDefaultStoreIfNeeded()
+            let config = ModelConfiguration(schema: Self.schema, isStoredInMemoryOnly: true)
+            let container: ModelContainer
             do {
-                try FileManager.default.createDirectory(
-                    at: PersistencePaths.dayBarDirectory, withIntermediateDirectories: true
-                )
+                container = try ModelContainer(for: Self.schema, configurations: [config])
             } catch {
-                fatalError("DayBar: failed to create DayBar directory: \(error)")
+                fatalError("DayBar: failed to create an in-memory ModelContainer: \(error)")
             }
-            config = ModelConfiguration(
-                "daybar",
-                schema: schema,
-                url: PersistencePaths.storeURL
-            )
+            self.init(container: container, live: false)
+        } else {
+            do {
+                try self.init(openingLiveAt: PersistencePaths.dayBarDirectory, currentBuild: Self.currentBuild)
+            } catch {
+                fatalError("DayBar: failed to open the store: \(error)")
+            }
         }
-        do {
-            container = try ModelContainer(for: schema, configurations: [config])
-        } catch {
-            fatalError("DayBar: failed to create ModelContainer: \(error)")
-        }
-        if !inMemory {
+    }
+
+    /// Opens the on-disk store: backs it up first when this build differs from the one that
+    /// last opened it, and throws (instead of crashing) when it can't be opened, e.g. after
+    /// a newer build migrated it. The app turns that into a recovery alert.
+    public static func openLive(
+        directory: URL = PersistencePaths.dayBarDirectory,
+        currentBuild: String = DataStore.currentBuild
+    ) throws -> DataStore {
+        try DataStore(openingLiveAt: directory, currentBuild: currentBuild)
+    }
+
+    nonisolated public static var currentBuild: String {
+        Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "0"
+    }
+
+    private convenience init(openingLiveAt directory: URL, currentBuild: String) throws {
+        let isDefaultLocation = directory == PersistencePaths.dayBarDirectory
+        if isDefaultLocation { PersistencePaths.migrateDefaultStoreIfNeeded() }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        StoreBackup.backupIfBuildChanged(in: directory, currentBuild: currentBuild)
+        let config = ModelConfiguration(
+            "daybar",
+            schema: Self.schema,
+            url: directory.appendingPathComponent(StoreBackup.storeName)
+        )
+        let container = try ModelContainer(for: Self.schema, configurations: [config])
+        self.init(container: container, live: isDefaultLocation)
+        StoreBackup.recordOpened(build: currentBuild, in: directory)
+    }
+
+    private init(container: ModelContainer, live: Bool) {
+        self.container = container
+        if live {
             performLegacyImport(
                 snapshot: JSONStore.loadLegacy(),
                 legacyFileExists: FileManager.default.fileExists(atPath: PersistencePaths.legacyFileURL.path),

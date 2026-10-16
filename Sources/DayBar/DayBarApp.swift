@@ -10,7 +10,7 @@ struct DayBarApp: App {
     init() {
         // One shared AppState for the tray panel and the main window. Accessing `delegate`
         // instantiates the adaptor's object so the injection lands before launch finishes.
-        let state = AppState(store: DataStore())
+        let state = AppState(store: StoreRecovery.openStore())
         _appState = State(initialValue: state)
         delegate.appState = state
     }
