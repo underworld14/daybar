@@ -41,6 +41,19 @@ public final class AppState {
     @ObservationIgnored private var idlePollTimer: Timer?
     @ObservationIgnored private var suppressNextPhaseEndFeedback = false
     @ObservationIgnored private var reviewSnoozedUntil: Date?
+    /// Start of the day the last full `refresh` ran for. Lightweight task mutations fall
+    /// back to a full refresh when the day has changed, so rollover never gets skipped.
+    @ObservationIgnored private var lastFullRefreshDay: Date?
+    @ObservationIgnored private var lastBacklogAgingCount: Int?
+    @ObservationIgnored private var boardSnapshotMemo: [String: BoardSnapshot] = [:]
+    @ObservationIgnored private var boardSnapshotMemoRevision = -1
+    @ObservationIgnored private var boardSnapshotMemoDay: Date?
+    @ObservationIgnored private var projectOpenCounts: [UUID: Int] = [:]
+    @ObservationIgnored private var projectOpenCountsRevision = -1
+    @ObservationIgnored private var lookupMemo: [UUID: DailyTodo?] = [:]
+    @ObservationIgnored private var lookupMemoRevision = -1
+    /// The focus session most recently written by `handlePhaseEnd` (for "Undo" on stop).
+    @ObservationIgnored private var lastRecordedFocusSessionID: UUID?
 
     public private(set) var remindersLastSyncedAt: Date?
     public private(set) var remindersLastSyncError: String?
@@ -51,6 +64,16 @@ public final class AppState {
     public private(set) var todayTodos: [DailyTodo] = []
     public private(set) var tomorrowTodos: [DailyTodo] = []
     public private(set) var carriedTodos: [DailyTodo] = []
+    /// Tasks being worked on right now (today + carried over), in manual order — the tray's
+    /// "Now" card. Rebuilt with the lists.
+    public private(set) var nowTodos: [DailyTodo] = []
+    /// Bumped every time the task lists reload. Board snapshots and per-project counts are
+    /// memoized against it, and views that read it re-render after any task change.
+    public private(set) var todosRevision = 0
+    /// Checklist done/total per task id, rebuilt with the lists (one fetch, not one per row).
+    public private(set) var checklistProgress: [UUID: ChecklistProgress] = [:]
+    /// The task the running focus session is credited to (survives breaks while open).
+    public private(set) var focusTodoID: UUID?
     public private(set) var projects: [Project] = []
     public private(set) var todayHabits: [TodayHabit] = []
     public private(set) var habitStreakEntries: [HabitStreakEntry] = []
@@ -80,6 +103,8 @@ public final class AppState {
     public var windowAddTaskFocusSignal: Int = 0
     /// Bumped by the File menu (New Note ⌥⌘N) to create + select a new note in the window.
     public var windowNewNoteSignal: Int = 0
+    /// Latest Task-menu command for the main window's board (see `WindowCommand`).
+    public private(set) var windowCommand: WindowCommandRequest?
 
     public private(set) var radioChannels: [SomaFMChannel] = []
     public private(set) var radioSkipChannels: [SomaFMChannel] = []
@@ -127,6 +152,10 @@ public final class AppState {
         if observeSystemEvents { observeSystem() }
     }
 
+    public func sendWindowCommand(_ command: WindowCommand) {
+        windowCommand = WindowCommandRequest(command: command)
+    }
+
     public func refreshRemindersAccessStatus() {
         remindersAccessStatus = remindersSync.accessStatus
     }
@@ -158,15 +187,11 @@ public final class AppState {
         pendingUndo = nil
     }
 
-    public func performUndo(token: String) {
+    public func performUndo(token: String, now: Date = .now) {
         guard let pending = pendingUndo, ephemeralBanner?.undoToken == token else { return }
         switch pending.kind {
         case .undropTodo(let id):
-            if let todo = (try? store.allTodos())?.first(where: { $0.id == id }) {
-                todo.status = todo.plannedForDate < DayMath.startOfDay(Date(), calendar: calendar) ? .carriedOver : .planned
-                commitSave()
-                refresh()
-            }
+            restoreDropped(id, now: now)
         case .unarchiveHabit(let id):
             if let template = try? store.habitTemplate(id: id) {
                 template.isActive = true
@@ -209,6 +234,14 @@ public final class AppState {
         carriedTodos.map { $0.escalationTier(thresholds: thresholds, calendar: calendar) }.max() ?? .onPlan
     }
 
+
+    /// The task bound to the focus session, if it still exists.
+    public var focusTodo: DailyTodo? {
+        guard let focusTodoID else { return nil }
+        return (todayTodos + carriedTodos + tomorrowTodos).first(where: { $0.id == focusTodoID })
+            ?? (try? store.todo(id: focusTodoID))
+    }
+
     public var completedTodayCount: Int { todayTodos.filter(\.isCompleted).count }
     public var inProgressTodayCount: Int { todayTodos.filter(\.isInProgress).count }
     public var totalTodayCount: Int { todayTodos.count }
@@ -222,12 +255,16 @@ public final class AppState {
         refreshRemindersAccessStatus()
         rollover.performRolloverIfNeeded(now: now)
         habitEngine.materializeIfNeeded(now: now)
-        reloadLists(now: now)
+        lastFullRefreshDay = DayMath.startOfDay(now, calendar: calendar)
+        reloadTodoLists(now: now)
+        rebuildChecklistProgress()
         projects = (try? store.allProjects()) ?? []
         let rawHabits = (try? store.todayHabits(on: now, calendar: calendar)) ?? []
         rebuildHabitCaches(rawHabits: rawHabits, now: now)
         rebuildFocusCache(now: now)
-        notifications.updateBacklogNudge(agingCount: overdueCount, now: now, calendar: calendar)
+        let aging = overdueCount
+        notifications.updateBacklogNudge(agingCount: aging, now: now, calendar: calendar)
+        lastBacklogAgingCount = aging
         rescheduleHabitNotificationsIfNeeded(now: now)
         maybePromptEndOfDayReview(now: now)
         scheduleRemindersSync(now: now)
@@ -245,11 +282,54 @@ public final class AppState {
         invalidateRemindersSync()
     }
 
-    private func reloadLists(now: Date) {
+    private func reloadTodoLists(now: Date) {
         todayTodos = (try? store.todos(on: now, calendar: calendar)) ?? []
         let tomorrow = DayMath.nextDay(now, calendar: calendar)
         tomorrowTodos = (try? store.todos(on: tomorrow, calendar: calendar)) ?? []
         carriedTodos = (try? store.overdueIncompleteTodos(before: now, calendar: calendar)) ?? []
+        nowTodos = (todayTodos + carriedTodos).filter(\.isInProgress).sorted(by: TodoOrdering.manual)
+        todosRevision &+= 1
+    }
+
+    private func rebuildChecklistProgress() {
+        var tallies: [UUID: (done: Int, total: Int)] = [:]
+        for item in (try? store.allChecklistItems()) ?? [] {
+            var tally = tallies[item.todoId] ?? (0, 0)
+            tally.total += 1
+            if item.isCompleted { tally.done += 1 }
+            tallies[item.todoId] = tally
+        }
+        let progress = tallies.mapValues { ChecklistProgress(done: $0.done, total: $0.total) }
+        if progress != checklistProgress { checklistProgress = progress }
+    }
+
+    /// Cheap follow-up for task edits: reload the lists plus the side effects that depend on
+    /// them. A full `refresh` (rollover, habits, review prompt, digest, Reminders pull) still
+    /// runs on panel open, wake, and day change — and here too once the day has rolled over.
+    private func didMutateTodos(now: Date, touched: DailyTodo? = nil) {
+        guard lastFullRefreshDay == DayMath.startOfDay(now, calendar: calendar) else {
+            refresh(now: now)
+            return
+        }
+        reloadTodoLists(now: now)
+        let aging = overdueCount
+        if aging != lastBacklogAgingCount {
+            notifications.updateBacklogNudge(agingCount: aging, now: now, calendar: calendar)
+            lastBacklogAgingCount = aging
+        }
+        if touched?.source == .reminders {
+            scheduleRemindersSync(now: now)
+        }
+        maybePromptEndOfDayReview(now: now)
+    }
+
+    private func didMutateChecklist(now: Date) {
+        guard lastFullRefreshDay == DayMath.startOfDay(now, calendar: calendar) else {
+            refresh(now: now)
+            return
+        }
+        rebuildChecklistProgress()
+        todosRevision &+= 1
     }
 
     private func scheduleRemindersSync(now: Date) {
@@ -290,7 +370,7 @@ public final class AppState {
                 .compactMap { $0 }
             self.remindersLastSyncError = errors.isEmpty ? nil : errors.joined(separator: "; ")
             if changed {
-                self.reloadLists(now: now)
+                self.reloadTodoLists(now: now)
                 let rawHabits = (try? self.store.todayHabits(on: now, calendar: self.calendar)) ?? []
                 self.rebuildHabitCaches(rawHabits: rawHabits, now: now)
             }
@@ -302,35 +382,48 @@ public final class AppState {
     @discardableResult
     public func addTodo(
         title: String,
-        priority: Priority = .medium,
+        priority: Priority = .none,
         plannedFor day: Date? = nil,
         now: Date = .now
     ) -> DailyTodo? {
-        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        addTodo(TodoDraft(title: title, priority: priority, plannedFor: day), now: now)
+    }
+
+    /// Creates a task in one insert + save: placed at the bottom of the manual order, with
+    /// its project and board column already set.
+    @discardableResult
+    public func addTodo(_ draft: TodoDraft, now: Date = .now) -> DailyTodo? {
+        let trimmed = draft.title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
-        let planned = DayMath.startOfDay(day ?? now, calendar: calendar)
+        let planned = DayMath.startOfDay(draft.plannedFor ?? now, calendar: calendar)
         let todo = DailyTodo(
             title: trimmed,
             plannedForDate: planned,
             originalPlannedDate: planned,
-            status: .planned,
-            priority: priority
+            status: draft.column == .inProgress ? .inProgress : .planned,
+            priority: draft.priority,
+            projectID: draft.projectID,
+            sortOrder: store.nextBottomSortOrder()
         )
+        if draft.column == .done {
+            todo.completedDate = now
+            todo.status = .completed
+        }
         store.insert(todo)
         commitSave()
         if Preferences.remindersPushNewTodos {
             Task { await remindersSync.createReminderForNewTodo(todo, now: now) }
         }
-        refresh(now: now)
+        didMutateTodos(now: now)
         return todo
     }
 
     /// Quick-add path for the tray's Tomorrow tab — uses AppState's calendar so the
-    /// planned day matches `reloadLists` (avoid `Calendar.current` drift in the UI).
+    /// planned day matches `reloadTodoLists` (avoid `Calendar.current` drift in the UI).
     @discardableResult
     public func addTodoForTomorrow(
         title: String,
-        priority: Priority = .medium,
+        priority: Priority = .none,
         now: Date = .now
     ) -> DailyTodo? {
         addTodo(title: title, priority: priority, plannedFor: DayMath.nextDay(now, calendar: calendar), now: now)
@@ -359,7 +452,31 @@ public final class AppState {
         markRemindersTodoLocallyModified(todo, now: now)
         remindersSync.enqueuePush(for: todo)
         commitSave()
-        refresh(now: now)
+        didMutateTodos(now: now, touched: todo)
+    }
+
+    /// Marks a todo as being worked on (to-do or done → in progress).
+    public func startTodo(_ todo: DailyTodo, now: Date = .now) {
+        guard todo.status != .dropped, !todo.isInProgress else { return }
+        todo.completedDate = nil
+        todo.status = .inProgress
+        markRemindersTodoLocallyModified(todo, now: now)
+        remindersSync.enqueuePush(for: todo)
+        commitSave()
+        didMutateTodos(now: now, touched: todo)
+    }
+
+    /// ⌥-click on the status ring: in progress ↔ to-do (done tasks start again).
+    public func toggleInProgress(_ todo: DailyTodo, now: Date = .now) {
+        if todo.isInProgress {
+            resetTodo(todo, now: now)
+        } else {
+            startTodo(todo, now: now)
+        }
+    }
+
+    public func cyclePriority(_ todo: DailyTodo, now: Date = .now) {
+        setPriority(todo, todo.priority.next, now: now)
     }
 
     /// Returns a todo to the to-do state from in progress or done.
@@ -371,7 +488,7 @@ public final class AppState {
         markRemindersTodoLocallyModified(todo, now: now)
         remindersSync.enqueuePush(for: todo)
         commitSave()
-        refresh(now: now)
+        didMutateTodos(now: now, touched: todo)
     }
 
     /// Jumps straight to done (e.g. end-of-day review).
@@ -391,7 +508,7 @@ public final class AppState {
         markRemindersTodoLocallyModified(todo, now: now)
         remindersSync.enqueuePush(for: todo)
         commitSave()
-        refresh(now: now)
+        didMutateTodos(now: now, touched: todo)
     }
 
     // MARK: - Main window board
@@ -399,6 +516,37 @@ public final class AppState {
     /// Sets a task's kanban column: To Do → planned/carried, In Progress, Done.
     /// Column membership itself stays derived (`completedDate`/`status`) — nothing extra is stored.
     public func setBoardStatus(_ column: BoardColumn, for todo: DailyTodo, now: Date = .now) {
+        applyBoardStatus(column, to: todo, now: now)
+        markRemindersTodoLocallyModified(todo, now: now)
+        remindersSync.enqueuePush(for: todo)
+        commitSave()
+        didMutateTodos(now: now, touched: todo)
+    }
+
+    /// Kanban drop: change column (if needed) and take position `index` among
+    /// `columnTodos` (the target column as displayed before the drop) — one save. The Done
+    /// column has no manual order (newest first), so drops there only complete the task.
+    public func moveTodo(
+        _ todo: DailyTodo,
+        to column: BoardColumn,
+        index: Int,
+        in columnTodos: [DailyTodo],
+        now: Date = .now
+    ) {
+        let statusChanged = todo.boardColumn != column
+        if statusChanged {
+            applyBoardStatus(column, to: todo, now: now)
+            markRemindersTodoLocallyModified(todo, now: now)
+            remindersSync.enqueuePush(for: todo)
+        }
+        let moved = column != .done && place(todo, at: index, in: columnTodos)
+        guard statusChanged || moved else { return }
+        commitSave()
+        didMutateTodos(now: now, touched: todo)
+    }
+
+    /// Column → status/completion fields, without saving.
+    private func applyBoardStatus(_ column: BoardColumn, to todo: DailyTodo, now: Date) {
         let today = DayMath.startOfDay(now, calendar: calendar)
         switch column {
         case .toDo:
@@ -415,10 +563,6 @@ public final class AppState {
                 todo.plannedForDate = today
             }
         }
-        markRemindersTodoLocallyModified(todo, now: now)
-        remindersSync.enqueuePush(for: todo)
-        commitSave()
-        refresh(now: now)
     }
 
     /// The task slice shown for a window scope. Done-column membership is handled
@@ -430,12 +574,7 @@ public final class AppState {
         case .tomorrow:
             return tomorrowTodos
         case .allTasks:
-            return ((try? store.allTodos()) ?? [])
-                .filter { $0.completedDate == nil && $0.status != .dropped }
-                .sorted {
-                    if $0.priorityRaw != $1.priorityRaw { return $0.priorityRaw > $1.priorityRaw }
-                    return $0.createdDate < $1.createdDate
-                }
+            return ((try? store.openTodos()) ?? []).sorted(by: TodoOrdering.manual)
         case .project(let id):
             return (try? store.todos(inProject: id)) ?? []
         }
@@ -449,6 +588,77 @@ public final class AppState {
         case .allTasks: return "all"
         case .project(let id): return "project:\(id.uuidString)"
         }
+    }
+
+    /// The scope's tasks split into kanban columns, built at most once per `todosRevision`
+    /// (and per day). Reading it registers observation on the revision, so callers re-render
+    /// after any task change. Done columns: today/tomorrow show the day's completed tasks,
+    /// All Tasks the last 7 days, a project everything completed in it — capped at 50.
+    public func boardSnapshot(for scope: TaskScope, now: Date = .now) -> BoardSnapshot {
+        let revision = todosRevision
+        let day = DayMath.startOfDay(now, calendar: calendar)
+        if boardSnapshotMemoRevision != revision || boardSnapshotMemoDay != day {
+            boardSnapshotMemo = [:]
+            boardSnapshotMemoRevision = revision
+            boardSnapshotMemoDay = day
+        }
+        let key = scopeKey(for: scope)
+        if let cached = boardSnapshotMemo[key] { return cached }
+        let snapshot = makeBoardSnapshot(for: scope, now: now)
+        boardSnapshotMemo[key] = snapshot
+        return snapshot
+    }
+
+    private func makeBoardSnapshot(for scope: TaskScope, now: Date) -> BoardSnapshot {
+        switch scope {
+        case .today, .tomorrow:
+            let todos = windowTodos(for: scope, now: now)
+            return BoardSnapshot(
+                open: todos.filter { $0.completedDate == nil },
+                done: todos.filter { $0.completedDate != nil }
+            )
+        case .allTasks:
+            let start = calendar.date(byAdding: .day, value: -7, to: now) ?? .distantPast
+            return BoardSnapshot(
+                open: windowTodos(for: .allTasks, now: now),
+                done: (try? store.completedTodos(in: start..<now)) ?? []
+            )
+        case .project(let id):
+            let todos = (try? store.todos(inProject: id)) ?? []
+            let done = todos
+                .filter { $0.completedDate != nil }
+                .sorted { ($0.completedDate ?? .distantPast) > ($1.completedDate ?? .distantPast) }
+            return BoardSnapshot(open: todos.filter { $0.completedDate == nil }, done: done)
+        }
+    }
+
+    /// A task by id regardless of which list it is in (for an inspector whose task just left
+    /// the current view). Non-dropped only; memoized per `todosRevision`, and reading it
+    /// re-renders the caller after task changes.
+    public func lookupTodo(id: UUID) -> DailyTodo? {
+        let revision = todosRevision
+        if lookupMemoRevision != revision {
+            lookupMemo = [:]
+            lookupMemoRevision = revision
+        }
+        if let cached = lookupMemo[id] { return cached }
+        let found = (try? store.todo(id: id)).flatMap { $0.status == .dropped ? nil : $0 }
+        lookupMemo[id] = found
+        return found
+    }
+
+    /// Incomplete, non-dropped tasks in a project (sidebar badge), from one fetch per revision.
+    public func openTaskCount(forProject id: UUID) -> Int {
+        let revision = todosRevision
+        if projectOpenCountsRevision != revision {
+            var counts: [UUID: Int] = [:]
+            for todo in (try? store.openTodos()) ?? [] {
+                if let projectID = todo.projectID { counts[projectID, default: 0] += 1 }
+            }
+            projectOpenCounts = counts
+            projectOpenCountsRevision = revision
+        }
+        return projectOpenCounts[id] ?? 0
     }
 
     // MARK: - Projects
@@ -490,7 +700,7 @@ public final class AppState {
         markRemindersTodoLocallyModified(todo, now: .now)
         remindersSync.enqueuePush(for: todo)
         commitSave()
-        refresh()
+        didMutateTodos(now: .now, touched: todo)
     }
 
     /// The project a task is assigned to, if it still exists.
@@ -504,24 +714,26 @@ public final class AppState {
         todo.delayCount += 1
         let tomorrow = DayMath.nextDay(now, calendar: calendar)
         todo.plannedForDate = tomorrow
+        todo.sortOrder = store.nextBottomSortOrder()
         todo.snoozedUntil = tomorrow
         todo.status = .snoozed
         markRemindersTodoLocallyModified(todo, now: now)
         remindersSync.enqueuePush(for: todo)
         commitSave()
-        refresh(now: now)
+        didMutateTodos(now: now, touched: todo)
     }
 
     /// Bring a carried-over task into today (its age is preserved via originalPlannedDate).
     public func reschedule(_ todo: DailyTodo, to day: Date = .now, now: Date = .now) {
         todo.plannedForDate = DayMath.startOfDay(day, calendar: calendar)
+        todo.sortOrder = store.nextBottomSortOrder()
         todo.snoozedUntil = nil
         todo.completedDate = nil
         todo.status = .planned
         markRemindersTodoLocallyModified(todo, now: now)
         remindersSync.enqueuePush(for: todo)
         commitSave()
-        refresh(now: now)
+        didMutateTodos(now: now, touched: todo)
     }
 
     /// Move a task's planned day without resurrecting it: completed tasks keep
@@ -531,12 +743,15 @@ public final class AppState {
         let planned = DayMath.startOfDay(day, calendar: calendar)
         guard planned != todo.plannedForDate else { return }
         todo.plannedForDate = planned
+        if !todo.isCompleted {
+            todo.sortOrder = store.nextBottomSortOrder()
+        }
         todo.snoozedUntil = nil
         if todo.status == .snoozed { todo.status = .planned }
         markRemindersTodoLocallyModified(todo, now: now)
         remindersSync.enqueuePush(for: todo)
         commitSave()
-        refresh(now: now)
+        didMutateTodos(now: now, touched: todo)
     }
 
     public func drop(_ todo: DailyTodo, now: Date = .now) {
@@ -544,7 +759,7 @@ public final class AppState {
         markRemindersTodoLocallyModified(todo, now: now)
         remindersSync.enqueuePush(for: todo)
         commitSave()
-        refresh(now: now)
+        didMutateTodos(now: now, touched: todo)
         let token = todo.id.uuidString
         pendingUndo = PendingUndo(kind: .undropTodo(todo.id))
         showBanner("Task dropped", undoLabel: "Undo", undoToken: token)
@@ -552,9 +767,108 @@ public final class AppState {
 
     /// Permanently removes a task (main-window context menu; the tray only ever drops).
     public func deleteTodo(_ todo: DailyTodo, now: Date = .now) {
+        let wasReminders = todo.source == .reminders
         store.delete(todo)
         commitSave()
-        refresh(now: now)
+        didMutateTodos(now: now)
+        if wasReminders { scheduleRemindersSync(now: now) }
+    }
+
+    /// Brings a dropped task back exactly where it was (its `sortOrder` never changed).
+    public func restoreDropped(_ id: UUID, now: Date = .now) {
+        guard let todo = try? store.todo(id: id), todo.status == .dropped else { return }
+        todo.status = todo.plannedForDate < DayMath.startOfDay(now, calendar: calendar) ? .carriedOver : .planned
+        markRemindersTodoLocallyModified(todo, now: now)
+        remindersSync.enqueuePush(for: todo)
+        commitSave()
+        didMutateTodos(now: now, touched: todo)
+    }
+
+    // MARK: - Manual order
+
+    /// Moves `todo` to `index` within `visible` (the list as displayed, ascending manual
+    /// order; SwiftUI `onMove` index semantics). Writes only the moved task unless the gap
+    /// between its new neighbours is exhausted, in which case all orders are re-spaced first.
+    public func moveTodo(_ todo: DailyTodo, toIndex index: Int, in visible: [DailyTodo], now: Date = .now) {
+        guard place(todo, at: index, in: visible) else { return }
+        commitSave()
+        didMutateTodos(now: now)
+    }
+
+    /// Writes `todo.sortOrder` for position `index` in `visible` (re-spacing every order first
+    /// if the gap is exhausted). Returns whether anything changed; does not save.
+    @discardableResult
+    private func place(_ todo: DailyTodo, at index: Int, in visible: [DailyTodo]) -> Bool {
+        func slots() -> [ReorderSlot] { visible.map { ReorderSlot(id: $0.id, sortOrder: $0.sortOrder) } }
+        var placement = TodoReorderPlanner.placement(moving: todo.id, toIndex: index, within: slots())
+        var renormalized = false
+        if placement == .needsRenormalize {
+            store.renormalizeTodoSortOrders()
+            renormalized = true
+            placement = TodoReorderPlanner.placement(moving: todo.id, toIndex: index, within: slots())
+        }
+        if case .value(let value) = placement {
+            todo.sortOrder = value
+            return true
+        }
+        return renormalized
+    }
+
+    /// Keyboard/menu move: `offset` rows up (negative) or down (positive) within `visible`.
+    public func moveTodo(_ todo: DailyTodo, by offset: Int, in visible: [DailyTodo], now: Date = .now) {
+        let slots = visible.map { ReorderSlot(id: $0.id, sortOrder: $0.sortOrder) }
+        guard let index = TodoReorderPlanner.index(moving: todo.id, by: offset, within: slots) else { return }
+        moveTodo(todo, toIndex: index, in: visible, now: now)
+    }
+
+    public func moveTodoToTop(_ todo: DailyTodo, in visible: [DailyTodo], now: Date = .now) {
+        moveTodo(todo, toIndex: 0, in: visible, now: now)
+    }
+
+    /// Drag between day sections: re-plan the task for `day` (see `plan(_:for:)`), then place
+    /// it at `index` among `visible` — the target day's open tasks as displayed before the
+    /// drop. One save.
+    public func moveTodo(_ todo: DailyTodo, toDay day: Date, index: Int, in visible: [DailyTodo], now: Date = .now) {
+        let planned = applyPlan(todo, for: day, now: now)
+        let moved = place(todo, at: index, in: visible.filter { $0.id != todo.id })
+        guard planned || moved else { return }
+        commitSave()
+        didMutateTodos(now: now, touched: todo)
+    }
+
+    /// "Move to <day>" with one meaning everywhere (tray drag, sidebar drop, Task menu,
+    /// inspector buttons). The task lands at the bottom of that day.
+    public func plan(_ todo: DailyTodo, for day: Date, now: Date = .now) {
+        guard applyPlan(todo, for: day, now: now) else { return }
+        commitSave()
+        didMutateTodos(now: now, touched: todo)
+    }
+
+    /// Re-plans without saving. Pushing an open, not-started task from today (or earlier) to
+    /// tomorrow counts as a delay; pulling a not-started task into today revives it; an
+    /// in-progress or completed task keeps its status and only changes day.
+    private func applyPlan(_ todo: DailyTodo, for day: Date, now: Date) -> Bool {
+        let target = DayMath.startOfDay(day, calendar: calendar)
+        let today = DayMath.startOfDay(now, calendar: calendar)
+        let current = DayMath.startOfDay(todo.plannedForDate, calendar: calendar)
+        guard current != target, todo.status != .dropped else { return false }
+        todo.plannedForDate = target
+        if todo.isCompleted {
+            todo.snoozedUntil = nil
+        } else {
+            if target == DayMath.nextDay(now, calendar: calendar), current <= today, !todo.isInProgress {
+                todo.delayCount += 1
+                todo.snoozedUntil = target
+                todo.status = .snoozed
+            } else {
+                todo.snoozedUntil = nil
+                if !todo.isInProgress, target >= today { todo.status = .planned }
+            }
+            todo.sortOrder = store.nextBottomSortOrder()
+        }
+        markRemindersTodoLocallyModified(todo, now: now)
+        remindersSync.enqueuePush(for: todo)
+        return true
     }
 
     public func setPriority(_ todo: DailyTodo, _ priority: Priority, now: Date = .now) {
@@ -563,7 +877,7 @@ public final class AppState {
         markRemindersTodoLocallyModified(todo, now: now)
         remindersSync.enqueuePush(for: todo)
         commitSave()
-        refresh(now: now)
+        didMutateTodos(now: now, touched: todo)
     }
 
     /// Rename a task. No-op for an empty/whitespace or unchanged title.
@@ -574,7 +888,7 @@ public final class AppState {
         markRemindersTodoLocallyModified(todo, now: now)
         remindersSync.enqueuePush(for: todo)
         commitSave()
-        refresh(now: now)
+        didMutateTodos(now: now, touched: todo)
     }
 
     /// Update the task description (`notes`). Trims trailing whitespace; empty is allowed.
@@ -585,7 +899,7 @@ public final class AppState {
         markRemindersTodoLocallyModified(todo, now: now)
         remindersSync.enqueuePush(for: todo)
         commitSave()
-        refresh(now: now)
+        didMutateTodos(now: now, touched: todo)
     }
 
     // MARK: - Checklist
@@ -602,7 +916,7 @@ public final class AppState {
         let item = TodoChecklistItem(todoId: todo.id, title: trimmed, sortOrder: nextOrder)
         store.insert(item)
         commitSave()
-        refresh(now: now)
+        didMutateChecklist(now: now)
         return item
     }
 
@@ -611,26 +925,26 @@ public final class AppState {
         guard !trimmed.isEmpty, trimmed != item.title else { return }
         item.title = trimmed
         commitSave()
-        refresh(now: now)
+        didMutateChecklist(now: now)
     }
 
     public func toggleChecklistItem(_ item: TodoChecklistItem, now: Date = .now) {
         item.isCompleted.toggle()
         commitSave()
-        refresh(now: now)
+        didMutateChecklist(now: now)
     }
 
     public func deleteChecklistItem(_ item: TodoChecklistItem, now: Date = .now) {
         store.delete(item)
         commitSave()
-        refresh(now: now)
+        didMutateChecklist(now: now)
     }
 
     public func moveChecklistItem(_ item: TodoChecklistItem, to sortOrder: Int, now: Date = .now) {
         guard item.sortOrder != sortOrder else { return }
         item.sortOrder = sortOrder
         commitSave()
-        refresh(now: now)
+        didMutateChecklist(now: now)
     }
 
     // MARK: - Habits
@@ -855,24 +1169,47 @@ public final class AppState {
     public func stopPomodoro(now: Date = .now) {
         guard pomodoro.phase != .idle else { return }
         let wasWork = pomodoro.phase == .work
+        lastRecordedFocusSessionID = nil
         pomodoro.stop(now: now)
-        if wasWork {
-            // handlePhaseEnd already inserted FocusSession; offer undo for a few seconds.
-            if let session = (try? store.focusSessions(
-                in: now.addingTimeInterval(-2)..<now.addingTimeInterval(2)
-            ))?.last {
-                let token = session.id.uuidString
-                pendingUndo = PendingUndo(kind: .undoFocusSession(session.id))
-                showBanner("Focus session stopped", undoLabel: "Undo", undoToken: token)
-                return
-            }
+        focusTodoID = nil
+        if wasWork, let sessionID = lastRecordedFocusSessionID {
+            // handlePhaseEnd already inserted the FocusSession; offer undo for a few seconds.
+            pendingUndo = PendingUndo(kind: .undoFocusSession(sessionID))
+            showBanner("Focus session stopped", undoLabel: "Undo", undoToken: sessionID.uuidString)
+            return
         }
         showBanner("Focus session stopped")
+    }
+
+    /// Focus on a task: marks it in progress, binds the session to it, and starts a focus
+    /// phase — or, if one is already running/paused, re-credits that phase to this task.
+    public func startFocus(on todo: DailyTodo, now: Date = .now) {
+        guard todo.status != .dropped else { return }
+        if !todo.isInProgress { startTodo(todo, now: now) }
+        focusTodoID = todo.id
+        switch pomodoro.phase {
+        case .work:
+            if !pomodoro.isRunning { pomodoro.resume(now: now) }
+        case .idle:
+            pomodoro.startWork(now: now)
+        case .shortBreak, .longBreak:
+            skipBreakAndStartWork(now: now)
+        }
+    }
+
+    /// Drops the task binding before a new focus phase if the task is finished or gone.
+    private func validateFocusBinding() {
+        guard let focusTodoID else { return }
+        let todo = try? store.todo(id: focusTodoID)
+        if todo == nil || todo?.isCompleted == true || todo?.status == .dropped {
+            self.focusTodoID = nil
+        }
     }
 
     /// One-button Pomodoro control: start when idle, pause when running, resume when paused.
     public func togglePomodoro() {
         if pomodoro.phase == .idle {
+            validateFocusBinding()
             pomodoro.startWork()
         } else if pomodoro.isRunning {
             pomodoro.pause()
@@ -1183,6 +1520,7 @@ public final class AppState {
         guard pomodoro.phase.isBreak else { return }
         if silent { suppressNextPhaseEndFeedback = true }
         pomodoro.skip(now: now)
+        validateFocusBinding()
         pomodoro.start(.work, now: now)
         breakArmedAt = nil
     }
@@ -1198,8 +1536,16 @@ public final class AppState {
             let minutes = Int((elapsed / 60).rounded())
             if minutes > 0 {
                 let priorStreak = focusStreakEntry?.streak.current ?? 0
-                store.insert(FocusSession(endedAt: endedAt, minutes: minutes, completed: completedNaturally))
+                let session = FocusSession(
+                    endedAt: endedAt, minutes: minutes, completed: completedNaturally, todoID: focusTodoID
+                )
+                store.insert(session)
+                lastRecordedFocusSessionID = session.id
+                if completedNaturally, let todo = focusTodo {
+                    todo.pomodoroCount += 1
+                }
                 commitSave()
+                if completedNaturally, focusTodoID != nil { didMutateTodos(now: endedAt) }
                 rebuildFocusCache(now: endedAt)
                 if completedNaturally {
                     let newStreak = focusStreakEntry?.streak.current ?? 0
@@ -1216,6 +1562,7 @@ public final class AppState {
             maybePromptEndOfDayReview(now: endedAt, focusSessionRunning: false)
         } else if phase.isBreak {
             breakArmedAt = nil
+            validateFocusBinding()
         }
         guard !suppressNextPhaseEndFeedback else {
             suppressNextPhaseEndFeedback = false

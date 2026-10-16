@@ -190,13 +190,13 @@ final class PersistenceTests: XCTestCase {
         XCTAssertEqual(all.first?.title, "after")
     }
 
-    func testTodayQuerySortsByPriority() throws {
+    func testTodayQuerySortsBySortOrderNotPriority() throws {
         let store = DataStore(inMemory: true)
         let today = Calendar.current.startOfDay(for: now)
-        store.insert(DailyTodo(title: "low", plannedForDate: today, originalPlannedDate: today, priority: .low))
-        store.insert(DailyTodo(title: "high", plannedForDate: today, originalPlannedDate: today, priority: .high))
+        store.insert(DailyTodo(title: "low", plannedForDate: today, originalPlannedDate: today, priority: .low, sortOrder: 1))
+        store.insert(DailyTodo(title: "high", plannedForDate: today, originalPlannedDate: today, priority: .high, sortOrder: 2))
         store.save()
-        XCTAssertEqual(try store.todos(on: now).map(\.title), ["high", "low"])
+        XCTAssertEqual(try store.todos(on: now).map(\.title), ["low", "high"])
     }
 
     func testTodayQuerySortsIncompleteBeforeCompleted() throws {
@@ -476,5 +476,18 @@ final class PersistenceTests: XCTestCase {
         let logs = try store.dayLogs(in: start..<cal.date(byAdding: .day, value: 1, to: today)!)
         XCTAssertEqual(logs.count, 2)
         XCTAssertEqual(Set(logs.map(\.moodTag)), [.happy, .tired])
+    }
+
+    func testRetriedLegacyImportStillGetsAnOrder() throws {
+        let store = DataStore(inMemory: true) // backfill already ran on the empty store
+        let today = Calendar.current.startOfDay(for: now)
+        let snapshot = StoreSnapshotDTO(todos: [
+            TodoDTO(DailyTodo(title: "low", createdDate: now, plannedForDate: today, originalPlannedDate: today, priority: .low)),
+            TodoDTO(DailyTodo(title: "high", createdDate: now.addingTimeInterval(1), plannedForDate: today, originalPlannedDate: today, priority: .high)),
+        ])
+
+        store.performLegacyImport(snapshot: snapshot, legacyFileExists: true)
+
+        XCTAssertEqual(try store.todos(on: now).map(\.title), ["high", "low"])
     }
 }

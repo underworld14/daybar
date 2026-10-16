@@ -51,6 +51,43 @@ final class RemindersSyncEngineTests: XCTestCase {
         XCTAssertEqual(todo?.externalModifiedAt, now)
     }
 
+    func testPulledTasksGoAfterLocalTasksHighestPriorityFirst() async throws {
+        let (store, mock, engine) = makeEngine()
+        let local = DailyTodo(title: "Local", plannedForDate: today, originalPlannedDate: today, sortOrder: 5000)
+        store.insert(local)
+        store.save()
+        mock.reminders = [
+            ReminderDTO(externalIdentifier: "low", title: "Low", dueDate: today, priority: .low,
+                        calendarIdentifier: "list-1", modifiedAt: now),
+            ReminderDTO(externalIdentifier: "high", title: "High", dueDate: today, priority: .high,
+                        calendarIdentifier: "list-1", modifiedAt: now),
+        ]
+
+        _ = await engine.reconcileIfNeeded(now: now, force: true)
+
+        XCTAssertEqual(try store.todos(on: now, calendar: cal).map(\.title), ["Local", "High", "Low"])
+    }
+
+    func testApplyKeepsManualOrder() async throws {
+        let (store, mock, engine) = makeEngine()
+        let mirror = DailyTodo(
+            title: "Old", plannedForDate: today, originalPlannedDate: today,
+            source: .reminders, externalIdentifier: "ext-order", sortOrder: 777
+        )
+        mirror.externalModifiedAt = today
+        store.insert(mirror)
+        store.save()
+        mock.reminders = [
+            ReminderDTO(externalIdentifier: "ext-order", title: "New", dueDate: today,
+                        calendarIdentifier: "list-1", modifiedAt: now),
+        ]
+
+        _ = await engine.reconcileIfNeeded(now: now, force: true)
+
+        XCTAssertEqual(mirror.title, "New")
+        XCTAssertEqual(mirror.sortOrder, 777)
+    }
+
     func testPullUpdatesExistingMirror() async throws {
         let (store, mock, engine) = makeEngine()
         let existing = DailyTodo(

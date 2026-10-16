@@ -16,6 +16,8 @@ public final class AppMeta {
     public var pendingRemindersTodoPushIDs: String = ""
     /// Comma-separated habit template UUIDs awaiting a Reminders push (survives quit).
     public var pendingRemindersHabitPushIDs: String = ""
+    /// Set once every task has a manual `sortOrder` derived from the old priority order.
+    public var didBackfillTodoSortOrder: Bool = false
 
     public init(
         lastProcessedDay: Date? = nil,

@@ -6,6 +6,9 @@ import DayBarCore
 /// control strip. Multi-add quick-add (Return adds and keeps focus) is the morning ritual.
 struct TodayView: View {
     @Environment(AppState.self) private var appState
+    /// Present when hosted in the menu-bar panel, which sizes itself from these measurements.
+    @Environment(TrayLayoutModel.self) private var trayLayout: TrayLayoutModel?
+    @Environment(TrayInteractionModel.self) private var interaction: TrayInteractionModel?
 
     @State private var newTitle = ""
     @FocusState private var addFocused: Bool
@@ -15,12 +18,14 @@ struct TodayView: View {
     @State private var addForTomorrow = false
     @State private var detailTodo: DailyTodo?
 
-    private let wordmarkFont = Font.system(size: 15, weight: .bold, design: .rounded)
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             header
             quickAdd
+            // Always mounted (an empty card has no height) so the first started task shows
+            // up in place inside the long-lived panel host, like the Tomorrow section.
+            NowCard(appState: appState, onOpenDetails: { detailTodo = $0 })
             if appState.totalTodayCount > 0 { progressBar }
             if let entry = appState.focusStreakEntry {
                 DayscapeStrip(
@@ -29,24 +34,9 @@ struct TodayView: View {
                     graceRemaining: entry.streak.graceRemaining
                 )
             }
-            if let banner = appState.ephemeralBanner {
-                HStack(spacing: 8) {
-                    Text(banner.message)
-                        .font(.caption)
-                        .foregroundStyle(.tint)
-                    if let label = banner.undoLabel, let token = banner.undoToken {
-                        Button(label) { appState.performUndo(token: token) }
-                            .font(.caption.weight(.semibold))
-                            .buttonStyle(.plain)
-                            .foregroundStyle(.tint)
-                            .accessibilityLabel(label)
-                    }
-                    Spacer(minLength: 0)
-                }
-                .padding(.vertical, 2)
-                .accessibilityElement(children: .combine)
-            }
+            UndoToast(appState: appState, style: .inline)
             Divider().padding(.top, 2)
+            ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     habitsSection
@@ -57,30 +47,35 @@ struct TodayView: View {
                     if !appState.carriedTodos.isEmpty { carriedSection }
                 }
                 .padding(.vertical, 2)
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+                    trayLayout?.setContentHeight(height)
+                }
             }
             .frame(maxHeight: .infinity)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+                trayLayout?.setViewportHeight(height)
+            }
+            .onChange(of: interaction?.selectedTodoID) { _, id in
+                guard let id else { return }
+                withThemeAnimation(.snap) { proxy.scrollTo(id) }
+            }
+            }
             Divider()
             LofiRadioStrip()
             PomodoroStrip(appState: appState)
         }
         .padding(14)
         .frame(width: 360)
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+            trayLayout?.setRootHeight(height)
+        }
         .onAppear {
+            interaction?.openDetails = { detailTodo = $0 }
             appState.refresh()
             DispatchQueue.main.async { claimQuickAddFocus() }
             Task { await appState.loadRadioChannels() }
         }
         .onChange(of: appState.quickAddFocusSignal) { _, _ in claimQuickAddFocus() }
-        .onChange(of: appState.ephemeralBanner?.id) { _, _ in
-            guard let banner = appState.ephemeralBanner else { return }
-            let id = banner.id
-            Task {
-                try? await Task.sleep(for: .seconds(banner.undoToken == nil ? 3 : 5))
-                if appState.ephemeralBanner?.id == id {
-                    appState.dismissBanner()
-                }
-            }
-        }
         .sheet(isPresented: $showSettings) {
             SettingsView(appState: appState)
         }
@@ -117,7 +112,7 @@ struct TodayView: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            Text("DayBar").font(wordmarkFont)
+            Text("DayBar").font(ThemeTypography.wordmark)
             Spacer()
             Text(Date.now, format: .dateTime.weekday(.abbreviated).day().month(.abbreviated))
                 .font(.caption)
@@ -145,71 +140,22 @@ struct TodayView: View {
 
     // MARK: - Quick add
 
-    private var trimmed: String { newTitle.trimmingCharacters(in: .whitespaces) }
-
     private var quickAdd: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Picker("Plan for", selection: $addForTomorrow) {
-                Text("Today").tag(false)
-                Text("Tomorrow").tag(true)
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-
-            HStack(spacing: 8) {
-                Button(action: claimQuickAddFocus) {
-                    Image(systemName: "plus.circle.fill")
-                        .foregroundStyle(addFocused ? Color.accentColor : .secondary)
-                }
-                .buttonStyle(.plain)
-                .help("Focus quick-add")
-
-                ZStack(alignment: .leading) {
-                    TextField(addForTomorrow ? "Add a task for tomorrow…" : "Add a task for today…", text: $newTitle)
-                        .textFieldStyle(.plain)
-                        .focused($addFocused)
-                        .tint(.accentColor)
-                        .onSubmit(addCurrent)
-
-                    // Borderless nonactivating panels often omit AppKit's insertion point
-                    // even when FocusState is true — draw one while the field is empty.
-                    if addFocused && newTitle.isEmpty {
-                        BlinkingInsertionCaret()
-                            .padding(.leading, 1)
-                            .allowsHitTesting(false)
-                            .accessibilityHidden(true)
-                    }
-                }
-
-                if !trimmed.isEmpty {
-                    Button(action: addCurrent) {
-                        Image(systemName: "return").font(.system(size: 11, weight: .semibold))
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
-                    .help("Add task")
-                }
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
-            .contentShape(Rectangle())
-            .onTapGesture { claimQuickAddFocus() }
-            .background {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Color.primary.opacity(addFocused ? 0.08 : 0.04))
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .strokeBorder(
-                        addFocused ? Color.accentColor : Color.primary.opacity(0.12),
-                        lineWidth: addFocused ? 1.5 : 1
-                    )
-            }
-            .animation(.easeInOut(duration: 0.12), value: addFocused)
-            .onChange(of: addFocused) { _, focused in
-                if focused { ensureQuickAddKeyWindow() }
-            }
+        QuickAddField(
+            text: $newTitle,
+            addForTomorrow: $addForTomorrow,
+            focused: $addFocused,
+            projects: projectRefs,
+            onSubmit: addCurrent,
+            onActivate: claimQuickAddFocus
+        )
+        .onChange(of: addFocused) { _, focused in
+            if focused { ensureQuickAddKeyWindow() }
         }
+    }
+
+    private var projectRefs: [QuickAddParser.ProjectRef] {
+        appState.projects.map { QuickAddParser.ProjectRef(id: $0.id, name: $0.name) }
     }
 
     /// Activate the app, make the floating panel key, then focus the field so typing works
@@ -229,10 +175,16 @@ struct TodayView: View {
     }
 
     private func addCurrent() {
-        if addForTomorrow {
-            appState.addTodoForTomorrow(title: newTitle)
-        } else {
-            appState.addTodo(title: newTitle)
+        guard let parsed = QuickAddParser.parse(newTitle, projects: projectRefs) else { return }
+        let tomorrow = parsed.day.map { $0 == .tomorrow } ?? addForTomorrow
+        let day = tomorrow ? DayMath.nextDay(.now, calendar: appState.calendar) : Date.now
+        withThemeAnimation(.reorder) {
+            _ = appState.addTodo(TodoDraft(
+                title: parsed.title,
+                priority: parsed.priority ?? .none,
+                plannedFor: day,
+                projectID: parsed.projectID
+            ))
         }
         newTitle = ""
         claimQuickAddFocus() // keep the field hot for multi-add
@@ -250,44 +202,78 @@ struct TodayView: View {
 
     private var habitsSection: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text("HABITS").font(.caption2.weight(.semibold)).tracking(0.5).foregroundStyle(.secondary)
-                Spacer()
+            SectionHeader("Habits") {
                 if appState.totalHabitsTodayCount > 0 {
                     Text("\(appState.completedHabitsTodayCount)/\(appState.totalHabitsTodayCount)")
-                        .font(.caption2).foregroundStyle(.secondary)
                 }
             }
             if appState.todayHabits.isEmpty {
                 Text("No habits yet — add one in Settings.")
                     .font(.caption).foregroundStyle(.secondary).padding(.vertical, 2)
             } else {
-                ForEach(appState.todayHabits) { habit in
-                    HabitRow(appState: appState, habit: habit)
-                        .id("\(habit.log.id)-\(habit.log.statusRaw)")
+                TaskRowStack {
+                    ForEach(appState.todayHabits) { habit in
+                        HabitRow(appState: appState, habit: habit)
+                            .id("\(habit.log.id)-\(habit.log.statusRaw)")
+                    }
                 }
             }
         }
     }
 
     private var todaySection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text("TODAY").font(.caption2.weight(.semibold)).tracking(0.5).foregroundStyle(.secondary)
-                Spacer()
+        VStack(alignment: .leading, spacing: 4) {
+            SectionHeader("Today") {
                 todoProgressLabel
-                    .font(.caption2).foregroundStyle(.secondary)
             }
-            if appState.todayTodos.isEmpty {
-                Text("Nothing planned yet. What matters today?")
-                    .font(.caption).foregroundStyle(.secondary).padding(.vertical, 2)
-            } else {
-                ForEach(appState.todayTodos) { todo in
-                    TodoRow(appState: appState, todo: todo, onOpenDetails: { detailTodo = todo })
-                        .id(todo.id)
+            Group {
+                if trayToday.isEmpty {
+                    // Also the drop target when every task today is in progress (in Now).
+                    Text(appState.todayTodos.isEmpty
+                         ? "Nothing planned yet. What matters today?"
+                         : "Everything planned for today is in progress.")
+                        .font(.caption).foregroundStyle(.secondary).padding(.vertical, 2)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    TaskRowStack {
+                        ForEach(trayToday) { todo in
+                            TodoRow(appState: appState, todo: todo, section: trayToday, onOpenDetails: { detailTodo = todo })
+                                .id(todo.id)
+                        }
+                    }
                 }
             }
+            .modifier(daySectionDropZone("tray.today", tasks: trayToday, day: .now))
         }
+    }
+
+    /// Drop target for a day section: reorders within it, or re-plans a task dragged in
+    /// from another section (Today ↔ Tomorrow, Carried → either).
+    private func daySectionDropZone(_ zoneID: String, tasks: [DailyTodo], day: Date) -> TaskDropZone {
+        let open = tasks.filter { $0.completedDate == nil }
+        return TaskDropZone(
+            zoneID: zoneID,
+            orderedIDs: tasks.map(\.id),
+            reorderableCount: open.count,
+            accepts: { id in trayTask(id).map { !$0.isCompleted } ?? false },
+            onDrop: { id, index in
+                guard let todo = trayTask(id), !todo.isCompleted else { return false }
+                if open.contains(where: { $0.id == id }) {
+                    appState.moveTodo(todo, toIndex: index, in: open)
+                } else {
+                    appState.moveTodo(todo, toDay: day, index: index, in: open)
+                }
+                return true
+            }
+        )
+    }
+
+    /// Today's tasks minus the ones in progress (those sit in the Now card).
+    private var trayToday: [DailyTodo] { appState.todayTodos.filter { !$0.isInProgress } }
+    private var trayCarried: [DailyTodo] { appState.carriedTodos.filter { !$0.isInProgress } }
+
+    private func trayTask(_ id: UUID) -> DailyTodo? {
+        (appState.todayTodos + appState.tomorrowTodos + appState.carriedTodos).first(where: { $0.id == id })
     }
 
     private var todoProgressLabel: Text {
@@ -301,80 +287,100 @@ struct TodayView: View {
     }
 
     private var carriedSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text("CARRIED OVER").font(.caption2.weight(.semibold)).tracking(0.5).foregroundStyle(.secondary)
-                Spacer()
+        VStack(alignment: .leading, spacing: 4) {
+            SectionHeader("Carried over") {
                 if appState.overdueCount > 0 {
-                    Text("\(appState.overdueCount) aging").font(.caption2).foregroundStyle(.orange)
+                    Text("\(appState.overdueCount) aging").foregroundStyle(ThemeColors.aging)
                 }
             }
-            ForEach(appState.carriedTodos) { todo in
-                TodoRow(appState: appState, todo: todo, showReschedule: true, onOpenDetails: { detailTodo = todo })
+            TaskRowStack {
+                ForEach(trayCarried) { todo in
+                    TodoRow(
+                        appState: appState, todo: todo, section: trayCarried,
+                        showReschedule: true, onOpenDetails: { detailTodo = todo }
+                    )
+                    .id(todo.id)
+                }
             }
+            .taskDropZone(
+                "tray.carried",
+                orderedIDs: trayCarried.map(\.id),
+                reorderableCount: trayCarried.count,
+                // Carried tasks only reorder among themselves; nothing is dragged into the past.
+                accepts: { id in trayCarried.contains(where: { $0.id == id }) },
+                onDrop: { id, index in
+                    guard let todo = trayCarried.first(where: { $0.id == id }) else { return false }
+                    appState.moveTodo(todo, toIndex: index, in: trayCarried)
+                    return true
+                }
+            )
         }
     }
 
     private var tomorrowSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text("TOMORROW").font(.caption2.weight(.semibold)).tracking(0.5).foregroundStyle(.secondary)
-                Spacer()
+        VStack(alignment: .leading, spacing: 4) {
+            SectionHeader("Tomorrow") {
                 Text("\(appState.tomorrowTodos.count)")
-                    .font(.caption2).foregroundStyle(.secondary)
             }
-            if appState.tomorrowTodos.isEmpty {
-                Text("Nothing planned for tomorrow yet.")
-                    .font(.caption).foregroundStyle(.secondary).padding(.vertical, 2)
-            } else {
-                ForEach(appState.tomorrowTodos) { todo in
-                    TodoRow(appState: appState, todo: todo, onOpenDetails: { detailTodo = todo })
-                        .id(todo.id)
+            Group {
+                if appState.tomorrowTodos.isEmpty {
+                    Text("Nothing planned for tomorrow yet.")
+                        .font(.caption).foregroundStyle(.secondary).padding(.vertical, 2)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    TaskRowStack {
+                        ForEach(appState.tomorrowTodos) { todo in
+                            TodoRow(appState: appState, todo: todo, section: appState.tomorrowTodos, onOpenDetails: { detailTodo = todo })
+                                .id(todo.id)
+                        }
+                    }
                 }
             }
+            .modifier(daySectionDropZone(
+                "tray.tomorrow", tasks: appState.tomorrowTodos,
+                day: DayMath.nextDay(.now, calendar: appState.calendar)
+            ))
         }
     }
 }
 
-/// Visible typing caret for empty focused fields. AppKit often suppresses the real
-/// insertion point inside borderless nonactivating panels.
-private struct BlinkingInsertionCaret: View {
-    @State private var visible = true
-
-    var body: some View {
-        Capsule()
-            .fill(Color.accentColor)
-            .frame(width: 2, height: 16)
-            .opacity(visible ? 1 : 0)
-            .onAppear {
-                withAnimation(.easeInOut(duration: 0.53).repeatForever(autoreverses: true)) {
-                    visible = false
-                }
-            }
-    }
-}
-
-/// A single habit row: checkbox, title, cue, and streak pill.
+/// A single habit row: status ring (same control as tasks), title, cue, streak chip, and a
+/// hover-revealed actions menu.
 struct HabitRow: View {
     var appState: AppState
     let habit: TodayHabit
 
     @State private var hovering = false
 
+    private var isSkipped: Bool { habit.log.status == .skipped }
+
     var body: some View {
-        HStack(spacing: 8) {
-            Button { appState.toggleHabit(habit.log) } label: {
-                Image(systemName: habitStatusIcon)
-                    .foregroundStyle(habitStatusColor)
+        HStack(spacing: ThemeMetrics.spacingS) {
+            if isSkipped {
+                Button { appState.toggleHabit(habit.log) } label: {
+                    Circle()
+                        .strokeBorder(Color.secondary.opacity(0.6), style: StrokeStyle(lineWidth: 1.5, dash: [2.5, 2]))
+                        .overlay(Rectangle().fill(Color.secondary).frame(width: 7, height: 1.5))
+                        .frame(width: ThemeMetrics.statusRingSize, height: ThemeMetrics.statusRingSize)
+                        .frame(width: ThemeMetrics.statusHitSize, height: ThemeMetrics.statusHitSize)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Skipped today. Click to mark incomplete.")
+                .accessibilityLabel("Skipped habit")
+            } else {
+                StatusToggle(
+                    status: habit.log.isCompleted ? .done : .toDo,
+                    onToggleComplete: { appState.toggleHabit(habit.log) },
+                    onToggleInProgress: { appState.toggleHabit(habit.log) },
+                    allowsInProgress: false
+                )
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel(habitAccessibilityLabel)
-            .help(habitAccessibilityLabel)
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(habit.template.title)
                     .strikethrough(habit.log.isCompleted)
-                    .foregroundStyle(habit.log.isCompleted ? .secondary : .primary)
+                    .foregroundStyle(habit.log.isCompleted || isSkipped ? .secondary : .primary)
                     .lineLimit(1)
                 if !habit.template.cueText.isEmpty {
                     Text(habit.template.cueText)
@@ -384,7 +390,7 @@ struct HabitRow: View {
                 }
             }
 
-            Spacer(minLength: 4)
+            Spacer(minLength: ThemeMetrics.spacingXS)
 
             if habit.template.remindersSyncEnabled, habit.template.externalReminderIdentifier != nil {
                 Image(systemName: "list.bullet")
@@ -394,20 +400,16 @@ struct HabitRow: View {
             }
 
             if habit.currentStreak > 0 {
-                Text("\(habit.currentStreak)d")
-                    .font(.caption2.weight(.medium))
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(Capsule().fill(Color.green.opacity(0.15)))
-                    .foregroundStyle(.green)
+                Chip(text: "\(habit.currentStreak)d", tint: ThemeColors.statusDone)
                     .help(habit.graceRemaining > 0 ? "\(habit.graceRemaining) grace day left this week" : "No grace days left this week")
+                    .accessibilityLabel("Streak \(habit.currentStreak) days")
             }
 
             Menu {
-                if habit.log.isCompleted || habit.log.status == .skipped {
-                    Button("Mark incomplete") { appState.toggleHabit(habit.log) }
+                if habit.log.isCompleted || isSkipped {
+                    Button("Mark Incomplete") { appState.toggleHabit(habit.log) }
                 } else {
-                    Button("Skip today") { appState.skipHabit(habit.log) }
+                    Button("Skip Today") { appState.skipHabit(habit.log) }
                 }
             } label: {
                 Image(systemName: "ellipsis").foregroundStyle(.secondary)
@@ -419,186 +421,103 @@ struct HabitRow: View {
             .accessibilityLabel("Habit actions")
             .help("Habit actions")
         }
-        .contentShape(Rectangle())
-        .onHover { hovering = $0 }
-    }
-
-    private var habitStatusIcon: String {
-        if habit.log.isCompleted { return "checkmark.circle.fill" }
-        if habit.log.status == .skipped { return "minus.circle" }
-        return "circle"
-    }
-
-    private var habitStatusColor: Color {
-        if habit.log.isCompleted { return .green }
-        if habit.log.status == .skipped { return .secondary.opacity(0.7) }
-        return .secondary
-    }
-
-    private var habitAccessibilityLabel: String {
-        if habit.log.isCompleted { return "Completed habit" }
-        if habit.log.status == .skipped { return "Skipped habit" }
-        return "Pending habit"
-    }
-}
-
-/// A single task row: checkbox, title (double-click to rename), optional age pill, and a
-/// hover-revealed actions menu (full edit via Details…).
-struct TodoRow: View {
-    var appState: AppState
-    let todo: DailyTodo
-    var showReschedule = false
-    var onOpenDetails: (() -> Void)? = nil
-
-    @State private var hovering = false
-    @State private var isEditing = false
-    @State private var draft = ""
-    @FocusState private var fieldFocused: Bool
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Button {
-                appState.advanceTodo(todo)
-            } label: {
-                Image(systemName: todoStatusIcon)
-                    .foregroundStyle(todoStatusColor)
-            }
-            .buttonStyle(.plain)
-            .help("Tap: to-do → in progress → done")
-            .accessibilityLabel(todo.isCompleted ? "Completed" : (todo.isInProgress ? "In progress" : "To do"))
-            .accessibilityHint("Cycles status")
-
-            if isEditing {
-                TextField("Task", text: $draft)
-                    .textFieldStyle(.plain)
-                    .focused($fieldFocused)
-                    .onSubmit(commitEdit)
-                    .onExitCommand(perform: cancelEdit)
-                    .onChange(of: fieldFocused) { _, focused in
-                        if !focused && isEditing { commitEdit() }
-                    }
-            } else {
-                HStack(spacing: 4) {
-                    if todo.source == .reminders {
-                        Image(systemName: "list.bullet")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                            .help("Synced from Apple Reminders")
-                    }
-                    Text(todo.title)
-                        .strikethrough(todo.isCompleted)
-                        .foregroundStyle(todo.isCompleted ? .secondary : .primary)
-                        .fontWeight(todo.isInProgress ? .medium : .regular)
-                        .lineLimit(2)
-                }
-                .contentShape(Rectangle())
-                .onTapGesture(count: 2, perform: beginEdit)
-                .help("Double-click to rename")
-            }
-
-            Spacer(minLength: 4)
-
-            if !isEditing {
-                detailIndicator
-            }
-
-            if !isEditing, let label = todo.ageLabel() {
-                AgePill(text: label, tier: todo.escalationTier(thresholds: appState.thresholds))
-            }
-
-            if !isEditing {
-                Menu {
-                    if todo.isCompleted {
-                        Button("Reset to to-do") { appState.resetTodo(todo) }
-                    } else if todo.isInProgress {
-                        Button("Mark done") { appState.advanceTodo(todo) }
-                        Button("Reset to to-do") { appState.resetTodo(todo) }
-                    } else {
-                        Button("Start") { appState.advanceTodo(todo) }
-                    }
-                    Button("Details…") { onOpenDetails?() }
-                    Menu("Priority") {
-                        Button("None") { appState.setPriority(todo, .none) }
-                        Button("Low") { appState.setPriority(todo, .low) }
-                        Button("Medium") { appState.setPriority(todo, .medium) }
-                        Button("High") { appState.setPriority(todo, .high) }
-                    }
-                    if showReschedule { Button("Bring to today") { appState.reschedule(todo) } }
-                    if !todo.isCompleted {
-                        Button("Delay to tomorrow") { appState.delay(todo) }
-                    }
-                    Button("Drop", role: .destructive) { appState.drop(todo) }
-                } label: {
-                    Image(systemName: "ellipsis").foregroundStyle(.secondary)
-                }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .fixedSize()
-                .opacity(hovering ? 1 : 0.35)
-                .accessibilityLabel("Task actions")
-                .help("Task actions")
-            }
+        .padding(.vertical, ThemeMetrics.rowVerticalPadding)
+        .padding(.horizontal, ThemeMetrics.rowHorizontalPadding)
+        .background {
+            RoundedRectangle(cornerRadius: ThemeMetrics.rowRadius, style: .continuous)
+                .fill(hovering ? ThemeColors.rowHover : .clear)
         }
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .accessibilityElement(children: .contain)
     }
+}
+
+/// A tray task row: `TaskRowView` wired to the tray's intents. One click on the ring
+/// completes; the flag sets priority; the ellipsis/context menu holds the rest.
+struct TodoRow: View {
+    var appState: AppState
+    let todo: DailyTodo
+    /// The row's section in display order — the list Move Up/Down/To Top work within.
+    var section: [DailyTodo] = []
+    var showReschedule = false
+    var onOpenDetails: (() -> Void)? = nil
+
+    @Environment(TrayInteractionModel.self) private var interaction: TrayInteractionModel?
+    @Environment(TaskDragCoordinator.self) private var dragCoordinator: TaskDragCoordinator?
+
+    var body: some View {
+        var actions = TaskRowActions.make(todo, appState: appState, openDetails: onOpenDetails)
+        let id = todo.id
+        actions.hoverChanged = { [interaction] hovering in interaction?.hoverChanged(id, hovering: hovering) }
+        return row(actions: actions)
+            .opacity(dragCoordinator?.draggingID == todo.id ? 0.35 : 1)
+            .taskRowFrame(todo.id)
+    }
 
     @ViewBuilder
-    private var detailIndicator: some View {
-        let items = appState.checklistItems(for: todo)
-        let hasChecklist = !items.isEmpty
-        let hasNotes = todo.hasNotes
-        if hasNotes || hasChecklist {
-            Button {
-                onOpenDetails?()
-            } label: {
-                HStack(spacing: 3) {
-                    if hasNotes {
-                        Image(systemName: "note.text")
-                    }
-                    if hasChecklist {
-                        let done = items.filter(\.isCompleted).count
-                        Text("\(done)/\(items.count)")
-                            .font(.caption2.monospacedDigit())
-                    }
-                }
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-            }
-            .buttonStyle(.plain)
-            .help("Open task details")
-            .accessibilityLabel("Open task details")
+    private func row(actions: TaskRowActions) -> some View {
+        let base = TaskRowView(
+            configuration: .make(
+                todo, appState: appState, showsAge: true,
+                isSelected: interaction?.selectedTodoID == todo.id
+            ),
+            actions: actions
+        ) {
+            TrayTaskMenu(
+                appState: appState, todo: todo, section: section,
+                showReschedule: showReschedule, onOpenDetails: onOpenDetails
+            )
+        }
+        if todo.isCompleted {
+            base
+        } else {
+            base.taskDraggable(todo.id, title: todo.title, coordinator: dragCoordinator)
         }
     }
+}
 
-    private func beginEdit() {
-        draft = todo.title
-        isEditing = true
-        fieldFocused = true
-    }
+/// Actions for a tray task (ellipsis button + right-click).
+struct TrayTaskMenu: View {
+    var appState: AppState
+    let todo: DailyTodo
+    var section: [DailyTodo] = []
+    var showReschedule = false
+    var onOpenDetails: (() -> Void)?
 
-    private func commitEdit() {
-        appState.rename(todo, to: draft)
-        isEditing = false
-        fieldFocused = false
-    }
+    private var movable: [DailyTodo] { section.filter { $0.completedDate == nil } }
 
-    private func cancelEdit() {
-        isEditing = false
-        fieldFocused = false
-    }
-
-    private var todoStatusIcon: String {
-        if todo.isCompleted { return "checkmark.circle.fill" }
-        if todo.isInProgress { return "circle.lefthalf.filled" }
-        return "circle"
-    }
-
-    private var todoStatusColor: Color {
-        if todo.isCompleted { return .green }
-        if todo.isInProgress { return .accentColor }
-        return .secondary
+    var body: some View {
+        if todo.isCompleted {
+            Button("Reset to To-Do") { appState.resetTodo(todo) }
+        } else {
+            Button("Complete") { withThemeAnimation(.reorder) { appState.toggleComplete(todo) } }
+            if todo.isInProgress {
+                Button("Move Back to To-Do") { appState.resetTodo(todo) }
+            } else {
+                Button("Start") { appState.startTodo(todo) }
+            }
+        }
+        Button("Details…") { onOpenDetails?() }
+        Menu("Priority") {
+            PriorityMenuItems(current: todo.priority) { appState.setPriority(todo, $0) }
+        }
+        if !todo.isCompleted, movable.count > 1 {
+            Divider()
+            let index = movable.firstIndex(where: { $0.id == todo.id })
+            Button("Move to Top") { withThemeAnimation(.reorder) { appState.moveTodoToTop(todo, in: movable) } }
+                .disabled(index == 0)
+            Button("Move Up  ⌘↑") { withThemeAnimation(.reorder) { appState.moveTodo(todo, by: -1, in: movable) } }
+                .disabled(index == 0)
+            Button("Move Down  ⌘↓") { withThemeAnimation(.reorder) { appState.moveTodo(todo, by: 1, in: movable) } }
+                .disabled(index == movable.count - 1)
+        }
+        Divider()
+        if showReschedule { Button("Bring to Today") { appState.reschedule(todo) } }
+        if !todo.isCompleted {
+            Button("Delay to Tomorrow") { appState.delay(todo) }
+        }
+        Button("Drop", role: .destructive) { appState.drop(todo) }
     }
 }
 
@@ -650,31 +569,6 @@ struct StackedTodoProgressBar: View {
     }
 }
 
-/// Compact age pill. Grey for fresh slips, amber once aging — never red (gentle default).
-struct AgePill: View {
-    let text: String
-    let tier: EscalationTier
-
-    private var color: Color { tier >= .aging ? .orange : .secondary }
-
-    var body: some View {
-        HStack(spacing: 2) {
-            if tier >= .aging {
-                Image(systemName: "clock.badge.exclamationmark")
-                    .font(.caption2)
-                    .accessibilityHidden(true)
-            }
-            Text(text)
-                .font(.caption2.weight(.medium))
-        }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 2)
-        .background(Capsule().fill(color.opacity(0.18)))
-        .foregroundStyle(color)
-        .accessibilityLabel(tier >= .aging ? "Aging \(text)" : "Waiting \(text)")
-    }
-}
-
 /// Pomodoro control strip. Live countdown via self-animating `Text(timerInterval:)`.
 struct PomodoroStrip: View {
     var appState: AppState
@@ -685,7 +579,15 @@ struct PomodoroStrip: View {
         let pomo = appState.pomodoro
         HStack(spacing: 8) {
             Image(systemName: pomo.phase.isBreak ? "cup.and.saucer" : "timer").foregroundStyle(.tint)
-            Text(pomo.phase == .idle ? "Focus" : pomo.phase.displayName).font(.subheadline)
+            Group {
+                if pomo.phase == .work, let task = appState.focusTodo {
+                    Text("Focus · \(task.title)")
+                } else {
+                    Text(pomo.phase == .idle ? "Focus" : pomo.phase.displayName)
+                }
+            }
+            .font(.subheadline)
+            .lineLimit(1)
 
             Spacer()
 

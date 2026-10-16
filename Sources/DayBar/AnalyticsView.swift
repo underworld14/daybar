@@ -124,8 +124,7 @@ struct AnalyticsView: View {
         let entry = appState.focusStreak()
         let streak = entry?.streak
         return VStack(alignment: .leading, spacing: 8) {
-            Text("FOCUS STREAK".uppercased())
-                .font(.caption2.weight(.semibold)).tracking(0.5).foregroundStyle(.secondary)
+            SectionHeader("Focus streak")
             HStack(spacing: 16) {
                 stat("\(streak?.current ?? 0)d", "current")
                 stat("\(streak?.best ?? 0)d", "best")
@@ -189,8 +188,7 @@ struct AnalyticsView: View {
 
     private var consistencySection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("CONSISTENCY (28 DAYS)".uppercased())
-                .font(.caption2.weight(.semibold)).tracking(0.5).foregroundStyle(.secondary)
+            SectionHeader("Consistency, last 28 days")
             ForEach(appState.habitStreaks()) { entry in
                 HabitHeatmapRow(
                     title: entry.template.title,
@@ -204,8 +202,7 @@ struct AnalyticsView: View {
 
     private var streakSection: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("STREAKS".uppercased())
-                .font(.caption2.weight(.semibold)).tracking(0.5).foregroundStyle(.secondary)
+            SectionHeader("Streaks")
             ForEach(appState.habitStreaks()) { entry in
                 HStack {
                     Text(entry.template.title)
@@ -295,7 +292,7 @@ struct AnalyticsView: View {
 
     private func chartSection<Content: View>(_ title: String, @ViewBuilder _ content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(title.uppercased()).font(.caption2.weight(.semibold)).tracking(0.5).foregroundStyle(.secondary)
+            SectionHeader(title)
             content()
                 .frame(height: 150)
                 .accessibilityElement(children: .contain)

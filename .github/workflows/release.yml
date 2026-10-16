@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
   build-and-release:
@@ -90,3 +91,10 @@ jobs:
             git commit -m "chore: update appcast for ${{ github.ref_name }}"
             git push origin main
           fi
+
+      # A push made with GITHUB_TOKEN never starts other workflows, so pages.yml would not
+      # pick up the new appcast on its own. workflow_dispatch is the documented exception.
+      - name: Publish the appcast to GitHub Pages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run pages.yml --ref main

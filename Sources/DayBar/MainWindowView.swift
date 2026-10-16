@@ -16,12 +16,22 @@ struct MainWindowView: View {
     @Environment(AppState.self) private var appState
 
     @State private var selection: SidebarSelection? = .today
+    /// The board's selected task (by id, never a model reference) and the inspector toggle.
+    @State private var selectedTodoID: UUID?
+    @State private var inspectorPresented = false
+    /// Sidebar row currently under a dragged task.
+    @State private var dropTarget: SidebarSelection?
+    /// Set while the inspector's "Show in …" switches the sidebar, so the switch keeps the task.
+    @State private var keepSelectionOnScopeChange = false
+    @Environment(\.controlActiveState) private var controlActiveState
     @State private var showProjectSheet = false
     @State private var projectSheetMode: ProjectSheetMode = .create
     @State private var projectPendingDelete: Project?
     @State private var showNewFolderSheet = false
     @State private var pendingFolderRename: NotesStore.Folder?
     @State private var folderPendingDelete: NotesStore.Folder?
+    /// Cached so the sidebar doesn't hit the disk on every render.
+    @State private var folders: [NotesStore.Folder] = []
 
     var body: some View {
         NavigationSplitView {
@@ -30,12 +40,43 @@ struct MainWindowView: View {
                 .navigationTitle("DayBar")
         } detail: {
             detail
+                .inspector(isPresented: Binding(
+                    get: { inspectorPresented && isTaskScope },
+                    set: { inspectorPresented = $0 }
+                )) {
+                    TaskInspectorView(appState: appState, scope: taskScope, selectedID: selectedTodoID) { scope in
+                        keepSelectionOnScopeChange = true
+                        selection = SidebarSelection(scope)
+                    }
+                        .inspectorColumnWidth(min: 280, ideal: 320, max: 440)
+                }
         }
-        .onAppear { appState.refresh() }
+        .onAppear {
+            appState.refresh()
+            reloadFolders()
+        }
+        // Folders can change outside the app (Finder, sync): re-read when a window activates.
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { note in
+            // Only real windows (not the tray panel, sheets, or popovers).
+            guard let window = note.object as? NSWindow, !(window is NSPanel), window.sheetParent == nil else { return }
+            reloadFolders()
+        }
         .onChange(of: appState.projects) { _, projects in
             // A deleted project must not leave a dead selection.
             if case .project(let id) = selection, !projects.contains(where: { $0.id == id }) {
                 selection = .today
+            }
+        }
+        .onChange(of: selection) { _, _ in
+            if keepSelectionOnScopeChange {
+                keepSelectionOnScopeChange = false
+            } else {
+                selectedTodoID = nil
+            }
+        }
+        .onChange(of: appState.windowCommand) { _, request in
+            if request?.command == .toggleInspector, isTaskScope, controlActiveState == .key {
+                inspectorPresented.toggle()
             }
         }
         .onChange(of: appState.windowNewNoteSignal) { _, _ in
@@ -62,6 +103,7 @@ struct MainWindowView: View {
                 initialText: ""
             ) { name in
                 _ = try? appState.notes.createFolder(named: name)
+                reloadFolders()
             }
         }
         .alert(
@@ -88,8 +130,10 @@ struct MainWindowView: View {
             List(selection: $selection) {
                 Section("Tasks") {
                     Label("Today", systemImage: "calendar")
+                        .modifier(taskDrop(.today))
                         .tag(SidebarSelection.today)
                     Label("Tomorrow", systemImage: "calendar.badge.clock")
+                        .modifier(taskDrop(.tomorrow))
                         .tag(SidebarSelection.tomorrow)
                     Label("All Tasks", systemImage: "tray.full")
                         .tag(SidebarSelection.allTasks)
@@ -99,13 +143,14 @@ struct MainWindowView: View {
                             Label(project.name, systemImage: project.symbolName)
                                 .lineLimit(1)
                             Spacer(minLength: 4)
-                            let count = incompleteProjectCount(project.id)
+                            let count = appState.openTaskCount(forProject: project.id)
                             if count > 0 {
                                 Text("\(count)")
                                     .font(.caption2.monospacedDigit())
                                     .foregroundStyle(.secondary)
                             }
                         }
+                        .modifier(taskDrop(.project(project.id)))
                         .tag(SidebarSelection.project(project.id))
                         .contextMenu {
                             Button("Rename…") {
@@ -166,6 +211,7 @@ struct MainWindowView: View {
                     initialText: folder.name
                 ) { name in
                     _ = try? appState.notes.renameFolder(folder.url, to: name)
+                    reloadFolders()
                 }
             }
         }
@@ -179,6 +225,7 @@ struct MainWindowView: View {
             Button("Delete Folder", role: .destructive) {
                 if let folder = folderPendingDelete {
                     try? appState.notes.trash(folder.url)
+                    reloadFolders()
                 }
                 folderPendingDelete = nil
             }
@@ -188,27 +235,64 @@ struct MainWindowView: View {
         }
     }
 
-    private var folders: [NotesStore.Folder] {
-        (try? appState.notes.folders()) ?? []
+    /// Dropping a task on Today/Tomorrow re-plans it (bottom of that day); on a project,
+    /// assigns it. The row highlights while a task hovers over it.
+    private func taskDrop(_ target: SidebarSelection) -> SidebarTaskDrop {
+        SidebarTaskDrop(target: target, isTargeted: dropTarget == target) { targeted in
+            if targeted {
+                dropTarget = target
+            } else if dropTarget == target {
+                dropTarget = nil
+            }
+        } perform: { id in
+            guard let todo = try? appState.store.todo(id: id), todo.status != .dropped else { return false }
+            switch target {
+            case .today:
+                appState.plan(todo, for: .now)
+            case .tomorrow:
+                appState.plan(todo, for: DayMath.nextDay(.now, calendar: appState.calendar))
+            case .project(let projectID):
+                appState.assign(todo: todo, to: appState.projects.first(where: { $0.id == projectID }))
+            default:
+                return false
+            }
+            return true
+        }
     }
 
-    private func incompleteProjectCount(_ id: UUID) -> Int {
-        appState.windowTodos(for: .project(id)).filter { $0.completedDate == nil }.count
+    private func reloadFolders() {
+        folders = (try? appState.notes.folders()) ?? []
     }
 
     // MARK: - Detail
+
+    private func board(_ scope: TaskScope) -> some View {
+        TaskBoardView(scope: scope, selection: $selectedTodoID, inspectorPresented: $inspectorPresented)
+    }
+
+    private var isTaskScope: Bool { taskScope != nil }
+
+    private var taskScope: TaskScope? {
+        switch selection {
+        case .today: return .today
+        case .tomorrow: return .tomorrow
+        case .allTasks: return .allTasks
+        case .project(let id): return .project(id)
+        case .allNotes, .folder, nil: return nil
+        }
+    }
 
     @ViewBuilder
     private var detail: some View {
         switch selection {
         case .today:
-            TaskBoardView(scope: .today).id(SidebarSelection.today)
+            board(.today).id(SidebarSelection.today)
         case .tomorrow:
-            TaskBoardView(scope: .tomorrow).id(SidebarSelection.tomorrow)
+            board(.tomorrow).id(SidebarSelection.tomorrow)
         case .allTasks:
-            TaskBoardView(scope: .allTasks).id(SidebarSelection.allTasks)
+            board(.allTasks).id(SidebarSelection.allTasks)
         case .project(let id):
-            TaskBoardView(scope: .project(id)).id(SidebarSelection.project(id))
+            board(.project(id)).id(SidebarSelection.project(id))
         case .allNotes:
             NotesPaneView(folder: nil).id(SidebarSelection.allNotes)
         case .folder(let url):
@@ -356,5 +440,16 @@ struct TextEntrySheet: View {
         guard !trimmed.isEmpty else { return }
         onCommit(trimmed)
         dismiss()
+    }
+}
+
+extension SidebarSelection {
+    init(_ scope: TaskScope) {
+        switch scope {
+        case .today: self = .today
+        case .tomorrow: self = .tomorrow
+        case .allTasks: self = .allTasks
+        case .project(let id): self = .project(id)
+        }
     }
 }

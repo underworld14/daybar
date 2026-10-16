@@ -21,7 +21,7 @@ struct DayscapeStrip: View {
                             if cell.usedGrace, cell.completedSessions == 0 {
                                 Image(systemName: "circle")
                                     .font(.system(size: 6, weight: .semibold))
-                                    .foregroundStyle(Color.indigo.opacity(0.55))
+                                    .foregroundStyle(ThemeColors.ink.opacity(0.55))
                             }
                         }
                         .accessibilityLabel(accessibilityLabel(for: cell))
@@ -59,11 +59,11 @@ struct DayscapeStrip: View {
         case 0:
             return Color.secondary.opacity(0.12)
         case 1:
-            return Color.indigo.opacity(0.35)
+            return ThemeColors.ink.opacity(0.35)
         case 2:
-            return Color.indigo.opacity(0.55)
+            return ThemeColors.ink.opacity(0.55)
         default:
-            return Color.indigo.opacity(0.8)
+            return ThemeColors.ink.opacity(0.8)
         }
     }
 
