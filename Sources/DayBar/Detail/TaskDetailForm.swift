@@ -64,17 +64,10 @@ struct TaskDetailForm: View {
                     }
                 }
                 LabeledContent("Planned for") {
-                    HStack(spacing: ThemeMetrics.spacingS) {
-                        DatePicker("Planned for", selection: dateBinding, displayedComponents: .date)
-                            .labelsHidden()
-                        Button("Today") { appState.plan(todo, for: .now) }
-                            .disabled(isPlanned(on: .now))
-                        Button("Tomorrow") {
-                            appState.plan(todo, for: DayMath.nextDay(.now, calendar: appState.calendar))
-                        }
-                        .disabled(isPlanned(on: DayMath.nextDay(.now, calendar: appState.calendar)))
+                    // One pick, one save: no stepper ticks re-planning the task on the way.
+                    PlannedDateButton(date: todo.plannedForDate, calendar: appState.calendar) { day in
+                        withThemeAnimation(.reorder) { appState.plan(todo, for: day) }
                     }
-                    .controlSize(.small)
                 }
             }
 
@@ -195,13 +188,6 @@ struct TaskDetailForm: View {
         )
     }
 
-    private var dateBinding: Binding<Date> {
-        Binding(get: { todo.plannedForDate }, set: { appState.setPlannedDate(todo, to: $0) })
-    }
-
-    private func isPlanned(on day: Date) -> Bool {
-        DayMath.startOfDay(todo.plannedForDate, calendar: appState.calendar) == DayMath.startOfDay(day, calendar: appState.calendar)
-    }
 
     // MARK: - Persistence
 

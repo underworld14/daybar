@@ -21,6 +21,8 @@ struct MainWindowView: View {
     @State private var inspectorPresented = false
     /// Sidebar row currently under a dragged task.
     @State private var dropTarget: SidebarSelection?
+    /// Set while the inspector's "Show in …" switches the sidebar, so the switch keeps the task.
+    @State private var keepSelectionOnScopeChange = false
     @Environment(\.controlActiveState) private var controlActiveState
     @State private var showProjectSheet = false
     @State private var projectSheetMode: ProjectSheetMode = .create
@@ -42,7 +44,10 @@ struct MainWindowView: View {
                     get: { inspectorPresented && isTaskScope },
                     set: { inspectorPresented = $0 }
                 )) {
-                    TaskInspectorView(appState: appState, scope: taskScope, selectedID: selectedTodoID)
+                    TaskInspectorView(appState: appState, scope: taskScope, selectedID: selectedTodoID) { scope in
+                        keepSelectionOnScopeChange = true
+                        selection = SidebarSelection(scope)
+                    }
                         .inspectorColumnWidth(min: 280, ideal: 320, max: 440)
                 }
         }
@@ -63,7 +68,11 @@ struct MainWindowView: View {
             }
         }
         .onChange(of: selection) { _, _ in
-            selectedTodoID = nil
+            if keepSelectionOnScopeChange {
+                keepSelectionOnScopeChange = false
+            } else {
+                selectedTodoID = nil
+            }
         }
         .onChange(of: appState.windowCommand) { _, request in
             if request?.command == .toggleInspector, isTaskScope, controlActiveState == .key {
@@ -431,5 +440,16 @@ struct TextEntrySheet: View {
         guard !trimmed.isEmpty else { return }
         onCommit(trimmed)
         dismiss()
+    }
+}
+
+extension SidebarSelection {
+    init(_ scope: TaskScope) {
+        switch scope {
+        case .today: self = .today
+        case .tomorrow: self = .tomorrow
+        case .allTasks: self = .allTasks
+        case .project(let id): self = .project(id)
+        }
     }
 }

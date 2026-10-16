@@ -69,8 +69,10 @@ struct TaskBoardView: View {
             perform(request.command, snapshot: appState.boardSnapshot(for: scope))
         }
         .onChange(of: snapshot.orderedIDs) { _, ids in
-            // A task that left this scope (dropped, moved, deleted) can't stay selected.
-            if let selected = selection, !ids.contains(selected) { selection = nil }
+            // A task that only moved out of this view (new date, other project) stays selected
+            // so the inspector keeps showing it; one that was dropped or deleted is cleared.
+            guard let selected = selection, !ids.contains(selected) else { return }
+            if appState.lookupTodo(id: selected) == nil { selection = nil }
         }
         .alert(
             "Delete task “\(todoPendingDelete?.title ?? "")” permanently?",
@@ -345,7 +347,7 @@ struct TaskBoardView: View {
                     composerDate = nil
                 } label: {
                     Label(
-                        DayLabel.relative(planned, now: .now, calendar: appState.calendar) ?? "Today",
+                        DayLabel.long(planned, now: .now, calendar: appState.calendar).text,
                         systemImage: "xmark.circle.fill"
                     )
                     .font(.caption)
@@ -364,7 +366,12 @@ struct TaskBoardView: View {
             .help("Pick a date")
             .accessibilityLabel("Pick a date")
             .popover(isPresented: $showDatePopover, arrowEdge: .top) {
-                ComposerDatePopover(scope: scope, calendar: appState.calendar, date: $composerDate)
+                PlannedDatePopover(
+                    selected: composerDate,
+                    calendar: appState.calendar,
+                    onPick: { composerDate = $0; showDatePopover = false },
+                    onClear: { composerDate = nil; showDatePopover = false }
+                )
             }
             if !newTitle.trimmingCharacters(in: .whitespaces).isEmpty {
                 Button(action: addCurrent) {

@@ -50,6 +50,8 @@ public final class AppState {
     @ObservationIgnored private var boardSnapshotMemoDay: Date?
     @ObservationIgnored private var projectOpenCounts: [UUID: Int] = [:]
     @ObservationIgnored private var projectOpenCountsRevision = -1
+    @ObservationIgnored private var lookupMemo: [UUID: DailyTodo?] = [:]
+    @ObservationIgnored private var lookupMemoRevision = -1
     /// The focus session most recently written by `handlePhaseEnd` (for "Undo" on stop).
     @ObservationIgnored private var lastRecordedFocusSessionID: UUID?
 
@@ -628,6 +630,21 @@ public final class AppState {
                 .sorted { ($0.completedDate ?? .distantPast) > ($1.completedDate ?? .distantPast) }
             return BoardSnapshot(open: todos.filter { $0.completedDate == nil }, done: done)
         }
+    }
+
+    /// A task by id regardless of which list it is in (for an inspector whose task just left
+    /// the current view). Non-dropped only; memoized per `todosRevision`, and reading it
+    /// re-renders the caller after task changes.
+    public func lookupTodo(id: UUID) -> DailyTodo? {
+        let revision = todosRevision
+        if lookupMemoRevision != revision {
+            lookupMemo = [:]
+            lookupMemoRevision = revision
+        }
+        if let cached = lookupMemo[id] { return cached }
+        let found = (try? store.todo(id: id)).flatMap { $0.status == .dropped ? nil : $0 }
+        lookupMemo[id] = found
+        return found
     }
 
     /// Incomplete, non-dropped tasks in a project (sidebar badge), from one fetch per revision.

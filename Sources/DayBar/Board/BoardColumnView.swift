@@ -109,7 +109,7 @@ struct BoardColumnView: View {
                 .foregroundStyle(.secondary)
             Spacer()
             if let planned = composerDate {
-                Text(DayLabel.relative(planned, now: .now, calendar: appState.calendar) ?? "Today")
+                Text(DayLabel.long(planned, now: .now, calendar: appState.calendar).title)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
@@ -122,7 +122,12 @@ struct BoardColumnView: View {
             .foregroundStyle(composerDate != nil ? Color.accentColor : .secondary)
             .help("Pick a date")
             .popover(isPresented: $showDatePopover, arrowEdge: .bottom) {
-                ComposerDatePopover(scope: scope, calendar: appState.calendar, date: $composerDate)
+                PlannedDatePopover(
+                    selected: composerDate,
+                    calendar: appState.calendar,
+                    onPick: { composerDate = $0; showDatePopover = false },
+                    onClear: { composerDate = nil; showDatePopover = false }
+                )
             }
             Button {
                 addingTask = true
